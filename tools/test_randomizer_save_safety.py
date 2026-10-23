@@ -16,7 +16,6 @@ def body(text: str, signature: str, next_marker: str | None = None) -> str:
 
 
 def strip_c_comments(text: str) -> str:
-    """Remove // and /* */ comments for code-only persistence assertions."""
     out: list[str] = []
     i = 0
     block = False
@@ -77,16 +76,17 @@ def main() -> int:
     direct = body(central, "static int should_randomize_direct_grant", "RECOMP_PATCH")
     assert "caller_is_starting_grant" in direct
     assert "s_starting_items_enabled" in direct
-    assert direct.rstrip().endswith("return 0;\n}"), "unknown direct grant is not fail-closed"
+    assert direct.rstrip().endswith("return 0;\n}"), "unknown/future direct grant is not fail-closed"
     assert "#define RA_TUTORIAL_SETUP_R      0x80215BF4u" in central
+    assert "#define RA_UNIT_LOADOUT_R        0x80216D98u" in central
     assert "#define RA_STARTING_R_LO         0x80217070u" in central
     assert "#define RA_STARTING_R_HI         0x8021724Cu" in central
-    assert "#define RA_BANK_R_UNKNOWN        0x80216D98u" in central
     assert "caller_ra == RA_TUTORIAL_SETUP_R" in central
-    assert "caller_is_unclassified_bank_r" in central
-    assert "unclassified Bank-R grant left vanilla" in central
-    assert "RA_BANK_R_UNKNOWN_A" not in central and "RA_BANK_R_UNKNOWN_B" not in central
-    assert "RA_SETUP_R_LO" not in central and "RA_SETUP_R_HI" not in central
+    assert "caller_is_coupled_unit_loadout" in central
+    assert "coupled Bank-R unit loadout left vanilla" in central
+    assert "caller_is_coupled_unit_loadout" not in direct
+    for stale in ("RA_BANK_R_UNKNOWN", "caller_is_unclassified_bank_r", "RA_SETUP_R_LO", "RA_SETUP_R_HI"):
+        assert stale not in central, f"stale broad/unknown classification remains: {stale}"
     assert 'recomp_get_config_u32("shops")' not in central
 
     assert 'recomp_get_config_u32("shops")' in shop
@@ -103,20 +103,10 @@ def main() -> int:
     assert "full_repair_and_snapshot();" in repair
     assert "wr8(record + LIST_USE" in repair
 
-    # Comments explicitly document that seed/save state is *not* touched. Run
-    # persistence assertions on code only so those safety comments cannot become
-    # false positives while still rejecting real seed/config/persistence access.
     repair_code = strip_c_comments(repair)
     for forbidden in (
-        "wr16(",
-        "wr32(",
-        "LIST_COUNT",
-        "uir_map_",
-        "recomp_get_config_u32",
-        '"seed"',
-        "s_seed",
-        "save_seed",
-        "saved_seed",
+        "wr16(", "wr32(", "LIST_COUNT", "uir_map_", "recomp_get_config_u32",
+        '"seed"', "s_seed", "save_seed", "saved_seed",
     ):
         assert forbidden not in repair_code, f"transient repair can affect saved state: {forbidden}"
 
