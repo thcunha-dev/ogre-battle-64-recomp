@@ -48,17 +48,24 @@ Rev-A game run. Do not promote the mod to 1.0 solely because the build is green.
 ## Host verification suite
 
 `python3 tools/test_universal_randomizer_all.py` is the single source of truth for
-all host-side verification. It currently runs **9 tests**:
+all host-side verification. It currently runs **10 tests**:
 
 1. `tools/test_randomizer_save_safety.py`
 2. `tools/test_universal_randomizer_mapping.py`
-3. `tools/test_stock_runtime_coverage.py`
-4. `tools/test_inventory_writer_taxonomy.py`
-5. `tools/test_randomizer_qa_telemetry.py`
-6. `tools/test_randomizer_persistence_model.py`
-7. `tools/test_randomizer_source_shadow_model.py`
-8. `tools/test_randomizer_shop_model.py`
-9. `tools/test_randomizer_inventory_capacity_model.py`
+3. `tools/test_randomizer_golden_vectors.py`
+4. `tools/test_stock_runtime_coverage.py`
+5. `tools/test_inventory_writer_taxonomy.py`
+6. `tools/test_randomizer_qa_telemetry.py`
+7. `tools/test_randomizer_persistence_model.py`
+8. `tools/test_randomizer_source_shadow_model.py`
+9. `tools/test_randomizer_shop_model.py`
+10. `tools/test_randomizer_inventory_capacity_model.py`
+
+The golden-vector test locks the public seed semantics so accidental changes to
+mixer constants, salts or Sattolo ordering cannot silently make an existing seed
+produce different equipment replacements. For the QA seed `123456`, examples
+include equipment `1 -> 270`, `2 -> 239`, `3 -> 37`, `100 -> 189`,
+`200 -> 223` and `277 -> 245`.
 
 The persistence model executes **5,000 deterministic ON -> OFF -> ON sequences**
 with seed changes, mixed equipment/consumable acquisition, native-save round
@@ -88,7 +95,7 @@ randomizer metadata outside the original audited files.
 ## Integrated build proof
 
 Both the fast mapping workflow and the integrated runtime workflow invoke the
-same unified host suite. The integrated job only continues after all nine tests
+same unified host suite. The integrated job only continues after all ten tests
 pass, then:
 
 - applies the pinned OB64/N64Recomp/runtime layers;
@@ -100,6 +107,10 @@ pass, then:
   runtime/Recomp commits, Rev-A reference SHA-1, NRM SHA-256/size and the
   explicit native-save policy plus persistence/source-shadow/shop/capacity model
   markers.
+
+The last fully green integrated proof before adding golden vectors was run
+`40024229735`; the next integrated run must additionally pass the tenth golden-
+vector test before its artifact is accepted for QA.
 
 A separate QA-payload workflow also packages the `.nrm`, build manifest,
 `TESTING.md`, `QA-TELEMETRY.md` and this status file together so manual campaign
