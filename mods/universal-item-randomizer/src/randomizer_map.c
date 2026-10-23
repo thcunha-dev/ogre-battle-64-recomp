@@ -19,6 +19,7 @@ RECOMP_IMPORT("*", unsigned int recomp_get_config_u32(const char* id));
 #define CONSUMABLE_ID_MAX        40u
 #define CONSUMABLE_SAFE_MAX      2u
 #define CONSUMABLE_KEY_MIN       3u
+#define CONSUMABLE_KEY_MAX       4u
 
 #define RDRAM_LO                 0x80000000u
 #define RDRAM_HI                 0x80800000u
@@ -129,8 +130,14 @@ void uir_map_init(void) {
         unsigned int cls;
         if (!consumable_id_valid(id)) continue;
         cls = consumable_class(id);
-        if (cls <= CONSUMABLE_SAFE_MAX) safe_pool[safe_count++] = (unsigned short)id;
-        else if (cls >= CONSUMABLE_KEY_MIN) key_pool[key_count++] = (unsigned short)id;
+        if (cls <= CONSUMABLE_SAFE_MAX) {
+            safe_pool[safe_count++] = (unsigned short)id;
+        }
+        else if (cls >= CONSUMABLE_KEY_MIN && cls <= CONSUMABLE_KEY_MAX) {
+            key_pool[key_count++] = (unsigned short)id;
+        }
+        // Unknown classes are intentionally omitted from every permutation.
+        // Their identity mapping remains intact even with KEY ITEMS enabled.
     }
 
     build_cycle_map(s_equip_map, equip_pool, equip_count, 0x45515549u);
