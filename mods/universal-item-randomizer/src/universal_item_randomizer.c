@@ -27,9 +27,24 @@ RECOMP_IMPORT("*", void recomp_log(const char* message));
 #define CONSUMABLE_LIST          0x80193AE0u
 #define CONSUMABLE_SLOTS         40u
 #define LIST_STRIDE              4u
-#define LIST_USED                2u
 #define LIST_COUNT               3u
 #define COUNT_MAX                99u
+
+// Sources that feed both the popup/reward text and func_ovlN_801DC740.
+#define DROP_TABLE               0x801EDB38u
+#define DROP_ENTRY_STRIDE        8u
+#define DROP_ENTRY_MAX           35u
+#define DROP_ITEM_A              2u
+#define DROP_TYPE_FIRST          0x0027u
+#define DROP_TYPE_LAST           0x0050u
+#define DROP_LAST_TYPE_ADDR      (DROP_TABLE + (DROP_ENTRY_MAX - 1u) * DROP_ENTRY_STRIDE)
+
+#define PICKUP_COUNT             0x801F1002u
+#define PICKUP_IDS               0x801F1004u
+#define PICKUP_MAX               64u
+
+#define REWARD_QUEUE             0x801936D8u
+#define REWARD_SLOTS             20u
 
 #define RDRAM_LO                 0x80000000u
 #define RDRAM_HI                 0x80800000u
@@ -56,6 +71,17 @@ static unsigned char s_ready;
 static unsigned char s_key_items_enabled;
 static unsigned char s_starting_items_enabled;
 static unsigned char s_shops_enabled;
+
+// Source shadows: a value written by this mod is not transformed again on the
+// next frame. If the game reloads/changes a source slot, the new raw value differs
+// from the shadow and is mapped once.
+static unsigned short s_drop_written[DROP_ENTRY_MAX * 3u];
+static unsigned char s_drop_valid[DROP_ENTRY_MAX * 3u];
+static unsigned char s_drop_present;
+static unsigned short s_pickup_written[PICKUP_MAX];
+static unsigned char s_pickup_valid[PICKUP_MAX];
+static unsigned short s_reward_written[REWARD_SLOTS];
+static unsigned char s_reward_valid[REWARD_SLOTS];
 
 static unsigned int rd32(unsigned int addr) {
     return *(volatile unsigned int*)addr;
@@ -103,8 +129,6 @@ static int consumable_id_valid(unsigned int id) {
     return readable_string_pointer(name);
 }
 
-// Small deterministic PRNG used only while building the permutation. Mapping
-// lookup itself consumes no RNG, so acquisition order cannot change results.
 static unsigned int mix32(unsigned int x) {
     x ^= x >> 16;
     x *= 0x7FEB352Du;
@@ -123,9 +147,8 @@ static unsigned int rng_next(unsigned int* state) {
     return x;
 }
 
-// Sattolo's algorithm makes one cycle instead of an arbitrary permutation.
-// For a pool with >1 entry this guarantees source != replacement for every
-// item, while still remaining one-to-one (no A->X and B->X collisions).
+// Sattolo makes one cycle: source != target for pools >1 and no two sources
+// collide on the same replacement.
 static void build_cycle_map(unsigned short* map,
                             const unsigned short* sources,
                             unsigned int count,
@@ -170,7 +193,7 @@ static void build_equipment_map(void) {
             pool[count++] = (unsigned short)id;
         }
     }
-    build_cycle_map(s_equip_map, pool, count, 0x45515549u); // "EQUI"
+    build_cycle_map(s_equip_map, pool, count, 0x45515549u);
 }
 
 static void build_consumable_map(void) {
@@ -183,7 +206,6 @@ static void build_consumable_map(void) {
     for (id = 0u; id <= CONSUMABLE_ID_MAX; id++) {
         s_consumable_map[id] = (unsigned short)id;
     }
-
     for (id = 1u; id <= CONSUMABLE_ID_MAX; id++) {
         unsigned int cls;
         if (!consumable_id_valid(id)) {
@@ -197,10 +219,9 @@ static void build_consumable_map(void) {
             key_pool[key_count++] = (unsigned short)id;
         }
     }
-
-    build_cycle_map(s_consumable_map, safe_pool, safe_count, 0x434F4E53u); // "CONS"
+    build_cycle_map(s_consumable_map, safe_pool, safe_count, 0x434F4E53u);
     if (s_key_items_enabled) {
-        build_cycle_map(s_consumable_map, key_pool, key_count, 0x4B455953u); // "KEYS"
+        build_cycle_map(s_consumable_map, key_pool, key_count, 0x4B455953u);
     }
 }
 
@@ -208,7 +229,6 @@ static void randomizer_init(void) {
     if (s_ready) {
         return;
     }
-
     s_seed = recomp_get_config_u32("seed");
     if (s_seed == 0u) {
         s_seed = 1u;
@@ -216,11 +236,9 @@ static void randomizer_init(void) {
     s_key_items_enabled = recomp_get_config_u32("key_items") != 0u;
     s_starting_items_enabled = recomp_get_config_u32("starting_items") != 0u;
     s_shops_enabled = recomp_get_config_u32("shops") != 0u;
-
     build_equipment_map();
     build_consumable_map();
     s_ready = 1u;
-
     if (recomp_get_config_u32("log") != 0u) {
         recomp_log("universal-item-randomizer: deterministic mapping ready");
     }
@@ -229,14 +247,9 @@ static void randomizer_init(void) {
 static unsigned short mapped_id(unsigned int list, unsigned int id) {
     randomizer_init();
     if (list == LIST_EQUIPMENT) {
-        if (id <= EQUIP_ID_MAX) {
-            return s_equip_map[id];
-        }
+        return id <= EQUIP_ID_MAX ? s_equip_map[id] : (unsigned short)id;
     }
-    else if (id <= CONSUMABLE_ID_MAX) {
-        return s_consumable_map[id];
-    }
-    return (unsigned short)id;
+    return id <= CONSUMABLE_ID_MAX ? s_consumable_map[id] : (unsigned short)id;
 }
 
 static unsigned short mapped_item_word(unsigned short raw) {
@@ -245,34 +258,142 @@ static unsigned short mapped_item_word(unsigned short raw) {
     return (unsigned short)((raw & 0x8000u) | mapped_id(list, id));
 }
 
-// The original func_ovlN_801DC740 behavior for either inventory list: find the
-// id and increment count (clamped at 99), otherwise claim the first empty slot
-// and set count=1. The game's grant routine does not rewrite +0x02 (used count),
-// so neither does this replacement.
+static int drop_table_present(void) {
+    return rd16(DROP_TABLE) == DROP_TYPE_FIRST &&
+           rd16(DROP_LAST_TYPE_ADDR) == DROP_TYPE_LAST;
+}
+
+static int drop_table_readable(void) {
+    unsigned int column;
+    for (column = 0u; column < 3u; column++) {
+        unsigned int raw = rd16(DROP_TABLE + DROP_ITEM_A + column * 2u);
+        unsigned int id = raw & 0x7FFFu;
+        if ((raw & 0x8000u) != 0u) {
+            if (id != 0u && id > EQUIP_ID_MAX) return 0;
+        }
+        else if (id != 0u && id > CONSUMABLE_ID_MAX) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void rewrite_drop_table(void) {
+    unsigned int entry;
+    unsigned int column;
+    int present = drop_table_present() && drop_table_readable();
+
+    if (!present) {
+        if (s_drop_present) {
+            for (entry = 0u; entry < DROP_ENTRY_MAX * 3u; entry++) {
+                s_drop_valid[entry] = 0u;
+            }
+        }
+        s_drop_present = 0u;
+        return;
+    }
+    s_drop_present = 1u;
+
+    for (entry = 0u; entry < DROP_ENTRY_MAX; entry++) {
+        for (column = 0u; column < 3u; column++) {
+            unsigned int index = entry * 3u + column;
+            unsigned int addr = DROP_TABLE + entry * DROP_ENTRY_STRIDE + DROP_ITEM_A + column * 2u;
+            unsigned short raw = rd16(addr);
+            unsigned short replacement;
+
+            if (s_drop_valid[index] && raw == s_drop_written[index]) {
+                continue;
+            }
+            replacement = mapped_item_word(raw);
+            if (replacement != raw) {
+                wr16(addr, replacement);
+                raw = replacement;
+            }
+            s_drop_written[index] = raw;
+            s_drop_valid[index] = 1u;
+        }
+    }
+}
+
+static void rewrite_pickup_list(void) {
+    unsigned int count;
+    unsigned int i;
+
+    if (!s_drop_present) {
+        for (i = 0u; i < PICKUP_MAX; i++) s_pickup_valid[i] = 0u;
+        return;
+    }
+
+    count = rd8(PICKUP_COUNT);
+    if (count > PICKUP_MAX) {
+        return;
+    }
+    for (i = 0u; i < PICKUP_MAX; i++) {
+        if (i >= count) {
+            s_pickup_valid[i] = 0u;
+            continue;
+        }
+        {
+            unsigned int addr = PICKUP_IDS + i * 2u;
+            unsigned short raw = rd16(addr);
+            unsigned short replacement;
+            if (s_pickup_valid[i] && raw == s_pickup_written[i]) {
+                continue;
+            }
+            replacement = mapped_item_word(raw);
+            if (replacement != raw) {
+                wr16(addr, replacement);
+                raw = replacement;
+            }
+            s_pickup_written[i] = raw;
+            s_pickup_valid[i] = 1u;
+        }
+    }
+}
+
+static void rewrite_reward_queue(void) {
+    unsigned int i;
+    for (i = 0u; i < REWARD_SLOTS; i++) {
+        unsigned int addr = REWARD_QUEUE + i * 2u;
+        unsigned short raw = rd16(addr);
+        unsigned short replacement;
+
+        if (raw == 0u) {
+            s_reward_valid[i] = 0u;
+            s_reward_written[i] = 0u;
+            continue;
+        }
+        if (s_reward_valid[i] && raw == s_reward_written[i]) {
+            continue;
+        }
+        replacement = mapped_item_word(raw);
+        if (replacement != raw) {
+            wr16(addr, replacement);
+            raw = replacement;
+        }
+        s_reward_written[i] = raw;
+        s_reward_valid[i] = 1u;
+    }
+}
+
+// Original func_ovlN_801DC740 list semantics: increment an existing stack
+// (maximum 99), otherwise claim the first empty record and set count=1. The
+// original writes id/+0x03 only; +0x02 is intentionally left untouched.
 static void grant_vanilla(unsigned int base, unsigned int slots, unsigned int id) {
     unsigned int empty = slots;
     unsigned int i;
 
-    if (id == 0u) {
-        return;
-    }
-
+    if (id == 0u) return;
     for (i = 0u; i < slots; i++) {
         unsigned int record = base + i * LIST_STRIDE;
         unsigned int slot_id = rd16(record);
-
         if (slot_id == id) {
             unsigned int count = rd8(record + LIST_COUNT);
-            if (count < COUNT_MAX) {
-                wr8(record + LIST_COUNT, (unsigned char)(count + 1u));
-            }
+            if (count < COUNT_MAX) wr8(record + LIST_COUNT, (unsigned char)(count + 1u));
             return;
         }
-        if (slot_id == 0u && empty == slots) {
-            empty = i;
-        }
+        if (slot_id == 0u && empty == slots) empty = i;
     }
-
     if (empty != slots) {
         unsigned int record = base + empty * LIST_STRIDE;
         wr16(record, (unsigned short)id);
@@ -280,9 +401,10 @@ static void grant_vanilla(unsigned int base, unsigned int slots, unsigned int id
     }
 }
 
-static int caller_is_proven_gameplay_grant(unsigned int caller_ra) {
+static int caller_source_already_mapped(unsigned int caller_ra) {
+    // These sources are rewritten before the game builds the message and calls
+    // the grant, so the incoming item word is already the final replacement.
     return caller_ra == RA_MAP_OBJECT_A ||
-           caller_ra == RA_MAP_OBJECT_B ||
            caller_ra == RA_GROUND_PICKUP ||
            caller_ra == RA_BATTLE_REWARD;
 }
@@ -291,24 +413,15 @@ static int caller_is_setup_grant(unsigned int caller_ra) {
     return caller_ra >= RA_SETUP_R_LO && caller_ra < RA_SETUP_R_HI;
 }
 
-static int should_randomize_grant(unsigned int caller_ra) {
-    if (caller_is_proven_gameplay_grant(caller_ra)) {
-        return 1;
-    }
-    if (caller_is_setup_grant(caller_ra)) {
-        return s_starting_items_enabled != 0u;
-    }
-
-    // Unknown direct callers include paths still being classified (shops and
-    // scripted gifts). Keep them vanilla by default; SHOPS is the explicit
-    // opt-in for broad direct-grant randomization during this validation phase.
+static int should_randomize_direct_grant(unsigned int caller_ra) {
+    if (caller_source_already_mapped(caller_ra)) return 0;
+    if (caller_ra == RA_MAP_OBJECT_B) return 1; // pending per-unit id: no table rewrite yet
+    if (caller_is_setup_grant(caller_ra)) return s_starting_items_enabled != 0u;
+    // Unknown direct callers are preserved by default. SHOPS is an explicit
+    // validation-mode opt-in until every direct caller has been classified.
     return s_shops_enabled != 0u;
 }
 
-// Bank-N universal grant replacement. __builtin_return_address(0) is captured
-// before helpers are called, so on MIPS it identifies the game's jal caller.
-// Save loading reconstructs the inventory from packed save data and does not
-// call this grant routine, so existing inventory is never re-randomized.
 RECOMP_PATCH
 void func_ovlN_801DC740(unsigned int item_word, unsigned int ignored) {
     unsigned int caller_ra = (unsigned int)__builtin_return_address(0);
@@ -318,8 +431,7 @@ void func_ovlN_801DC740(unsigned int item_word, unsigned int ignored) {
 
     (void)ignored;
     randomizer_init();
-
-    delivered = should_randomize_grant(caller_ra) ? mapped_item_word(raw) : raw;
+    delivered = should_randomize_direct_grant(caller_ra) ? mapped_item_word(raw) : raw;
     id = delivered & 0x7FFFu;
 
     if ((delivered & 0x8000u) != 0u) {
@@ -330,9 +442,13 @@ void func_ovlN_801DC740(unsigned int item_word, unsigned int ignored) {
     }
 }
 
-// Bootstrap the deterministic maps early so the first acquisition does not pay
-// all table-validation/shuffle work in the middle of a reward or pickup path.
+// Frame hook only prepares deterministic source values before the game consumes
+// them. It never scans or mutates the owned inventory, so save reconstruction
+// cannot be mistaken for an acquisition.
 RECOMP_HOOK("func_80072944")
 void universal_item_randomizer_tick(void) {
     randomizer_init();
+    rewrite_drop_table();
+    rewrite_pickup_list();
+    rewrite_reward_queue();
 }
