@@ -106,9 +106,6 @@ def assert_shared_mapper_contract(repo: Path) -> None:
     assert '#include "randomizer_map.h"' in consumers["post_battle"]
     assert "uir_map_equipment_id" in consumers["post_battle"]
 
-    # Key items are identity-mapped unless the explicit key_items option is on.
-    # Only the audited quest/key classes 3..4 may enter the key pool. Unknown
-    # classes must remain identity even when KEY ITEMS is enabled.
     assert 'recomp_get_config_u32("key_items")' in mapper
     assert "#define CONSUMABLE_KEY_MIN       3u" in mapper
     assert "#define CONSUMABLE_KEY_MAX       4u" in mapper
@@ -117,10 +114,6 @@ def assert_shared_mapper_contract(repo: Path) -> None:
     assert "build_cycle_map(s_consumable_map, key_pool" in mapper
     assert "Unknown classes are intentionally omitted" in mapper
 
-    # The consumable table has ids 0..40 even though the owned inventory has 40
-    # records. Reference counters are indexed by item id, so id 40 requires a
-    # 41-element table and inclusive bounds. A 40-element array silently loses
-    # the use count of the final valid consumable id.
     assert "#define CONSUMABLE_ID_MAX        40u" in use_repair
     assert "s_consumable_refs[CONSUMABLE_ID_MAX + 1u]" in use_repair
     assert "i <= CONSUMABLE_ID_MAX" in use_repair
@@ -128,10 +121,6 @@ def assert_shared_mapper_contract(repo: Path) -> None:
     assert "s_consumable_refs[CONSUMABLE_SLOTS]" not in use_repair
     assert "id < CONSUMABLE_SLOTS" not in use_repair
 
-    # The pickup list reuses fixed RAM across maps. Its shadow therefore needs
-    # a source generation key: a new map can legitimately contain a vanilla id
-    # equal to the previous map's replacement in the same slot. The map index
-    # must invalidate the shadow before the new list is transformed.
     central = consumers["central"]
     assert "#define MAP_INDEX                0x8018F4A1u" in central
     assert "s_pickup_map_index" in central
@@ -141,21 +130,22 @@ def assert_shared_mapper_contract(repo: Path) -> None:
     assert "map_index != s_pickup_map_index" in central
     assert "reset_pickup_shadow();" in central
 
-    # STARTING ITEMS may only cover the audited literal grant block in Bank R.
-    # Two other whole-game callers at 0x80215BEC and 0x80216D90 are deliberately
-    # unclassified and must remain vanilla until their semantics are proven.
+    # STARTING ITEMS covers only two audited setup sources: the tutorial helper
+    # literal 1..6 grant and the map-loader's literal starting block. The sole
+    # remaining Bank-R caller stays explicit and fail-closed.
+    assert "#define RA_TUTORIAL_SETUP_R      0x80215BF4u" in central
     assert "#define RA_STARTING_R_LO         0x80217070u" in central
     assert "#define RA_STARTING_R_HI         0x8021724Cu" in central
-    assert "#define RA_BANK_R_UNKNOWN_A      0x80215BF4u" in central
-    assert "#define RA_BANK_R_UNKNOWN_B      0x80216D98u" in central
+    assert "#define RA_BANK_R_UNKNOWN        0x80216D98u" in central
+    assert "caller_ra == RA_TUTORIAL_SETUP_R" in central
     assert "caller_is_starting_grant" in central
     assert "caller_is_unclassified_bank_r" in central
+    assert "RA_BANK_R_UNKNOWN_A" not in central
+    assert "RA_BANK_R_UNKNOWN_B" not in central
     assert "RA_SETUP_R_LO" not in central
     assert "RA_SETUP_R_HI" not in central
     assert "unclassified Bank-R grant left vanilla" in central
 
-    # The post-battle route must clamp in wide arithmetic before narrowing to
-    # u8. The old '& 0xFF' path could wrap a large award below 99.
     post_battle = consumers["post_battle"]
     assert "static unsigned char saturated_count" in post_battle
     assert "total > COUNT_MAX ? COUNT_MAX : total" in post_battle
@@ -164,10 +154,6 @@ def assert_shared_mapper_contract(repo: Path) -> None:
     assert "(count + amount) & 0xFFu" not in post_battle
     assert "amount & 0xFFu" not in post_battle
 
-    # Native func_80172820 runs the complete +0x02 rebuild after changing a
-    # count. Keep one implementation for both item lists; the post-battle patch
-    # must call that shared forced repair instead of carrying a second partial
-    # roster scanner that can drift from use_repair.c.
     assert "void universal_item_randomizer_force_use_repair(void)" in use_repair
     assert "full_repair_and_snapshot();" in use_repair
     assert "universal_item_randomizer_force_use_repair();" in post_battle
@@ -179,8 +165,6 @@ def assert_shared_mapper_contract(repo: Path) -> None:
     ):
         assert stale_duplicate not in post_battle, f"post-battle duplicated use repair: {stale_duplicate}"
 
-    # Shops have a dedicated Bank-AB source path. The Bank-N replacement must
-    # never use shops=ON as permission to randomize an unclassified caller.
     assert 'recomp_get_config_u32("shops")' not in central
     direct = central.split("static int should_randomize_direct_grant", 1)[1]
     direct = direct.split("RECOMP_PATCH", 1)[0]
