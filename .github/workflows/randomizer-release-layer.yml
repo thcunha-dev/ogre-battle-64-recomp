@@ -1,0 +1,48 @@
+name: Universal Randomizer Release Layer
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - randomizer/universal-grant
+    paths:
+      - 'tools/release-build.sh'
+      - 'patches/n64modernruntime-ob64.patch'
+      - 'patches/n64modernruntime-randomizer.patch'
+      - '.github/workflows/randomizer-release-layer.yml'
+
+jobs:
+  layer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell syntax
+        run: bash -n tools/release-build.sh
+
+      - name: Validate canonical audit state then randomizer layer
+        run: |
+          set -eux
+          commit=589bbf018a3e6d3646ddf7de1e7919f1b7e99bb1
+          git clone --filter=blob:none https://github.com/N64Recomp/N64ModernRuntime.git /tmp/N64ModernRuntime
+          git -C /tmp/N64ModernRuntime checkout "$commit"
+          git -C /tmp/N64ModernRuntime apply "$GITHUB_WORKSPACE/patches/n64modernruntime-ob64.patch"
+
+          # This is the state patchcheck audits in release-build.sh.
+          git -C /tmp/N64ModernRuntime apply --check \
+            "$GITHUB_WORKSPACE/patches/n64modernruntime-randomizer.patch"
+
+          # This is the state the actual app build receives.
+          git -C /tmp/N64ModernRuntime apply \
+            "$GITHUB_WORKSPACE/patches/n64modernruntime-randomizer.patch"
+          git -C /tmp/N64ModernRuntime apply --reverse --check \
+            "$GITHUB_WORKSPACE/patches/n64modernruntime-randomizer.patch"
+
+          # Prove a developer-prepared tree can be returned to canonical audit
+          # state and composed again, which is the release-build.sh path.
+          git -C /tmp/N64ModernRuntime apply --reverse \
+            "$GITHUB_WORKSPACE/patches/n64modernruntime-randomizer.patch"
+          git -C /tmp/N64ModernRuntime apply --check \
+            "$GITHUB_WORKSPACE/patches/n64modernruntime-randomizer.patch"
+          git -C /tmp/N64ModernRuntime apply \
+            "$GITHUB_WORKSPACE/patches/n64modernruntime-randomizer.patch"
