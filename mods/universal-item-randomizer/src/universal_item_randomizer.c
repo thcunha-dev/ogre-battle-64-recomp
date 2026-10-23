@@ -44,16 +44,21 @@ RECOMP_IMPORT("*", void recomp_log(const char* message));
 #define RA_GROUND_PICKUP         0x801BB93Cu
 #define RA_BATTLE_REWARD         0x801E53E4u
 
-// Bank-R is the map/tutorial setup module. Its direct grant calls include the
-// literal starter/tutorial batches and helper grants that establish the map's
-// initial consumable state. Keep these vanilla unless STARTING ITEMS is enabled.
-#define RA_SETUP_R_LO            0x80215000u
-#define RA_SETUP_R_HI            0x80217300u
+// The only Bank-R calls proven to be the literal starting-consumable batch live
+// in the straight-line block 0x80217068..0x80217244. Use return-address bounds,
+// not the whole Bank-R module: two other Bank-R grant calls exist at 0x80215BEC
+// and 0x80216D90 and remain deliberately unclassified/fail-closed until their
+// game semantics are proven.
+#define RA_STARTING_R_LO         0x80217070u
+#define RA_STARTING_R_HI         0x8021724Cu
+#define RA_BANK_R_UNKNOWN_A      0x80215BF4u
+#define RA_BANK_R_UNKNOWN_B      0x80216D98u
 
 static unsigned char s_ready;
 static unsigned char s_starting_items_enabled;
 static unsigned char s_log_enabled;
 static unsigned char s_setup_log_count;
+static unsigned char s_unknown_r_log_count;
 
 // Source shadows: a value written by this mod is not transformed again on the
 // next frame. If the game reloads/changes a source slot, the new raw value differs
@@ -260,13 +265,17 @@ static int caller_source_already_mapped(unsigned int caller_ra) {
            caller_ra == RA_BATTLE_REWARD;
 }
 
-static int caller_is_setup_grant(unsigned int caller_ra) {
-    return caller_ra >= RA_SETUP_R_LO && caller_ra < RA_SETUP_R_HI;
+static int caller_is_starting_grant(unsigned int caller_ra) {
+    return caller_ra >= RA_STARTING_R_LO && caller_ra < RA_STARTING_R_HI;
+}
+
+static int caller_is_unclassified_bank_r(unsigned int caller_ra) {
+    return caller_ra == RA_BANK_R_UNKNOWN_A || caller_ra == RA_BANK_R_UNKNOWN_B;
 }
 
 static int should_randomize_direct_grant(unsigned int caller_ra) {
     if (caller_source_already_mapped(caller_ra)) return 0;
-    if (caller_is_setup_grant(caller_ra)) return s_starting_items_enabled != 0u;
+    if (caller_is_starting_grant(caller_ra)) return s_starting_items_enabled != 0u;
     // Unknown direct callers stay vanilla. Shops have their own Bank-AB source
     // rewrite, so no config switch is allowed to turn an unclassified grant
     // into a randomized one accidentally.
@@ -283,13 +292,16 @@ void func_ovlN_801DC740(unsigned int item_word, unsigned int ignored) {
     (void)ignored;
     randomizer_init();
 
-    // STARTING ITEMS is the only path that currently depends on caller-range
-    // classification. Emit a bounded diagnostic so real-game QA can prove that
-    // the patched MIPS ABI exposes Bank-R return addresses as expected without
-    // flooding the log during tutorial/setup batches.
-    if (s_log_enabled && caller_is_setup_grant(caller_ra) && s_setup_log_count < 4u) {
-        recomp_log("universal-item-randomizer: Bank-R starting/setup grant recognized");
+    // STARTING ITEMS now recognizes only the proven literal grant block. The
+    // other two Bank-R callers are explicitly observable but stay vanilla until
+    // their role is classified from disassembly/runtime QA.
+    if (s_log_enabled && caller_is_starting_grant(caller_ra) && s_setup_log_count < 4u) {
+        recomp_log("universal-item-randomizer: Bank-R starting grant recognized");
         s_setup_log_count++;
+    }
+    if (s_log_enabled && caller_is_unclassified_bank_r(caller_ra) && s_unknown_r_log_count < 4u) {
+        recomp_log("universal-item-randomizer: unclassified Bank-R grant left vanilla");
+        s_unknown_r_log_count++;
     }
 
     delivered = should_randomize_direct_grant(caller_ra) ? uir_map_item_word(raw) : raw;
