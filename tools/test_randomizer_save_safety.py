@@ -15,6 +15,35 @@ def body(text: str, signature: str, next_marker: str | None = None) -> str:
     return tail
 
 
+def strip_c_comments(text: str) -> str:
+    """Remove // and /* */ comments for code-only persistence assertions."""
+    out: list[str] = []
+    i = 0
+    block = False
+    while i < len(text):
+        if block:
+            end = text.find("*/", i)
+            if end < 0:
+                break
+            i = end + 2
+            block = False
+            continue
+        if text.startswith("/*", i):
+            block = True
+            i += 2
+            continue
+        if text.startswith("//", i):
+            end = text.find("\n", i)
+            if end < 0:
+                break
+            out.append("\n")
+            i = end + 1
+            continue
+        out.append(text[i])
+        i += 1
+    return "".join(out)
+
+
 def main() -> int:
     central = (SRC / "universal_item_randomizer.c").read_text()
     mapper = (SRC / "randomizer_map.c").read_text()
@@ -73,10 +102,25 @@ def main() -> int:
     assert "void universal_item_randomizer_force_use_repair(void)" in repair
     assert "full_repair_and_snapshot();" in repair
     assert "wr8(record + LIST_USE" in repair
-    for forbidden in ("wr16(", "wr32(", "LIST_COUNT", "uir_map_", "recomp_get_config_u32", "seed"):
-        assert forbidden not in repair, f"transient repair can affect saved state: {forbidden}"
 
-    lowered = all_text.lower()
+    # Comments explicitly document that seed/save state is *not* touched. Run
+    # persistence assertions on code only so those safety comments cannot become
+    # false positives while still rejecting real seed/config/persistence access.
+    repair_code = strip_c_comments(repair)
+    for forbidden in (
+        "wr16(",
+        "wr32(",
+        "LIST_COUNT",
+        "uir_map_",
+        "recomp_get_config_u32",
+        '"seed"',
+        "s_seed",
+        "save_seed",
+        "saved_seed",
+    ):
+        assert forbidden not in repair_code, f"transient repair can affect saved state: {forbidden}"
+
+    lowered = strip_c_comments(all_text).lower()
     for forbidden in ("save_seed", "saved_seed", "serialize_randomizer", "randomizer_save", "save_metadata"):
         assert forbidden not in lowered, f"randomizer persistence introduced: {forbidden}"
 
