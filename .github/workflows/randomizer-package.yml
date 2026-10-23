@@ -96,11 +96,13 @@ jobs:
           grep -qx 'mod_binary.bin' /tmp/nrm-files.txt
           grep -qx 'mod_syms.bin' /tmp/nrm-files.txt
           unzip -p "$nrm" mod.json > /tmp/mod.json
+          unzip -p "$nrm" mod_binary.bin > /tmp/mod_binary.bin
+          unzip -p "$nrm" mod_syms.bin > /tmp/mod_syms.bin
           grep -q 'ogre_universal_item_randomizer' /tmp/mod.json
           grep -q '0.3.1' /tmp/mod.json
-          test -s <(unzip -p "$nrm" mod_binary.bin)
-          test -s <(unzip -p "$nrm" mod_syms.bin)
-          ls -lh "$nrm"
+          test -s /tmp/mod_binary.bin
+          test -s /tmp/mod_syms.bin
+          ls -lh "$nrm" /tmp/mod_binary.bin /tmp/mod_syms.bin
 
       - uses: actions/upload-artifact@v4
         with:
