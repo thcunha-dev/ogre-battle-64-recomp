@@ -102,9 +102,15 @@ def assert_shared_mapper_contract(repo: Path) -> None:
     assert "uir_map_equipment_id" in consumers["post_battle"]
 
     # Key items are identity-mapped unless the explicit key_items option is on.
+    # Only the audited quest/key classes 3..4 may enter the key pool. Unknown
+    # classes must remain identity even when KEY ITEMS is enabled.
     assert 'recomp_get_config_u32("key_items")' in mapper
+    assert "#define CONSUMABLE_KEY_MIN       3u" in mapper
+    assert "#define CONSUMABLE_KEY_MAX       4u" in mapper
+    assert "cls >= CONSUMABLE_KEY_MIN && cls <= CONSUMABLE_KEY_MAX" in mapper
     assert "if (s_key_items_enabled)" in mapper
     assert "build_cycle_map(s_consumable_map, key_pool" in mapper
+    assert "Unknown classes are intentionally omitted" in mapper
 
     # Shops have a dedicated Bank-AB source path. The Bank-N replacement must
     # never use shops=ON as permission to randomize an unclassified caller.
