@@ -1,9 +1,8 @@
 // Universal Item Randomizer - Ogre Battle 64: Recomp
 //
-// Phase 1 of the replacement randomizer: build a deterministic, one-to-one
-// mapping from the mod's external SEED. No mapping state is written to the
-// game's save. The frame hook only initializes the mapping; acquisition hooks
-// are added after bank-function replacements are visible to code mods.
+// Deterministic, save-safe replacement randomizer. The mapping is rebuilt from
+// external mod config every launch; no seed, flags or randomizer metadata are
+// written into Ogre Battle 64's native save.
 
 #include "modding.h"
 
@@ -23,24 +22,59 @@ RECOMP_IMPORT("*", void recomp_log(const char* message));
 #define CONSUMABLE_SAFE_MAX      2u
 #define CONSUMABLE_KEY_MIN       3u
 
+#define EQUIP_LIST               0x80196B20u
+#define EQUIP_SLOTS              278u
+#define CONSUMABLE_LIST          0x80193AE0u
+#define CONSUMABLE_SLOTS         40u
+#define LIST_STRIDE              4u
+#define LIST_USED                2u
+#define LIST_COUNT               3u
+#define COUNT_MAX                99u
+
 #define RDRAM_LO                 0x80000000u
 #define RDRAM_HI                 0x80800000u
 
 #define LIST_CONSUMABLE          0u
 #define LIST_EQUIPMENT           1u
 
+// Return addresses (jal address + 8) for the proven Bank-N grant callers.
+#define RA_MAP_OBJECT_A          0x801ADEB0u
+#define RA_MAP_OBJECT_B          0x801AE190u
+#define RA_GROUND_PICKUP         0x801BB93Cu
+#define RA_BATTLE_REWARD         0x801E53E4u
+
+// Bank-R is the map/tutorial setup module. Its direct grant calls include the
+// literal starter/tutorial batches and helper grants that establish the map's
+// initial consumable state. Keep these vanilla unless STARTING ITEMS is enabled.
+#define RA_SETUP_R_LO            0x80215000u
+#define RA_SETUP_R_HI            0x80217300u
+
 static unsigned short s_equip_map[EQUIP_ID_MAX + 1u];
 static unsigned short s_consumable_map[CONSUMABLE_ID_MAX + 1u];
 static unsigned int s_seed;
 static unsigned char s_ready;
 static unsigned char s_key_items_enabled;
+static unsigned char s_starting_items_enabled;
+static unsigned char s_shops_enabled;
 
 static unsigned int rd32(unsigned int addr) {
     return *(volatile unsigned int*)addr;
 }
 
+static unsigned short rd16(unsigned int addr) {
+    return *(volatile unsigned short*)addr;
+}
+
 static unsigned char rd8(unsigned int addr) {
     return *(volatile unsigned char*)addr;
+}
+
+static void wr16(unsigned int addr, unsigned short value) {
+    *(volatile unsigned short*)addr = value;
+}
+
+static void wr8(unsigned int addr, unsigned char value) {
+    *(volatile unsigned char*)addr = value;
 }
 
 static int readable_string_pointer(unsigned int ptr) {
@@ -112,7 +146,6 @@ static void build_cycle_map(unsigned short* map,
             state = 0xA341316Cu;
         }
         for (i = count - 1u; i > 0u; i--) {
-            // Sattolo: j is [0, i-1], deliberately excluding i.
             unsigned int j = rng_next(&state) % i;
             unsigned short tmp = targets[i];
             targets[i] = targets[j];
@@ -167,8 +200,6 @@ static void build_consumable_map(void) {
 
     build_cycle_map(s_consumable_map, safe_pool, safe_count, 0x434F4E53u); // "CONS"
     if (s_key_items_enabled) {
-        // Even when explicitly enabled, quest/key items remain inside their own
-        // pool; they can never turn into a normal heal/use item or equipment.
         build_cycle_map(s_consumable_map, key_pool, key_count, 0x4B455953u); // "KEYS"
     }
 }
@@ -180,12 +211,11 @@ static void randomizer_init(void) {
 
     s_seed = recomp_get_config_u32("seed");
     if (s_seed == 0u) {
-        // Zero is deliberately deterministic too. Never derive a seed from a
-        // frame counter: a restart with the same config must rebuild the same
-        // mapping without storing anything in the native save.
         s_seed = 1u;
     }
     s_key_items_enabled = recomp_get_config_u32("key_items") != 0u;
+    s_starting_items_enabled = recomp_get_config_u32("starting_items") != 0u;
+    s_shops_enabled = recomp_get_config_u32("shops") != 0u;
 
     build_equipment_map();
     build_consumable_map();
@@ -209,27 +239,100 @@ static unsigned short mapped_id(unsigned int list, unsigned int id) {
     return (unsigned short)id;
 }
 
-// Preserve bit 15 exactly. This is the word the game's grant routine consumes.
 static unsigned short mapped_item_word(unsigned short raw) {
     unsigned int list = (raw & 0x8000u) ? LIST_EQUIPMENT : LIST_CONSUMABLE;
     unsigned int id = raw & 0x7FFFu;
     return (unsigned short)((raw & 0x8000u) | mapped_id(list, id));
 }
 
-// Safe bootstrap hook: initialize only. It intentionally does not touch the
-// inventory or randomize acquisitions. This gives the first build a way to
-// validate config/table access before the Bank-N grant replacement is enabled.
+// The original func_ovlN_801DC740 behavior for either inventory list: find the
+// id and increment count (clamped at 99), otherwise claim the first empty slot
+// and set count=1. The game's grant routine does not rewrite +0x02 (used count),
+// so neither does this replacement.
+static void grant_vanilla(unsigned int base, unsigned int slots, unsigned int id) {
+    unsigned int empty = slots;
+    unsigned int i;
+
+    if (id == 0u) {
+        return;
+    }
+
+    for (i = 0u; i < slots; i++) {
+        unsigned int record = base + i * LIST_STRIDE;
+        unsigned int slot_id = rd16(record);
+
+        if (slot_id == id) {
+            unsigned int count = rd8(record + LIST_COUNT);
+            if (count < COUNT_MAX) {
+                wr8(record + LIST_COUNT, (unsigned char)(count + 1u));
+            }
+            return;
+        }
+        if (slot_id == 0u && empty == slots) {
+            empty = i;
+        }
+    }
+
+    if (empty != slots) {
+        unsigned int record = base + empty * LIST_STRIDE;
+        wr16(record, (unsigned short)id);
+        wr8(record + LIST_COUNT, 1u);
+    }
+}
+
+static int caller_is_proven_gameplay_grant(unsigned int caller_ra) {
+    return caller_ra == RA_MAP_OBJECT_A ||
+           caller_ra == RA_MAP_OBJECT_B ||
+           caller_ra == RA_GROUND_PICKUP ||
+           caller_ra == RA_BATTLE_REWARD;
+}
+
+static int caller_is_setup_grant(unsigned int caller_ra) {
+    return caller_ra >= RA_SETUP_R_LO && caller_ra < RA_SETUP_R_HI;
+}
+
+static int should_randomize_grant(unsigned int caller_ra) {
+    if (caller_is_proven_gameplay_grant(caller_ra)) {
+        return 1;
+    }
+    if (caller_is_setup_grant(caller_ra)) {
+        return s_starting_items_enabled != 0u;
+    }
+
+    // Unknown direct callers include paths still being classified (shops and
+    // scripted gifts). Keep them vanilla by default; SHOPS is the explicit
+    // opt-in for broad direct-grant randomization during this validation phase.
+    return s_shops_enabled != 0u;
+}
+
+// Bank-N universal grant replacement. __builtin_return_address(0) is captured
+// before helpers are called, so on MIPS it identifies the game's jal caller.
+// Save loading reconstructs the inventory from packed save data and does not
+// call this grant routine, so existing inventory is never re-randomized.
+RECOMP_PATCH
+void func_ovlN_801DC740(unsigned int item_word, unsigned int ignored) {
+    unsigned int caller_ra = (unsigned int)__builtin_return_address(0);
+    unsigned short raw = (unsigned short)item_word;
+    unsigned short delivered;
+    unsigned int id;
+
+    (void)ignored;
+    randomizer_init();
+
+    delivered = should_randomize_grant(caller_ra) ? mapped_item_word(raw) : raw;
+    id = delivered & 0x7FFFu;
+
+    if ((delivered & 0x8000u) != 0u) {
+        grant_vanilla(EQUIP_LIST, EQUIP_SLOTS, id);
+    }
+    else {
+        grant_vanilla(CONSUMABLE_LIST, CONSUMABLE_SLOTS, id);
+    }
+}
+
+// Bootstrap the deterministic maps early so the first acquisition does not pay
+// all table-validation/shuffle work in the middle of a reward or pickup path.
 RECOMP_HOOK("func_80072944")
 void universal_item_randomizer_tick(void) {
     randomizer_init();
-}
-
-// Keep these helpers alive in the mod ELF before the grant replacement starts
-// using them; volatile sinks prevent -O2 from discarding the mapping lookup.
-static volatile unsigned short s_linker_keep;
-RECOMP_HOOK_RETURN("func_80072944")
-void universal_item_randomizer_keep(void) {
-    if (s_ready) {
-        s_linker_keep = mapped_item_word(0u);
-    }
 }
