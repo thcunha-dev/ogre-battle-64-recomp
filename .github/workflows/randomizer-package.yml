@@ -32,15 +32,20 @@ jobs:
           set -eux
           mod=mods/universal-item-randomizer
           mkdir -p "$mod/build" build/mods mods/reference
-          mips-linux-gnu-gcc \
-            -mips2 -march=mips2 -mno-check-zero-division -mabi=32 -O2 -G0 \
-            -mno-abicalls -mno-odd-spreg -fno-builtin -ffreestanding -nostdinc \
-            -fno-pic -fno-pie -Wall -Wextra -Wno-unused-parameter \
-            -I "$mod/include" -c "$mod/src/universal_item_randomizer.c" \
-            -o "$mod/build/universal_item_randomizer.o"
+          objs=""
+          for src in "$mod"/src/*.c; do
+            base=$(basename "${src%.c}")
+            obj="$mod/build/$base.o"
+            mips-linux-gnu-gcc \
+              -mips2 -march=mips2 -mno-check-zero-division -mabi=32 -O2 -G0 \
+              -mno-abicalls -mno-odd-spreg -fno-builtin -ffreestanding -nostdinc \
+              -fno-pic -fno-pie -Wall -Wextra -Wno-unused-parameter \
+              -I "$mod/include" -c "$src" -o "$obj"
+            objs="$objs $obj"
+          done
           mips-linux-gnu-ld -nostdlib -T "$mod/mod.ld" \
             --unresolved-symbols=ignore-all --emit-relocs -e 0 \
-            -o "$mod/build/mod.elf" "$mod/build/universal_item_randomizer.o"
+            -o "$mod/build/mod.elf" $objs
 
       - name: Write minimal reference symbols
         run: |
