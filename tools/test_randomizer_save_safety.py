@@ -58,13 +58,20 @@ def main() -> int:
     for forbidden in ("EQUIP_LIST", "CONSUMABLE_LIST", "grant_vanilla("):
         assert forbidden not in tick, f"frame hook mutates owned inventory: {forbidden}"
 
-    # The central grant is fail-closed. Starting grants are the only direct
-    # caller class deliberately mapped here; known UI/source paths arrive already
-    # mapped, and all other callers remain vanilla.
+    # The central grant is fail-closed. Only the proven literal Bank-R starting
+    # block is eligible for direct mapping. The two other Bank-R callers are
+    # explicitly classified as unknown and stay vanilla.
     direct = body(central, "static int should_randomize_direct_grant", "RECOMP_PATCH")
-    assert "caller_is_setup_grant" in direct
+    assert "caller_is_starting_grant" in direct
     assert "s_starting_items_enabled" in direct
     assert direct.rstrip().endswith("return 0;\n}"), "unknown direct grant is not fail-closed"
+    assert "#define RA_STARTING_R_LO         0x80217070u" in central
+    assert "#define RA_STARTING_R_HI         0x8021724Cu" in central
+    assert "#define RA_BANK_R_UNKNOWN_A      0x80215BF4u" in central
+    assert "#define RA_BANK_R_UNKNOWN_B      0x80216D98u" in central
+    assert "caller_is_unclassified_bank_r" in central
+    assert "unclassified Bank-R grant left vanilla" in central
+    assert "RA_SETUP_R_LO" not in central and "RA_SETUP_R_HI" not in central
     assert 'recomp_get_config_u32("shops")' not in central
 
     # Shop mutation is constrained to the transient Bank-AB source buffer and is
@@ -78,6 +85,25 @@ def main() -> int:
     # it must use the shared mapper rather than re-randomizing an existing list.
     assert "RECOMP_PATCH\nvoid func_80172820" in post
     assert "uir_map_equipment_id(original_id)" in post
+    assert "universal_item_randomizer_force_use_repair();" in post
+
+    # The repair path exists only because +0x02 is transient/not serialized. It
+    # may rebuild LIST_USE, but it must never alter an id, owned count, seed,
+    # mapping, or configuration. Keeping it byte-only is critical for ON/OFF
+    # save compatibility.
+    assert "#define LIST_USE                 2u" in repair
+    assert "void universal_item_randomizer_force_use_repair(void)" in repair
+    assert "full_repair_and_snapshot();" in repair
+    assert "wr8(record + LIST_USE" in repair
+    for forbidden in (
+        "wr16(",
+        "wr32(",
+        "LIST_COUNT",
+        "uir_map_",
+        "recomp_get_config_u32",
+        "seed",
+    ):
+        assert forbidden not in repair, f"transient repair can affect saved state: {forbidden}"
 
     # No native-save-looking configuration/state identifiers should appear in
     # the mod. This catches accidental future persistence plumbing by name.
