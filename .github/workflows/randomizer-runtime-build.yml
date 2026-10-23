@@ -1,0 +1,44 @@
+name: Universal Randomizer Runtime Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - randomizer/universal-grant
+    paths:
+      - 'patches/n64modernruntime-ob64.patch'
+      - 'patches/n64modernruntime-randomizer.patch'
+      - '.github/workflows/randomizer-runtime-build.yml'
+
+jobs:
+  librecomp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cmake ninja-build build-essential
+
+      - name: Clone pinned runtime and apply project layers
+        run: |
+          set -eux
+          RUNTIME_COMMIT=589bbf018a3e6d3646ddf7de1e7919f1b7e99bb1
+          git clone --recurse-submodules https://github.com/N64Recomp/N64ModernRuntime.git /tmp/N64ModernRuntime
+          git -C /tmp/N64ModernRuntime checkout "$RUNTIME_COMMIT"
+          git -C /tmp/N64ModernRuntime submodule update --init --recursive
+          git -C /tmp/N64ModernRuntime apply "$GITHUB_WORKSPACE/patches/n64modernruntime-ob64.patch"
+          git -C /tmp/N64ModernRuntime apply "$GITHUB_WORKSPACE/patches/n64modernruntime-randomizer.patch"
+          git -C /tmp/N64ModernRuntime diff --check -- \
+            librecomp/include/librecomp/overlays.hpp \
+            librecomp/src/overlays.cpp
+
+      - name: Configure runtime
+        run: |
+          cmake -S /tmp/N64ModernRuntime -B /tmp/N64ModernRuntime/build \
+            -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build patched librecomp
+        run: |
+          cmake --build /tmp/N64ModernRuntime/build --target librecomp -j2
