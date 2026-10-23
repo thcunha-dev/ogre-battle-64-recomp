@@ -25,11 +25,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install toolchains
+      - name: Install pinned toolchains
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq gcc-mips-linux-gnu cmake ninja-build
-          git clone --depth=1 --recurse-submodules https://github.com/N64Recomp/N64Recomp.git /tmp/N64Recomp
+          N64RECOMP_COMMIT=81213c1831fab2521a6a5459c67b63437d67e253
+          git clone https://github.com/N64Recomp/N64Recomp.git /tmp/N64Recomp
+          git -C /tmp/N64Recomp checkout "$N64RECOMP_COMMIT"
+          git -C /tmp/N64Recomp submodule update --init --recursive
+          test "$(git -C /tmp/N64Recomp rev-parse HEAD)" = "$N64RECOMP_COMMIT"
           cmake -S /tmp/N64Recomp -B /tmp/N64Recomp/build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build /tmp/N64Recomp/build --target RecompModTool
 
