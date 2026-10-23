@@ -4,7 +4,7 @@
 // list. It is rebuilt from the roster by func_8016B774. The universal grant
 // replacement intentionally writes only the fields the original grant writes
 // (id/count), so a newly occupied record can inherit stale +0x02 data from an
-// old empty slot. This hook repairs only that transient byte; it never changes
+// old empty slot. This repair changes only that transient byte; it never changes
 // item ids, counts, seed state or the native save representation.
 
 #include "modding.h"
@@ -102,7 +102,6 @@ static void build_refs(void) {
     for (i = 0u; i < EQUIP_SLOTS; i++) s_equip_refs[i] = 0u;
     for (i = 0u; i < CONSUMABLE_SLOTS; i++) s_consumable_refs[i] = 0u;
 
-    // 40-slot list: ten byte-sized ids in each active unit/battalion record.
     for (i = 0u; i < ROSTER_UNIT_COUNT; i++) {
         unsigned int base = ROSTER_UNITS + i * ROSTER_UNIT_STRIDE;
         unsigned int j;
@@ -112,8 +111,6 @@ static void build_refs(void) {
         }
     }
 
-    // Equipment list: four stored ids plus four class-derived ids per active
-    // character. This mirrors the proven func_8016B774 reconstruction.
     for (i = 0u; i < ROSTER_CHAR_COUNT; i++) {
         unsigned int base = ROSTER_CHARS + i * ROSTER_CHAR_STRIDE;
         unsigned int cls;
@@ -165,12 +162,11 @@ static int ids_changed(void) {
     return 0;
 }
 
-// A second hook on the frame function is deliberate. The randomizer's main
-// hook prepares future grant sources; this one only repairs the transient use
-// column after a grant/load has changed an id. No acquisition is inferred from
-// this scan and no id/count is ever rewritten here.
-RECOMP_HOOK("func_80072944")
-void universal_item_randomizer_use_repair_tick(void) {
+// Called by the combined secondary frame hook in shop_stock.c. This function
+// is intentionally a normal mod-local call rather than a third RECOMP_HOOK
+// record: RecompModTool currently becomes unstable with three hook records for
+// the same guest function. No acquisition is inferred here.
+void universal_item_randomizer_use_repair_tick_impl(void) {
     if (!roster_populated()) {
         s_shadow_ready = 0u;
         return;
