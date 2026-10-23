@@ -48,7 +48,7 @@ Rev-A game run. Do not promote the mod to 1.0 solely because the build is green.
 ## Host verification suite
 
 `python3 tools/test_universal_randomizer_all.py` is the single source of truth for
-all host-side verification. It currently runs **8 tests**:
+all host-side verification. It currently runs **9 tests**:
 
 1. `tools/test_randomizer_save_safety.py`
 2. `tools/test_universal_randomizer_mapping.py`
@@ -58,6 +58,7 @@ all host-side verification. It currently runs **8 tests**:
 6. `tools/test_randomizer_persistence_model.py`
 7. `tools/test_randomizer_source_shadow_model.py`
 8. `tools/test_randomizer_shop_model.py`
+9. `tools/test_randomizer_inventory_capacity_model.py`
 
 The persistence model executes **5,000 deterministic ON -> OFF -> ON sequences**
 with seed changes, mixed equipment/consumable acquisition, native-save round
@@ -75,6 +76,11 @@ keeps equipment/consumable list class through bit15, preserves the zero
 terminator, fails closed on invalid/unterminated sources, and maps a freshly
 rebuilt vanilla stock deterministically on the next shop opening.
 
+The inventory-capacity model checks both acquisition paths at their fixed-slot
+boundaries: a full list cannot overwrite an occupied record, existing stacks may
+still grow and saturate at 99, new stacks claim the first empty slot, and zero
+id/zero amount operations remain no-ops.
+
 The save-safety contract scans every current and future `.c`/`.h` in the mod so a
 new source file cannot silently add seed serialization, save hooks or custom
 randomizer metadata outside the original audited files.
@@ -82,7 +88,7 @@ randomizer metadata outside the original audited files.
 ## Integrated build proof
 
 Both the fast mapping workflow and the integrated runtime workflow invoke the
-same unified host suite. The integrated job only continues after all eight tests
+same unified host suite. The integrated job only continues after all nine tests
 pass, then:
 
 - applies the pinned OB64/N64Recomp/runtime layers;
@@ -92,7 +98,8 @@ pass, then:
 - packages the `.nrm` against Bank-N-augmented Rev-A references;
 - emits a reproducible `BUILD-MANIFEST.txt` with source commit, pinned
   runtime/Recomp commits, Rev-A reference SHA-1, NRM SHA-256/size and the
-  explicit native-save policy plus persistence/source-shadow/shop model markers.
+  explicit native-save policy plus persistence/source-shadow/shop/capacity model
+  markers.
 
 A separate QA-payload workflow also packages the `.nrm`, build manifest,
 `TESTING.md`, `QA-TELEMETRY.md` and this status file together so manual campaign
