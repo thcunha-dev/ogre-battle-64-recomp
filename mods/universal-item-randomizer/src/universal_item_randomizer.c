@@ -66,6 +66,11 @@ static unsigned char s_starting_items_enabled;
 static unsigned char s_log_enabled;
 static unsigned char s_setup_log_count;
 static unsigned char s_loadout_log_count;
+static unsigned char s_drop_log_count;
+static unsigned char s_pickup_log_count;
+static unsigned char s_reward_log_count;
+static unsigned char s_starting_map_log_count;
+static unsigned char s_post_battle_log_count;
 
 // Source shadows: a value written by this mod is not transformed again on the
 // next frame. If the game reloads/changes a source slot, the new raw value differs
@@ -105,6 +110,20 @@ static void randomizer_init(void) {
     if (s_log_enabled) {
         recomp_log("universal-item-randomizer: deterministic mapping ready");
     }
+}
+
+static void log_bounded(const char* message, unsigned char* counter) {
+    if (!s_log_enabled || *counter >= 4u) return;
+    recomp_log(message);
+    (*counter)++;
+}
+
+// Shared by the secondary base-section acquisition patch. This function logs
+// context only; it does not inspect or mutate native inventory or save state.
+void universal_item_randomizer_log_post_battle(void) {
+    randomizer_init();
+    log_bounded("universal-item-randomizer: post-battle equipment add mapped",
+                &s_post_battle_log_count);
 }
 
 static int drop_table_present(void) {
@@ -155,6 +174,8 @@ static void rewrite_drop_table(void) {
             if (replacement != raw) {
                 wr16(addr, replacement);
                 raw = replacement;
+                log_bounded("universal-item-randomizer: map/drop source mapped",
+                            &s_drop_log_count);
             }
             s_drop_written[index] = raw;
             s_drop_valid[index] = 1u;
@@ -202,6 +223,8 @@ static void rewrite_pickup_list(void) {
             if (replacement != raw) {
                 wr16(addr, replacement);
                 raw = replacement;
+                log_bounded("universal-item-randomizer: ground pickup source mapped",
+                            &s_pickup_log_count);
             }
             s_pickup_written[i] = raw;
             s_pickup_valid[i] = 1u;
@@ -226,6 +249,8 @@ static void rewrite_reward_queue(void) {
         if (replacement != raw) {
             wr16(addr, replacement);
             raw = replacement;
+            log_bounded("universal-item-randomizer: battle reward source mapped",
+                        &s_reward_log_count);
         }
         s_reward_written[i] = raw;
         s_reward_valid[i] = 1u;
@@ -288,6 +313,7 @@ void func_ovlN_801DC740(unsigned int item_word, unsigned int ignored) {
     unsigned short raw = (unsigned short)item_word;
     unsigned short delivered;
     unsigned int id;
+    int randomize_direct;
 
     (void)ignored;
     randomizer_init();
@@ -301,7 +327,12 @@ void func_ovlN_801DC740(unsigned int item_word, unsigned int ignored) {
         s_loadout_log_count++;
     }
 
-    delivered = should_randomize_direct_grant(caller_ra) ? uir_map_item_word(raw) : raw;
+    randomize_direct = should_randomize_direct_grant(caller_ra);
+    delivered = randomize_direct ? uir_map_item_word(raw) : raw;
+    if (randomize_direct && delivered != raw) {
+        log_bounded("universal-item-randomizer: starting/setup direct grant mapped",
+                    &s_starting_map_log_count);
+    }
     id = delivered & 0x7FFFu;
 
     if ((delivered & 0x8000u) != 0u) {
