@@ -14,6 +14,10 @@ on:
       - 'tools/ensure_randomizer_mod_syms.py'
       - '.github/workflows/randomizer-windows-test.yml'
 
+concurrency:
+  group: universal-randomizer-windows-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   mod:
     name: Build randomizer NRM
@@ -90,6 +94,11 @@ jobs:
   windows:
     name: Build Windows test bundle
     needs: mod
+    # Push builds use a GitHub-hosted runner only when the generated-code data
+    # repository is configured. A self-hosted Windows fallback is intentionally
+    # reserved for workflow_dispatch, otherwise every source commit can sit in
+    # the queue forever on forks that have no self-hosted runner registered.
+    if: ${{ vars.OGRE_DATA_REPO != '' || github.event_name == 'workflow_dispatch' }}
     runs-on: ${{ vars.OGRE_DATA_REPO != '' && 'windows-2022' || fromJSON('["self-hosted","Windows","X64"]') }}
     steps:
       - uses: actions/checkout@v4
