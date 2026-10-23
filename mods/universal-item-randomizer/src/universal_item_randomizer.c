@@ -405,6 +405,7 @@ static int caller_source_already_mapped(unsigned int caller_ra) {
     // These sources are rewritten before the game builds the message and calls
     // the grant, so the incoming item word is already the final replacement.
     return caller_ra == RA_MAP_OBJECT_A ||
+           caller_ra == RA_MAP_OBJECT_B ||
            caller_ra == RA_GROUND_PICKUP ||
            caller_ra == RA_BATTLE_REWARD;
 }
@@ -415,7 +416,7 @@ static int caller_is_setup_grant(unsigned int caller_ra) {
 
 static int should_randomize_direct_grant(unsigned int caller_ra) {
     if (caller_source_already_mapped(caller_ra)) return 0;
-    if (caller_ra == RA_MAP_OBJECT_B) return 1; // pending per-unit id: no table rewrite yet
+    if (caller_ra == RA_MAP_OBJECT_B) return 0; // Table O source is already deterministically mapped
     if (caller_is_setup_grant(caller_ra)) return s_starting_items_enabled != 0u;
     // Unknown direct callers are preserved by default. SHOPS is an explicit
     // validation-mode opt-in until every direct caller has been classified.
