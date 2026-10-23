@@ -70,6 +70,7 @@ def assert_shared_mapper_contract(repo: Path) -> None:
     src = repo / "mods/universal-item-randomizer/src"
     mapper = (src / "randomizer_map.c").read_text()
     header = (repo / "mods/universal-item-randomizer/include/randomizer_map.h").read_text()
+    use_repair = (src / "use_repair.c").read_text()
     consumers = {
         "central": (src / "universal_item_randomizer.c").read_text(),
         "post_battle": (src / "post_battle_add.c").read_text(),
@@ -115,6 +116,17 @@ def assert_shared_mapper_contract(repo: Path) -> None:
     assert "if (s_key_items_enabled)" in mapper
     assert "build_cycle_map(s_consumable_map, key_pool" in mapper
     assert "Unknown classes are intentionally omitted" in mapper
+
+    # The consumable table has ids 0..40 even though the owned inventory has 40
+    # records. Reference counters are indexed by item id, so id 40 requires a
+    # 41-element table and inclusive bounds. A 40-element array silently loses
+    # the use count of the final valid consumable id.
+    assert "#define CONSUMABLE_ID_MAX        40u" in use_repair
+    assert "s_consumable_refs[CONSUMABLE_ID_MAX + 1u]" in use_repair
+    assert "i <= CONSUMABLE_ID_MAX" in use_repair
+    assert "id <= CONSUMABLE_ID_MAX" in use_repair
+    assert "s_consumable_refs[CONSUMABLE_SLOTS]" not in use_repair
+    assert "id < CONSUMABLE_SLOTS" not in use_repair
 
     # The post-battle route must clamp in wide arithmetic before narrowing to
     # u8. The old '& 0xFF' path could wrap a large award below 99.
