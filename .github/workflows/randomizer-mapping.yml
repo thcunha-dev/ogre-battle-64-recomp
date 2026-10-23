@@ -11,6 +11,7 @@ on:
       - 'tools/test_universal_randomizer_mapping.py'
       - 'tools/test_stock_runtime_coverage.py'
       - 'tools/test_randomizer_persistence_model.py'
+      - 'tools/test_randomizer_source_shadow_model.py'
       - '.github/workflows/randomizer-mapping.yml'
 
 jobs:
@@ -22,5 +23,7 @@ jobs:
         run: python3 tools/test_universal_randomizer_mapping.py
       - name: Native-save persistence model
         run: python3 tools/test_randomizer_persistence_model.py
+      - name: Source-shadow generation model
+        run: python3 tools/test_randomizer_source_shadow_model.py
       - name: Stock-runtime acquisition coverage contract
         run: python3 tools/test_stock_runtime_coverage.py
