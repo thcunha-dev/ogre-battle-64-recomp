@@ -1,0 +1,19 @@
+name: Universal Randomizer Mapping
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - randomizer/universal-grant
+    paths:
+      - 'mods/universal-item-randomizer/src/**'
+      - 'tools/test_universal_randomizer_mapping.py'
+      - '.github/workflows/randomizer-mapping.yml'
+
+jobs:
+  mapping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Mapping invariants
+        run: python3 tools/test_universal_randomizer_mapping.py
