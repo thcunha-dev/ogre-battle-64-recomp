@@ -45,10 +45,10 @@ Rev-A game run. Do not promote the mod to 1.0 solely because the build is green.
   acquisition contexts without persisting state or reintroducing inventory-delta
   detection. See `QA-TELEMETRY.md`.
 
-## CI and persistence contracts
+## Host verification suite
 
-The integrated runtime workflow must pass all architecture/QA gates before it
-builds the runtime/mod:
+`python3 tools/test_universal_randomizer_all.py` is the single source of truth for
+all host-side verification. It currently runs **8 tests**:
 
 1. `tools/test_randomizer_save_safety.py`
 2. `tools/test_universal_randomizer_mapping.py`
@@ -56,6 +56,8 @@ builds the runtime/mod:
 4. `tools/test_inventory_writer_taxonomy.py`
 5. `tools/test_randomizer_qa_telemetry.py`
 6. `tools/test_randomizer_persistence_model.py`
+7. `tools/test_randomizer_source_shadow_model.py`
+8. `tools/test_randomizer_shop_model.py`
 
 The persistence model executes **5,000 deterministic ON -> OFF -> ON sequences**
 with seed changes, mixed equipment/consumable acquisition, native-save round
@@ -63,15 +65,34 @@ trips, count saturation and key-item protection. It proves the intended policy:
 loading never remaps existing ids; disabling or changing seed only affects future
 acquisitions; the modeled native save contains item ids and counts only.
 
+The source-shadow model exercises RAM reuse between maps/reward generations,
+including the dangerous case where a new map's vanilla id equals the replacement
+written into the previous map's RAM. Map-generation changes must force a fresh
+mapping while repeated frames on the same source remain stable.
+
+The shop model verifies that the Bank-AB raw stock source is transformed once,
+keeps equipment/consumable list class through bit15, preserves the zero
+terminator, fails closed on invalid/unterminated sources, and maps a freshly
+rebuilt vanilla stock deterministically on the next shop opening.
+
 The save-safety contract scans every current and future `.c`/`.h` in the mod so a
 new source file cannot silently add seed serialization, save hooks or custom
 randomizer metadata outside the original audited files.
 
-The integrated job then compiles the patched runtime, builds the MIPS mod ELF,
-builds the matching RecompModTool and packages the `.nrm` against
-Bank-N-augmented Rev-A references. Its artifact includes a reproducible
-`BUILD-MANIFEST.txt` with source commit, pinned runtime/Recomp commits, Rev-A
-reference SHA-1, NRM SHA-256/size and the explicit native-save policy.
+## Integrated build proof
+
+Both the fast mapping workflow and the integrated runtime workflow invoke the
+same unified host suite. The integrated job only continues after all eight tests
+pass, then:
+
+- applies the pinned OB64/N64Recomp/runtime layers;
+- compiles the patched `librecomp` runtime;
+- builds the MIPS mod ELF;
+- builds the matching RecompModTool;
+- packages the `.nrm` against Bank-N-augmented Rev-A references;
+- emits a reproducible `BUILD-MANIFEST.txt` with source commit, pinned
+  runtime/Recomp commits, Rev-A reference SHA-1, NRM SHA-256/size and the
+  explicit native-save policy plus persistence/source-shadow/shop model markers.
 
 A separate QA-payload workflow also packages the `.nrm`, build manifest,
 `TESTING.md`, `QA-TELEMETRY.md` and this status file together so manual campaign
