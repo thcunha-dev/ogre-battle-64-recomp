@@ -151,6 +151,21 @@ def assert_shared_mapper_contract(repo: Path) -> None:
     assert "(count + amount) & 0xFFu" not in post_battle
     assert "amount & 0xFFu" not in post_battle
 
+    # Native func_80172820 runs the complete +0x02 rebuild after changing a
+    # count. Keep one implementation for both item lists; the post-battle patch
+    # must call that shared forced repair instead of carrying a second partial
+    # roster scanner that can drift from use_repair.c.
+    assert "void universal_item_randomizer_force_use_repair(void)" in use_repair
+    assert "full_repair_and_snapshot();" in use_repair
+    assert "universal_item_randomizer_force_use_repair();" in post_battle
+    for stale_duplicate in (
+        "rebuild_equipment_use",
+        "ROSTER_CHARS",
+        "ROSTER_CLASS_TABLE",
+        "class_equipment_id",
+    ):
+        assert stale_duplicate not in post_battle, f"post-battle duplicated use repair: {stale_duplicate}"
+
     # Shops have a dedicated Bank-AB source path. The Bank-N replacement must
     # never use shops=ON as permission to randomize an unclassified caller.
     assert 'recomp_get_config_u32("shops")' not in central
