@@ -41,16 +41,20 @@ Rev-A game run. Do not promote the mod to 1.0 solely because the build is green.
 - Class-default equipment and the coupled per-unit consumable-28 setup remain
   vanilla because their roster/source references must be changed atomically with
   owned inventory to be safe.
+- `LOG` QA telemetry is route-scoped and bounded; it observes the major covered
+  acquisition contexts without persisting state or reintroducing inventory-delta
+  detection. See `QA-TELEMETRY.md`.
 
 ## CI contracts
 
-The integrated runtime workflow must pass all four architecture gates before it
-builds the runtime/mod:
+The integrated runtime workflow must pass all five architecture/QA gates before
+it builds the runtime/mod:
 
 1. `tools/test_randomizer_save_safety.py`
 2. `tools/test_universal_randomizer_mapping.py`
 3. `tools/test_stock_runtime_coverage.py`
 4. `tools/test_inventory_writer_taxonomy.py`
+5. `tools/test_randomizer_qa_telemetry.py`
 
 It then compiles the patched runtime, builds the MIPS mod ELF, builds the matching
 RecompModTool and packages the `.nrm` against Bank-N-augmented Rev-A references.
