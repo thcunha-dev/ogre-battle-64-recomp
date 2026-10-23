@@ -7,8 +7,9 @@ this matrix is verified on a real build.
 0.3.1 uses one shared deterministic mapper for every covered acquisition path.
 For a given seed, the same original equipment/consumable id must map to the same
 replacement whether it came from a pickup, battle reward, secondary post-battle
-transfer, shop stock or an enabled starting/setup grant. Unclassified direct
-grant callers are fail-closed and remain vanilla.
+transfer, shop stock or an enabled starting/setup grant. All known callers of the
+main Bank-N grant are now classified; coupled loadout operations stay vanilla
+until their unit reference and owned inventory can be remapped together.
 
 ## Baseline
 
@@ -93,25 +94,31 @@ No broad Bank-R range is used.
 4. The tutorial 1..6 batch and/or map-loader literal starting grants that execute
    must be deterministically remapped.
 5. Repeat on a clean save with the same seed and require identical replacements.
-6. If the diagnostic never appears, do not widen the caller classification by guesswork.
+6. If the diagnostic never appears, do not widen caller classification by guesswork.
 
-### Sole remaining unclassified Bank-R caller
+### Coupled unit-consumable loadout stays vanilla
 
-The whole-game grant scan leaves one Bank-R caller not yet semantically proven:
-`jal 0x801DC740` at `0x80216D90` (return address `0x80216D98`). It remains vanilla.
+Direct Rev-1 disassembly of `0x80216D74..0x80216D98` classifies the remaining
+Bank-R grant at `0x80216D90` (return address `0x80216D98`). For each active unit,
+the map loader:
+
+1. scans the unit's ten-byte consumable loadout beginning at `unit + 0x0D`;
+2. finds the first empty slot;
+3. writes literal consumable **ID 28** into that unit slot;
+4. calls `func_ovlN_801DC740(28, 1)` to add the matching owned copy.
+
+This is not a quest/NPC gift and is not an unknown caller. It is a coupled
+reference+inventory setup operation. Randomizing only the central grant would
+leave the unit using ID 28 while inventory owns another ID, producing incorrect
+`used/owned` bookkeeping. Therefore it stays vanilla even with `STARTING ITEMS = ON`.
+
 With `LOG = ON`, reaching it emits the bounded diagnostic:
 
-`universal-item-randomizer: unclassified Bank-R grant left vanilla`
+`universal-item-randomizer: coupled Bank-R unit loadout left vanilla`
 
-If observed during campaign QA:
-
-1. record the scene/event and original item;
-2. repeat with the same seed and `STARTING ITEMS` OFF/ON;
-3. the item must be identical in both runs;
-4. only after the caller's source and role are proven may it receive a dedicated
-   classification/source rewrite.
-
-This is our remaining candidate for an as-yet-unclassified scripted/setup grant.
+QA must confirm the unit loadout and owned inventory remain vanilla/aligned.
+A future implementation may randomize this route only if it changes the unit
+reference and global inventory id atomically to the same replacement.
 
 ### Class-default equipment stays vanilla
 
@@ -165,12 +172,13 @@ vanilla, and a purchase must add exactly the displayed item.
 If a shop briefly displays vanilla stock before changing, or displayed/purchased
 ids diverge, disable the shop option until timing is moved earlier.
 
-## Test J — unclassified direct grants stay vanilla
+## Test J — caller completeness
 
-Whenever campaign QA observes a grant outside the known pickup/reward/setup/shop
-routes, record it and compare identical-seed runs with optional switches toggled.
-It must remain identical unless explicitly classified. Never broaden the central
-fallback merely to catch an unknown route.
+The whole-game Rev-A scan now accounts for every `func_ovlN_801DC740` caller:
+four display-sensitive Bank-N sources, two safe Bank-R starting/setup sources and
+one protected coupled unit-loadout source. Any future newly discovered direct
+caller must remain fail-closed until explicitly classified; never broaden the
+central fallback merely to catch it.
 
 ## Acceptance criteria for 0.3.1
 
@@ -179,10 +187,11 @@ fallback merely to catch an unknown route.
 - post-battle counts saturate at 99 and used-count rebuild is correct;
 - same seed gives the same replacement across every covered route;
 - starting/setup and key-item behavior respects defaults/options;
-- the sole unclassified Bank-R caller stays vanilla until proven;
+- every audited main-grant caller has an explicit classification;
+- coupled unit loadout stays vanilla/aligned until atomic mapping is implemented;
 - class-default equipment remains vanilla until source/reference coupling is safe;
 - shops are internally consistent ON and fully vanilla OFF;
 - changing seed never rewrites existing inventory;
 - save ON→OFF→ON works;
 - finish/post-game→close→reopen works with the same save;
-- no unclassified direct grant is randomized accidentally.
+- no future unclassified direct grant can randomize accidentally.
