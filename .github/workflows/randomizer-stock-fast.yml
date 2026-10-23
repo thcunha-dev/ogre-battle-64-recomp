@@ -23,7 +23,7 @@ jobs:
           cmake -S /tmp/N64Recomp -B /tmp/N64Recomp/build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build /tmp/N64Recomp/build --target RecompModTool
 
-      - name: Build stock-compatible mod
+      - name: Prepare stock source and manifest
         run: |
           set -eux
           src=mods/universal-item-randomizer
@@ -33,7 +33,6 @@ jobs:
           cp "$src"/include/* "$mod/include/"
           cp "$src"/mod.ld "$mod/mod.ld"
           cp "$src"/mod.toml "$mod/mod.toml"
-
           python3 tools/test_stock_runtime_coverage.py
 
           python3 - <<'PY'
@@ -50,11 +49,12 @@ jobs:
 
           m=Path('/tmp/stock-mod/mod.toml')
           t=m.read_text()
+          t=t.replace('id = "ogre_universal_item_randomizer"',
+                      'id = "ogre_universal_item_randomizer_stock"',1)
           t=t.replace('display_name = "Universal Item Randomizer"',
-                      'display_name = "Universal Item Randomizer (Stock Runtime)"')
-          t=t.replace('version = "0.3.0"','version = "0.3.0-stock"')
+                      'display_name = "Universal Item Randomizer (Stock Runtime)"',1)
           t=t.replace('mod_filename = "universal-item-randomizer"',
-                      'mod_filename = "universal-item-randomizer-stock"')
+                      'mod_filename = "universal-item-randomizer-stock"',1)
           start=t.find('[[manifest.config_options]]\nid = "starting_items"')
           assert start!=-1
           end=t.find('[[manifest.config_options]]',start+1)
@@ -63,24 +63,39 @@ jobs:
           m.write_text(t)
           PY
 
-          objs=""
+          grep -q 'id = "ogre_universal_item_randomizer_stock"' "$mod/mod.toml"
+          grep -q 'version = "0.3.0"' "$mod/mod.toml"
+          ! grep -q 'id = "starting_items"' "$mod/mod.toml"
+
+      - name: Compile stock source objects
+        run: |
+          set -eux
+          mod=/tmp/stock-mod
           for c in "$mod"/src/*.c; do
             base=$(basename "${c%.c}")
-            obj="$mod/build/$base.o"
             mips-linux-gnu-gcc \
               -mips2 -march=mips2 -mno-check-zero-division -mabi=32 -O2 -G0 \
               -mno-abicalls -mno-odd-spreg -fno-builtin -ffreestanding -nostdinc \
               -fno-pic -fno-pie -Wall -Wextra -Wno-unused-parameter \
-              -I "$mod/include" -c "$c" -o "$obj"
-            objs="$objs $obj"
+              -I "$mod/include" -c "$c" -o "$mod/build/$base.o"
           done
+
+      - name: Link and prove Bank-N replacement is absent
+        run: |
+          set -eux
+          mod=/tmp/stock-mod
+          objs=$(printf '%s ' "$mod"/build/*.o)
           mips-linux-gnu-ld -nostdlib -T "$mod/mod.ld" \
             --unresolved-symbols=ignore-all --emit-relocs -e 0 \
             -o "$mod/build/mod.elf" $objs
-
-          # No Bank-N replacement/symbol is allowed in the compatibility ELF.
+          echo '== code-mod sections =='
+          mips-linux-gnu-objdump -h "$mod/build/mod.elf" | grep -E 'recomp_hook|recomp_patch'
+          echo '== symbols =='
+          mips-linux-gnu-nm "$mod/build/mod.elf" | grep -E 'func_80072944|func_80172820|func_ovlN_801DC740' || true
           ! mips-linux-gnu-nm "$mod/build/mod.elf" | grep -q 'func_ovlN_801DC740'
 
+      - name: Write base-only reference symbols
+        run: |
           cat >mods/reference/dump.toml <<'EOF'
           [[section]]
           name = ".main"
@@ -101,7 +116,10 @@ jobs:
           ]
           EOF
 
-          /tmp/N64Recomp/build/RecompModTool "$mod/mod.toml" build/mods-stock
+      - name: Package stock-runtime NRM
+        run: |
+          set -eux
+          /tmp/N64Recomp/build/RecompModTool /tmp/stock-mod/mod.toml build/mods-stock
           test -s build/mods-stock/universal-item-randomizer-stock.nrm
           unzip -l build/mods-stock/universal-item-randomizer-stock.nrm
           ls -lh build/mods-stock/universal-item-randomizer-stock.nrm
