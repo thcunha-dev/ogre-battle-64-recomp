@@ -146,8 +146,34 @@ jobs:
           sha256sum build/mods/universal-item-randomizer.nrm
           ls -lh build/mods/universal-item-randomizer.nrm
 
+      - name: Write reproducible QA build manifest
+        run: |
+          set -eux
+          nrm=build/mods/universal-item-randomizer.nrm
+          manifest=build/mods/BUILD-MANIFEST.txt
+          nrm_sha=$(sha256sum "$nrm" | awk '{print $1}')
+          nrm_size=$(stat -c '%s' "$nrm")
+          cat >"$manifest" <<EOF
+          Universal Item Randomizer QA Build
+          version=0.3.1
+          source_commit=${GITHUB_SHA}
+          source_branch=${GITHUB_REF_NAME}
+          rev_a_reference_sha1=d26b14bee422a09581ce438d45ba9fec9783fbb8
+          n64modernruntime_commit=589bbf018a3e6d3646ddf7de1e7919f1b7e99bb1
+          n64recomp_commit=81213c1831fab2521a6a5459c67b63437d67e253
+          nrm_sha256=${nrm_sha}
+          nrm_size_bytes=${nrm_size}
+          save_policy=no_randomizer_metadata_in_native_save
+          EOF
+          grep -q "source_commit=${GITHUB_SHA}" "$manifest"
+          grep -q "nrm_sha256=${nrm_sha}" "$manifest"
+          grep -q 'save_policy=no_randomizer_metadata_in_native_save' "$manifest"
+          cat "$manifest"
+
       - uses: actions/upload-artifact@v4
         with:
           name: universal-item-randomizer-0.3.1-integrated
-          path: build/mods/universal-item-randomizer.nrm
+          path: |
+            build/mods/universal-item-randomizer.nrm
+            build/mods/BUILD-MANIFEST.txt
           if-no-files-found: error
