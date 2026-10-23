@@ -23,7 +23,7 @@ jobs:
       - name: Build RecompModTool
         run: |
           set -eux
-          git clone --depth=1 https://github.com/N64Recomp/N64Recomp.git /tmp/N64Recomp
+          git clone --depth=1 --recurse-submodules https://github.com/N64Recomp/N64Recomp.git /tmp/N64Recomp
           cmake -S /tmp/N64Recomp -B /tmp/N64Recomp/build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build /tmp/N64Recomp/build --target RecompModTool
 
@@ -63,9 +63,6 @@ jobs:
           functions = [
             { name = "func_ovlN_801DC740", vram = 0x801DC740, size = 0x1F0 },
           ]
-          EOF
-          cat >mods/reference/data_dump.toml <<'EOF'
-          # This mod uses fixed guest addresses and no named base-game data symbols.
           EOF
 
       - name: Package NRM
