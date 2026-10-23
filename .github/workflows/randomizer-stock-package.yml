@@ -1,0 +1,126 @@
+name: Universal Randomizer Stock Runtime Package
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - randomizer/universal-grant
+    paths:
+      - 'mods/universal-item-randomizer/**'
+      - '.github/workflows/randomizer-stock-package.yml'
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchains
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-mips-linux-gnu cmake ninja-build
+          N64RECOMP_COMMIT=81213c1831fab2521a6a5459c67b63437d67e253
+          git clone https://github.com/N64Recomp/N64Recomp.git /tmp/N64Recomp
+          git -C /tmp/N64Recomp checkout "$N64RECOMP_COMMIT"
+          git -C /tmp/N64Recomp submodule update --init --recursive
+          cmake -S /tmp/N64Recomp -B /tmp/N64Recomp/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/N64Recomp/build --target RecompModTool
+
+      - name: Prepare stock-runtime source variant
+        run: |
+          set -eux
+          mod=mods/universal-item-randomizer
+          mkdir -p /tmp/stock-mod/src /tmp/stock-mod/include /tmp/stock-mod/build mods/reference build/mods-stock
+          cp "$mod"/src/*.c /tmp/stock-mod/src/
+          cp "$mod"/include/* /tmp/stock-mod/include/
+          cp "$mod"/mod.ld /tmp/stock-mod/mod.ld
+          cp "$mod"/mod.toml /tmp/stock-mod/mod.toml
+
+          # Only Bank N needs the custom runtime lookup. Turn that replacement
+          # into an ordinary unused mod function for this compatibility package;
+          # keep func_80172820's streamedB replacement intact.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('/tmp/stock-mod/src/universal_item_randomizer.c')
+          s = p.read_text()
+          needle = 'RECOMP_PATCH\nvoid func_ovlN_801DC740('
+          assert s.count(needle) == 1
+          s = s.replace(needle, 'void func_ovlN_801DC740(', 1)
+          p.write_text(s)
+
+          m = Path('/tmp/stock-mod/mod.toml')
+          t = m.read_text()
+          t = t.replace('display_name = "Universal Item Randomizer"',
+                        'display_name = "Universal Item Randomizer (Stock Runtime Test)"')
+          t = t.replace('mod_filename = "universal-item-randomizer"',
+                        'mod_filename = "universal-item-randomizer-stock"')
+          # STARTING ITEMS depends on Bank-N direct-call replacement; keep it out
+          # of the stock-runtime test UI so the package cannot promise it.
+          start = t.find('[[manifest.config_options]]\nid = "starting_items"')
+          if start != -1:
+              end = t.find('[[manifest.config_options]]', start + 1)
+              if end == -1:
+                  end = t.find('[inputs]', start)
+              t = t[:start] + t[end:]
+          m.write_text(t)
+          PY
+          grep -q 'func_ovlN_801DC740' /tmp/stock-mod/src/universal_item_randomizer.c
+          ! grep -B1 'void func_ovlN_801DC740' /tmp/stock-mod/src/universal_item_randomizer.c | grep -q RECOMP_PATCH
+
+      - name: Compile and link stock-runtime ELF
+        run: |
+          set -eux
+          objs=""
+          for src in /tmp/stock-mod/src/*.c; do
+            base=$(basename "${src%.c}")
+            obj="/tmp/stock-mod/build/$base.o"
+            mips-linux-gnu-gcc \
+              -mips2 -march=mips2 -mno-check-zero-division -mabi=32 -O2 -G0 \
+              -mno-abicalls -mno-odd-spreg -fno-builtin -ffreestanding -nostdinc \
+              -fno-pic -fno-pie -Wall -Wextra -Wno-unused-parameter \
+              -I /tmp/stock-mod/include -c "$src" -o "$obj"
+            objs="$objs $obj"
+          done
+          mips-linux-gnu-ld -nostdlib -T /tmp/stock-mod/mod.ld \
+            --unresolved-symbols=ignore-all --emit-relocs -e 0 \
+            -o /tmp/stock-mod/build/mod.elf $objs
+          echo '== code-mod sections =='
+          mips-linux-gnu-objdump -h /tmp/stock-mod/build/mod.elf | grep -E 'recomp_hook|recomp_patch'
+          echo '== Bank-N patch must be absent; streamedB patch must remain =='
+          test "$(mips-linux-gnu-objdump -h /tmp/stock-mod/build/mod.elf | grep -c '.recomp_patch')" -ge 1
+
+      - name: Write base-only reference symbols
+        run: |
+          cat >mods/reference/dump.toml <<'EOF'
+          [[section]]
+          name = ".main"
+          rom = 0x00001060
+          vram = 0x80070C60
+          size = 0x3E150
+          functions = [
+            { name = "func_80072944", vram = 0x80072944, size = 0x38 },
+          ]
+
+          [[section]]
+          name = ".streamedB"
+          rom = 0x00040E80
+          vram = 0x8016AF80
+          size = 0x265B0
+          functions = [
+            { name = "func_80172820", vram = 0x80172820, size = 0x100 },
+          ]
+          EOF
+
+      - name: Package stock-runtime NRM
+        run: |
+          set -eux
+          /tmp/N64Recomp/build/RecompModTool /tmp/stock-mod/mod.toml build/mods-stock
+          test -s build/mods-stock/universal-item-randomizer-stock.nrm
+          unzip -l build/mods-stock/universal-item-randomizer-stock.nrm
+          ls -lh build/mods-stock/universal-item-randomizer-stock.nrm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: universal-item-randomizer-stock-runtime
+          path: build/mods-stock/universal-item-randomizer-stock.nrm
+          if-no-files-found: error
