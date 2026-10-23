@@ -28,6 +28,12 @@ if [ ! -f mods/reference/dump.toml ]; then
     exit 1
 fi
 
+# The main-unit context dump cannot see streamed-bank functions.  The universal
+# item randomizer replaces Bank N's central grant routine, so augment the
+# generated reference dump with the audited Rev-A Bank N coordinates before any
+# mod is packaged.  The helper is idempotent and validates an existing entry.
+python3 tools/ensure_randomizer_mod_syms.py mods/reference/dump.toml
+
 mods=${1:-}
 if [ -z "$mods" ]; then
     mods=$(find mods -mindepth 1 -maxdepth 1 -type d ! -name reference | sort)
