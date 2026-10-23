@@ -33,6 +33,7 @@ RECOMP_IMPORT("*", void recomp_log(const char* message));
 #define PICKUP_COUNT             0x801F1002u
 #define PICKUP_IDS               0x801F1004u
 #define PICKUP_MAX               64u
+#define MAP_INDEX                0x8018F4A1u
 
 #define REWARD_QUEUE             0x801936D8u
 #define REWARD_SLOTS             20u
@@ -62,6 +63,8 @@ static unsigned char s_drop_valid[DROP_ENTRY_MAX * 3u];
 static unsigned char s_drop_present;
 static unsigned short s_pickup_written[PICKUP_MAX];
 static unsigned char s_pickup_valid[PICKUP_MAX];
+static unsigned char s_pickup_map_index;
+static unsigned char s_pickup_map_known;
 static unsigned short s_reward_written[REWARD_SLOTS];
 static unsigned char s_reward_valid[REWARD_SLOTS];
 
@@ -147,13 +150,33 @@ static void rewrite_drop_table(void) {
     }
 }
 
+static void reset_pickup_shadow(void) {
+    unsigned int i;
+    for (i = 0u; i < PICKUP_MAX; i++) s_pickup_valid[i] = 0u;
+}
+
 static void rewrite_pickup_list(void) {
     unsigned int count;
     unsigned int i;
+    unsigned int map_index;
 
     if (!s_drop_present) {
-        for (i = 0u; i < PICKUP_MAX; i++) s_pickup_valid[i] = 0u;
+        reset_pickup_shadow();
+        s_pickup_map_known = 0u;
         return;
+    }
+
+    // The pickup list is map-specific but lives at one fixed RAM address. A
+    // replacement written on map A can therefore equal a legitimate vanilla
+    // source value in the same slot on map B. Without a generation key the
+    // shadow would mistake that coincidence for "already mapped" and skip the
+    // new source. 0x8018F4A1 is the map index used by the Bank-R map loader, so
+    // a change means every pickup slot belongs to a new source generation.
+    map_index = rd8(MAP_INDEX);
+    if (!s_pickup_map_known || map_index != s_pickup_map_index) {
+        reset_pickup_shadow();
+        s_pickup_map_index = (unsigned char)map_index;
+        s_pickup_map_known = 1u;
     }
 
     count = rd8(PICKUP_COUNT);
