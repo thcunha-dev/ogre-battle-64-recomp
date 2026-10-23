@@ -45,4 +45,12 @@ jobs:
           ninja -C /tmp/N64ModernRuntime/build \
             librecomp/CMakeFiles/librecomp.dir/src/overlays.cpp.o
           test -s /tmp/N64ModernRuntime/build/librecomp/CMakeFiles/librecomp.dir/src/overlays.cpp.o
-          ls -lh /tmp/N64ModernRuntime/build/librecomp/CMakeFiles/librecomp.dir/src/overlays.cpp.o
+
+      - name: Build complete librecomp runtime library
+        run: |
+          set -eux
+          ninja -C /tmp/N64ModernRuntime/build librecomp
+          test -s /tmp/N64ModernRuntime/build/librecomp/liblibrecomp.a
+          ls -lh /tmp/N64ModernRuntime/build/librecomp/liblibrecomp.a
+          nm -C /tmp/N64ModernRuntime/build/librecomp/liblibrecomp.a | \
+            grep -E 'register_bank_hook_sections|find_bank_hook_section|get_bank_hook_func_entry'
