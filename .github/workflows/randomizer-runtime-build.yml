@@ -12,6 +12,7 @@ on:
       - 'tools/test_universal_randomizer_mapping.py'
       - 'tools/test_stock_runtime_coverage.py'
       - 'tools/test_inventory_writer_taxonomy.py'
+      - 'tools/test_randomizer_qa_telemetry.py'
       - 'patches/n64modernruntime-ob64.patch'
       - 'patches/n64modernruntime-n64recomp.patch'
       - 'patches/n64modernruntime-randomizer.patch'
@@ -35,6 +36,7 @@ jobs:
           python3 tools/test_universal_randomizer_mapping.py
           python3 tools/test_stock_runtime_coverage.py
           python3 tools/test_inventory_writer_taxonomy.py
+          python3 tools/test_randomizer_qa_telemetry.py
 
       - name: Clone pinned runtime and apply project layers
         run: |
