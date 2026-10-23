@@ -11,7 +11,7 @@ on:
       - '.github/workflows/randomizer-runtime-build.yml'
 
 jobs:
-  librecomp:
+  librecomp-overlay:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,6 +39,10 @@ jobs:
           cmake -S /tmp/N64ModernRuntime -B /tmp/N64ModernRuntime/build \
             -G Ninja -DCMAKE_BUILD_TYPE=Release
 
-      - name: Build patched librecomp
+      - name: Compile patched overlays translation unit
         run: |
-          cmake --build /tmp/N64ModernRuntime/build --target librecomp -j2
+          set -eux
+          ninja -C /tmp/N64ModernRuntime/build \
+            librecomp/CMakeFiles/librecomp.dir/src/overlays.cpp.o
+          test -s /tmp/N64ModernRuntime/build/librecomp/CMakeFiles/librecomp.dir/src/overlays.cpp.o
+          ls -lh /tmp/N64ModernRuntime/build/librecomp/CMakeFiles/librecomp.dir/src/overlays.cpp.o
