@@ -1,0 +1,56 @@
+name: One-shot exact post-battle semantics
+
+on:
+  push:
+    branches:
+      - randomizer/universal-grant
+    paths:
+      - '.github/workflows/one-shot-fix-postbattle-semantics.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: randomizer/universal-grant
+          fetch-depth: 0
+
+      - name: Apply exact Rev-A count semantics
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('mods/universal-item-randomizer/src/post_battle_add.c')
+          s=p.read_text()
+
+          old='''    original_id &= 0xFFFFu;\n    amount &= 0xFFFFu;\n    if (original_id == 0u || amount == 0u) return;'''
+          new='''    original_id &= 0xFFFFu;\n    amount &= 0xFFFFu;\n    if (original_id == 0u) return;'''
+          assert s.count(old)==1
+          s=s.replace(old,new,1)
+
+          old='''            unsigned int count = rd8(record + LIST_COUNT);\n            unsigned int next = count + amount;\n            if (next > COUNT_MAX) next = COUNT_MAX;\n            wr8(record + LIST_COUNT, (unsigned char)next);'''
+          new='''            unsigned int count = rd8(record + LIST_COUNT);\n            unsigned int next = (count + amount) & 0xFFu;\n            if (next >= 100u) next = COUNT_MAX;\n            wr8(record + LIST_COUNT, (unsigned char)next);'''
+          assert s.count(old)==1
+          s=s.replace(old,new,1)
+
+          old='''        unsigned int count = amount > COUNT_MAX ? COUNT_MAX : amount;\n        wr16(record, (unsigned short)id);\n        wr8(record + LIST_COUNT, (unsigned char)count);'''
+          new='''        unsigned int count = amount & 0xFFu;\n        wr16(record, (unsigned short)id);\n        wr8(record + LIST_COUNT, (unsigned char)count);'''
+          assert s.count(old)==1
+          s=s.replace(old,new,1)
+
+          p.write_text(s)
+          PY
+          git diff --check
+          git diff -- mods/universal-item-randomizer/src/post_battle_add.c
+
+      - name: Commit fix and remove one-shot workflow
+        run: |
+          git config user.name 'ogre-randomizer-ci'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm .github/workflows/one-shot-fix-postbattle-semantics.yml
+          git add mods/universal-item-randomizer/src/post_battle_add.c
+          git commit -m 'randomizer: match Rev-A post-battle count semantics exactly'
+          git push origin HEAD:randomizer/universal-grant
