@@ -1,13 +1,14 @@
 [manifest]
 id = "ogre_universal_item_randomizer"
-version = "0.2.1"
+version = "0.3.0"
 display_name = "Universal Item Randomizer"
 short_description = "Deterministic, save-safe item randomizer."
 description = """
 Work-in-progress replacement for the experimental item randomizer. The mapping is
 rebuilt from the selected seed every launch and never stores randomizer metadata
-inside Ogre Battle 64's native save. Quest/key items, shops and starting grants
-are protected by default while the universal acquisition paths are being validated.
+inside Ogre Battle 64's native save. Quest/key items and starting grants are
+protected by default. Shop randomization now rewrites Bank AB's real stock source
+so list, detail, price and purchased item derive from the same replacement id.
 """
 authors = [ "Ogre Battle 64 BR" ]
 game_id = "ogrebattle64"
@@ -26,6 +27,13 @@ max = 4294967295
 step = 1
 precision = 0
 default = 1
+
+[[manifest.config_options]]
+id = "shops"
+name = "RANDOMIZE SHOPS"
+description = "Randomize the real Bank AB shop stock source before the game builds its sorted UI caches. Off by default until in-game QA is complete."
+type = "Bool"
+default = false
 
 [[manifest.config_options]]
 id = "starting_items"
