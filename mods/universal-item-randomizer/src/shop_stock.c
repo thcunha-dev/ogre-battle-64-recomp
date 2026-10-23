@@ -62,10 +62,6 @@ static void wr16(unsigned int addr, unsigned short value) {
     *(volatile unsigned short*)addr = value;
 }
 
-// Record-9 banks all share RAM 0x80214FA0. Before touching Bank-AB state, prove
-// that the shop module is actually resident. These first four Rev-A words are
-// unique in the complete 40 MiB cart (ROM 0x1977B0) and cover both the Bank-AB
-// state load and the function prologue.
 static int bank_ab_present(void) {
     return rd32(BANK_AB_CODE + 0x00u) == 0x3C038022u &&
            rd32(BANK_AB_CODE + 0x04u) == 0x90639D44u &&
@@ -199,9 +195,6 @@ static int stock_has_vanilla_signature(unsigned int ptr) {
     return 1;
 }
 
-// Validate the complete raw list before touching it. This is intentionally
-// stricter than the signature alone because 0x80219F40 lives in Bank-AB state
-// and may temporarily hold a stale/reused heap pointer during transitions.
 static unsigned int validated_stock_count(unsigned int ptr) {
     unsigned int i;
     for (i = 0u; i < SHOP_STOCK_MAX_WORDS; i++) {
@@ -216,7 +209,7 @@ static unsigned int validated_stock_count(unsigned int ptr) {
             if (!consumable_id_valid(id)) return 0u;
         }
     }
-    return 0u; // no terminator inside the 0x200-byte allocation
+    return 0u;
 }
 
 static void rewrite_shop_stock(void) {
@@ -247,13 +240,11 @@ static void rewrite_shop_stock(void) {
     }
 }
 
-// The Bank-N loader calls the currently resident record-9 stock builder before
-// the shop's per-frame Bank-AB state machine consumes the source. The Rev-A
-// caller returns immediately after setting a transition flag, so the main frame
-// hook has a clean window before the next screen update. The Bank-AB fingerprint
-// plus vanilla-stock signature make this idempotent and safe across arena/heap
-// reuse.
-RECOMP_HOOK("func_80072944")
-void universal_item_randomizer_shop_tick(void) {
+// Called from the mod's single primary frame hook. Keeping shop work behind the
+// same hook avoids multiple code-mod hook records for one guest function while
+// preserving the exact timing: Bank-N returns after constructing the raw stock,
+// then the next main-loop frame reaches this source rewrite before Bank AB uses
+// its sorted caches.
+void universal_item_randomizer_shop_tick_impl(void) {
     rewrite_shop_stock();
 }
