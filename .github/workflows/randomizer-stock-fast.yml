@@ -116,16 +116,37 @@ jobs:
           ]
           EOF
 
-      - name: Package stock-runtime NRM
+      - name: Package stock-runtime NRM (capture diagnostics)
+        id: package
         run: |
-          set -eux
-          /tmp/N64Recomp/build/RecompModTool /tmp/stock-mod/mod.toml build/mods-stock
-          test -s build/mods-stock/universal-item-randomizer-stock.nrm
-          unzip -l build/mods-stock/universal-item-randomizer-stock.nrm
-          ls -lh build/mods-stock/universal-item-randomizer-stock.nrm
+          set +e
+          mkdir -p build/mods-stock
+          /tmp/N64Recomp/build/RecompModTool /tmp/stock-mod/mod.toml build/mods-stock \
+            >build/mods-stock/package.log 2>&1
+          status=$?
+          echo "$status" >build/mods-stock/package.status
+          cat build/mods-stock/package.log
+          if [ "$status" -eq 0 ] && [ -s build/mods-stock/universal-item-randomizer-stock.nrm ]; then
+            unzip -l build/mods-stock/universal-item-randomizer-stock.nrm \
+              >build/mods-stock/nrm-contents.txt 2>&1
+            cat build/mods-stock/nrm-contents.txt
+            ls -lh build/mods-stock/universal-item-randomizer-stock.nrm
+          fi
+          exit 0
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: universal-item-randomizer-stock-runtime-fast
-          path: build/mods-stock/universal-item-randomizer-stock.nrm
-          if-no-files-found: error
+          name: universal-item-randomizer-stock-diagnostic
+          path: |
+            build/mods-stock/package.log
+            build/mods-stock/package.status
+            build/mods-stock/nrm-contents.txt
+            build/mods-stock/universal-item-randomizer-stock.nrm
+          if-no-files-found: warn
+
+      - name: Assert stock package success
+        run: |
+          set -eux
+          test "$(cat build/mods-stock/package.status)" = 0
+          test -s build/mods-stock/universal-item-randomizer-stock.nrm
