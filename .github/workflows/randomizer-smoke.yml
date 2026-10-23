@@ -8,6 +8,8 @@ on:
     paths:
       - 'mods/universal-item-randomizer/**'
       - 'tools/merge_mod_syms.py'
+      - 'tools/ensure_randomizer_mod_syms.py'
+      - 'tools/build-example-mods.sh'
       - 'tools/gen_bank_funcs.py'
       - 'patches/n64modernruntime-randomizer.patch'
       - '.github/workflows/randomizer-smoke.yml'
@@ -20,7 +22,11 @@ jobs:
 
       - name: Python syntax
         run: |
-          python3 -m py_compile tools/merge_mod_syms.py tools/gen_bank_funcs.py
+          python3 -m py_compile \
+            tools/merge_mod_syms.py \
+            tools/ensure_randomizer_mod_syms.py \
+            tools/gen_bank_funcs.py
+          bash -n tools/build-example-mods.sh
 
       - name: Merge-symbols synthetic test
         run: |
@@ -49,6 +55,25 @@ jobs:
           grep -q 'name = "main_fn"' /tmp/ogre-syms/merged.toml
           grep -q 'name = "func_ovlN_801DC740"' /tmp/ogre-syms/merged.toml
           test "$(grep -c '^\[\[section\]\]' /tmp/ogre-syms/merged.toml)" = 2
+
+      - name: Bank-N symbol helper synthetic test
+        run: |
+          set -eux
+          cat >/tmp/main-only-dump.toml <<'EOF'
+          [[section]]
+          name = ".main"
+          rom = 0x00001060
+          vram = 0x80070C60
+          size = 0x3E150
+          functions = [
+            { name = "func_80072944", vram = 0x80072944, size = 0x38 },
+          ]
+          EOF
+          python3 tools/ensure_randomizer_mod_syms.py /tmp/main-only-dump.toml
+          python3 tools/ensure_randomizer_mod_syms.py /tmp/main-only-dump.toml
+          grep -q 'name = "func_ovlN_801DC740"' /tmp/main-only-dump.toml
+          test "$(grep -c 'name = "func_ovlN_801DC740"' /tmp/main-only-dump.toml)" = 1
+          test "$(grep -c 'rom = 0x00101D00' /tmp/main-only-dump.toml)" = 1
 
       - name: Validate runtime patches compose
         run: |
@@ -101,12 +126,12 @@ jobs:
           cmake -S /tmp/N64Recomp -B /tmp/N64Recomp/build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build /tmp/N64Recomp/build --target RecompModTool
 
-      - name: Package NRM with minimal Rev-A references
+      - name: Package NRM from normal main-unit references plus Bank-N augmentation
         run: |
           set -eux
           mkdir -p mods/reference build/mods
           cat >mods/reference/dump.toml <<'EOF'
-          # Minimal Rev-A reference context for Universal Item Randomizer packaging.
+          # Main-unit style Rev-A reference context: no streamed Bank N here.
           [[section]]
           name = ".main"
           rom = 0x00001060
@@ -124,16 +149,10 @@ jobs:
           functions = [
             { name = "func_80172820", vram = 0x80172820, size = 0x100 },
           ]
-
-          [[section]]
-          name = ".bankN_record7"
-          rom = 0x00101D00
-          vram = 0x801AD5C0
-          size = 0x43530
-          functions = [
-            { name = "func_ovlN_801DC740", vram = 0x801DC740, size = 0x1F0 },
-          ]
           EOF
+          ! grep -q 'func_ovlN_801DC740' mods/reference/dump.toml
+          python3 tools/ensure_randomizer_mod_syms.py mods/reference/dump.toml
+          grep -q 'name = "func_ovlN_801DC740"' mods/reference/dump.toml
           /tmp/N64Recomp/build/RecompModTool \
             mods/universal-item-randomizer/mod.toml build/mods
           test -s build/mods/universal-item-randomizer.nrm
