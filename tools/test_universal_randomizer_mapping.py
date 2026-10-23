@@ -14,6 +14,7 @@ MASK = 0xFFFFFFFF
 EQUIP_SALT = 0x45515549
 CONSUMABLE_SALT = 0x434F4E53
 KEY_SALT = 0x4B455953
+COUNT_MAX = 99
 
 
 def u32(x: int) -> int:
@@ -43,12 +44,15 @@ def cycle(seed: int, sources: list[int], salt: int) -> dict[int, int]:
         state = mix32(u32(seed ^ salt ^ u32(len(targets) * 0x9E3779B9)))
         if state == 0:
             state = 0xA341316C
-        # Exact C loop: i=count-1 .. 1 and j in [0, i-1].
         for i in range(len(targets) - 1, 0, -1):
             state = rng_next(state)
             j = state % i
             targets[i], targets[j] = targets[j], targets[i]
     return dict(zip(sources, targets, strict=True))
+
+
+def saturated_count(current: int, amount: int) -> int:
+    return min(current + amount, COUNT_MAX)
 
 
 def assert_cycle_properties(seed: int, size: int, salt: int) -> None:
@@ -112,6 +116,16 @@ def assert_shared_mapper_contract(repo: Path) -> None:
     assert "build_cycle_map(s_consumable_map, key_pool" in mapper
     assert "Unknown classes are intentionally omitted" in mapper
 
+    # The post-battle route must clamp in wide arithmetic before narrowing to
+    # u8. The old '& 0xFF' path could wrap a large award below 99.
+    post_battle = consumers["post_battle"]
+    assert "static unsigned char saturated_count" in post_battle
+    assert "total > COUNT_MAX ? COUNT_MAX : total" in post_battle
+    assert "saturated_count(count, amount)" in post_battle
+    assert "saturated_count(0u, amount)" in post_battle
+    assert "(count + amount) & 0xFFu" not in post_battle
+    assert "amount & 0xFFu" not in post_battle
+
     # Shops have a dedicated Bank-AB source path. The Bank-N replacement must
     # never use shops=ON as permission to randomize an unclassified caller.
     central = consumers["central"]
@@ -128,6 +142,16 @@ def main() -> int:
         for size in (1, 2, 7, 15, 40):
             assert_cycle_properties(seed, size, CONSUMABLE_SALT)
             assert_cycle_properties(seed, size, KEY_SALT)
+
+    for current, amount, expected in (
+        (0, 1, 1),
+        (98, 1, 99),
+        (99, 1, 99),
+        (99, 200, 99),
+        (0, 100, 99),
+        (10, 0xFFFF, 99),
+    ):
+        assert saturated_count(current, amount) == expected
 
     assert_shared_mapper_contract(Path(__file__).resolve().parents[1])
     print("universal randomizer mapping invariants: PASS")
