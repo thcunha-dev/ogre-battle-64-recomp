@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
-"""Static coverage contract for the stock-runtime randomizer variant.
+"""Static acquisition-source contract for Universal Item Randomizer.
 
-Rev-A ROM analysis found exactly four gameplay calls to func_ovlN_801DC740 in
-Bank N. All four consume sources that the frame hook rewrites before delivery.
-The stock-runtime package deliberately removes the Bank-N replacement, so this
-contract makes that architectural assumption explicit and regression-testable.
+Rev-A analysis proved four ordinary gameplay calls to func_ovlN_801DC740 in the
+Bank-N mission module. Each consumes a transient source that the frame hook maps
+*before* popup/reward text and final delivery, so the central replacement must
+recognize those callers as already mapped rather than applying the permutation a
+second time.
+
+Direct setup/tutorial grants are a separate opt-in class. Every unclassified
+direct caller is deliberately fail-closed and stays vanilla until its source and
+save semantics are understood.
 """
 
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = (ROOT / "mods/universal-item-randomizer/src/universal_item_randomizer.c").read_text()
+MANIFEST = (ROOT / "mods/universal-item-randomizer/mod.toml").read_text()
 
 # jal addresses and return addresses proven from the Rev-A cart.
 CALLERS = {
@@ -22,11 +28,12 @@ CALLERS = {
 
 
 def require(token: str) -> None:
-    assert token in SRC, f"missing stock-runtime coverage token: {token}"
+    assert token in SRC, f"missing universal acquisition coverage token: {token}"
 
 
 def main() -> int:
-    # Source rewrite entry points must remain in the primary frame hook.
+    # Ordinary pickup/reward sources are transformed before the game consumes
+    # them, keeping displayed and delivered ids identical.
     for token in (
         "rewrite_drop_table();",
         "rewrite_pickup_list();",
@@ -37,23 +44,39 @@ def main() -> int:
     ):
         require(token)
 
-    # Both Table-O map callers must be classified as already mapped. This is
-    # especially important for Map B: ROM disassembly proved it loads the item
-    # from Table O before copying it to popup state, so direct remapping would be
-    # a deterministic *second* mapping rather than extra coverage.
-    require("caller_ra == RA_MAP_OBJECT_A")
-    require("caller_ra == RA_MAP_OBJECT_B")
-    require("caller_ra == RA_GROUND_PICKUP")
-    require("caller_ra == RA_BATTLE_REWARD")
+    # These exact caller return addresses must remain classified as already
+    # mapped. A second application of a Sattolo cycle would deterministically
+    # produce a different item and desync UI/source semantics.
+    for token in (
+        "caller_ra == RA_MAP_OBJECT_A",
+        "caller_ra == RA_MAP_OBJECT_B",
+        "caller_ra == RA_GROUND_PICKUP",
+        "caller_ra == RA_BATTLE_REWARD",
+    ):
+        require(token)
 
     for name, (jal, ra, source) in CALLERS.items():
         assert jal + 8 == ra, name
         print(f"{name}: jal={jal:#010x} ra={ra:#010x} source={source}")
 
-    # The optional starting-item feature genuinely depends on the Bank-N direct
-    # replacement and must not be advertised by the stock-runtime package.
-    assert "STARTING ITEMS" in (ROOT / "mods/universal-item-randomizer/mod.toml").read_text()
-    print("stock-runtime normal acquisition coverage: PASS")
+    # Starting/setup grants are explicit opt-in behavior, not part of ordinary
+    # pickup coverage. The range classification and manifest switch must both
+    # exist, and the direct-grant classifier must still end fail-closed.
+    for token in (
+        "#define RA_SETUP_R_LO",
+        "#define RA_SETUP_R_HI",
+        "caller_is_setup_grant(caller_ra)",
+        "s_starting_items_enabled",
+    ):
+        require(token)
+    assert 'id = "starting_items"' in MANIFEST
+    assert 'default = false' in MANIFEST.split('id = "starting_items"', 1)[1].split("[[manifest.config_options]]", 1)[0]
+
+    classifier = SRC.split("static int should_randomize_direct_grant", 1)[1]
+    classifier = classifier.split("RECOMP_PATCH", 1)[0]
+    assert classifier.rstrip().endswith("return 0;\n}"), "unknown direct callers are not fail-closed"
+
+    print("universal normal acquisition coverage: PASS")
     return 0
 
 
