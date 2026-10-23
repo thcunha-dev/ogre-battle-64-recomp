@@ -7,6 +7,7 @@ on:
       - randomizer/universal-grant
     paths:
       - 'mods/universal-item-randomizer/src/**'
+      - 'mods/universal-item-randomizer/include/**'
       - 'tools/test_universal_randomizer_mapping.py'
       - 'tools/test_stock_runtime_coverage.py'
       - '.github/workflows/randomizer-mapping.yml'
