@@ -15,6 +15,7 @@
 #define COUNT_MAX                99u
 
 void universal_item_randomizer_force_use_repair(void);
+void universal_item_randomizer_log_post_battle(void);
 
 static unsigned short rd16(unsigned int addr) { return *(volatile unsigned short*)addr; }
 static unsigned char rd8(unsigned int addr) { return *(volatile unsigned char*)addr; }
@@ -38,6 +39,7 @@ void func_80172820(unsigned int original_id, unsigned int amount) {
     amount &= 0xFFFFu;
     if (original_id == 0u || amount == 0u) return;
     id = uir_map_equipment_id(original_id);
+    universal_item_randomizer_log_post_battle();
 
     for (i = 0u; i < EQUIP_SLOTS; i++) {
         unsigned int record = EQUIP_LIST + i * LIST_STRIDE;
