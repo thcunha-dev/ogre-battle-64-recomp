@@ -70,7 +70,6 @@ static unsigned int s_seed;
 static unsigned char s_ready;
 static unsigned char s_key_items_enabled;
 static unsigned char s_starting_items_enabled;
-static unsigned char s_shops_enabled;
 
 // Source shadows: a value written by this mod is not transformed again on the
 // next frame. If the game reloads/changes a source slot, the new raw value differs
@@ -235,7 +234,6 @@ static void randomizer_init(void) {
     }
     s_key_items_enabled = recomp_get_config_u32("key_items") != 0u;
     s_starting_items_enabled = recomp_get_config_u32("starting_items") != 0u;
-    s_shops_enabled = recomp_get_config_u32("shops") != 0u;
     build_equipment_map();
     build_consumable_map();
     s_ready = 1u;
@@ -416,11 +414,11 @@ static int caller_is_setup_grant(unsigned int caller_ra) {
 
 static int should_randomize_direct_grant(unsigned int caller_ra) {
     if (caller_source_already_mapped(caller_ra)) return 0;
-    if (caller_ra == RA_MAP_OBJECT_B) return 0; // Table O source is already deterministically mapped
     if (caller_is_setup_grant(caller_ra)) return s_starting_items_enabled != 0u;
-    // Unknown direct callers are preserved by default. SHOPS is an explicit
-    // validation-mode opt-in until every direct caller has been classified.
-    return s_shops_enabled != 0u;
+    // Unknown direct callers stay vanilla. Shops have their own Bank-AB source
+    // rewrite, so no config switch is allowed to turn an unclassified grant
+    // into a randomized one accidentally.
+    return 0;
 }
 
 RECOMP_PATCH
