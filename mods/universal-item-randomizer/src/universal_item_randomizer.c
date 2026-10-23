@@ -51,6 +51,8 @@ RECOMP_IMPORT("*", void recomp_log(const char* message));
 
 static unsigned char s_ready;
 static unsigned char s_starting_items_enabled;
+static unsigned char s_log_enabled;
+static unsigned char s_setup_log_count;
 
 // Source shadows: a value written by this mod is not transformed again on the
 // next frame. If the game reloads/changes a source slot, the new raw value differs
@@ -82,9 +84,10 @@ static void wr8(unsigned int addr, unsigned char value) {
 static void randomizer_init(void) {
     if (s_ready) return;
     s_starting_items_enabled = recomp_get_config_u32("starting_items") != 0u;
+    s_log_enabled = recomp_get_config_u32("log") != 0u;
     uir_map_init();
     s_ready = 1u;
-    if (recomp_get_config_u32("log") != 0u) {
+    if (s_log_enabled) {
         recomp_log("universal-item-randomizer: deterministic mapping ready");
     }
 }
@@ -256,6 +259,16 @@ void func_ovlN_801DC740(unsigned int item_word, unsigned int ignored) {
 
     (void)ignored;
     randomizer_init();
+
+    // STARTING ITEMS is the only path that currently depends on caller-range
+    // classification. Emit a bounded diagnostic so real-game QA can prove that
+    // the patched MIPS ABI exposes Bank-R return addresses as expected without
+    // flooding the log during tutorial/setup batches.
+    if (s_log_enabled && caller_is_setup_grant(caller_ra) && s_setup_log_count < 4u) {
+        recomp_log("universal-item-randomizer: Bank-R starting/setup grant recognized");
+        s_setup_log_count++;
+    }
+
     delivered = should_randomize_direct_grant(caller_ra) ? uir_map_item_word(raw) : raw;
     id = delivered & 0x7FFFu;
 
