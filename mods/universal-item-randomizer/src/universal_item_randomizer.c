@@ -44,23 +44,28 @@ RECOMP_IMPORT("*", void recomp_log(const char* message));
 #define RA_GROUND_PICKUP         0x801BB93Cu
 #define RA_BATTLE_REWARD         0x801E53E4u
 
-// Bank-R setup has two proven direct-grant forms:
-//  * func_ovlR_8021592C loops literal consumable ids 1..6; its grant jal is
-//    0x80215BEC, reached from the tutorial/practice unit-setup path.
+// Bank-R setup has two safe direct-grant forms controlled by STARTING ITEMS:
+//  * func_ovlR_8021592C loops literal consumable ids 1..6; grant jal 0x80215BEC.
 //  * func_ovlR_80215C38 ends with the larger literal starting-consumable block
 //    at 0x80217068..0x80217244.
-// STARTING ITEMS controls only these exact audited setup sources. The remaining
-// Bank-R grant at 0x80216D90 stays fail-closed until its semantics are proven.
+//
+// A third Bank-R grant at 0x80216D90 is now classified from the Rev-1 ROM. For
+// each active unit, the loader scans that unit's ten-byte consumable loadout at
+// unit+0x0D, writes literal id 28 into the first empty slot, then calls the main
+// grant as func_ovlN_801DC740(28, 1). Randomizing only the global grant would
+// leave the unit referencing 28 while inventory owns a different id, corrupting
+// the used/owned relationship. Keep this coupled loadout grant vanilla until a
+// future implementation rewrites both the unit reference and inventory id.
 #define RA_TUTORIAL_SETUP_R      0x80215BF4u
+#define RA_UNIT_LOADOUT_R        0x80216D98u
 #define RA_STARTING_R_LO         0x80217070u
 #define RA_STARTING_R_HI         0x8021724Cu
-#define RA_BANK_R_UNKNOWN        0x80216D98u
 
 static unsigned char s_ready;
 static unsigned char s_starting_items_enabled;
 static unsigned char s_log_enabled;
 static unsigned char s_setup_log_count;
-static unsigned char s_unknown_r_log_count;
+static unsigned char s_loadout_log_count;
 
 // Source shadows: a value written by this mod is not transformed again on the
 // next frame. If the game reloads/changes a source slot, the new raw value differs
@@ -173,12 +178,6 @@ static void rewrite_pickup_list(void) {
         return;
     }
 
-    // The pickup list is map-specific but lives at one fixed RAM address. A
-    // replacement written on map A can therefore equal a legitimate vanilla
-    // source value in the same slot on map B. Without a generation key the
-    // shadow would mistake that coincidence for "already mapped" and skip the
-    // new source. 0x8018F4A1 is the map index used by the Bank-R map loader, so
-    // a change means every pickup slot belongs to a new source generation.
     map_index = rd8(MAP_INDEX);
     if (!s_pickup_map_known || map_index != s_pickup_map_index) {
         reset_pickup_shadow();
@@ -259,8 +258,6 @@ static void grant_vanilla(unsigned int base, unsigned int slots, unsigned int id
 }
 
 static int caller_source_already_mapped(unsigned int caller_ra) {
-    // These sources are rewritten before the game builds the message and calls
-    // the grant, so the incoming item word is already the final replacement.
     return caller_ra == RA_MAP_OBJECT_A ||
            caller_ra == RA_MAP_OBJECT_B ||
            caller_ra == RA_GROUND_PICKUP ||
@@ -272,16 +269,16 @@ static int caller_is_starting_grant(unsigned int caller_ra) {
            (caller_ra >= RA_STARTING_R_LO && caller_ra < RA_STARTING_R_HI);
 }
 
-static int caller_is_unclassified_bank_r(unsigned int caller_ra) {
-    return caller_ra == RA_BANK_R_UNKNOWN;
+static int caller_is_coupled_unit_loadout(unsigned int caller_ra) {
+    return caller_ra == RA_UNIT_LOADOUT_R;
 }
 
 static int should_randomize_direct_grant(unsigned int caller_ra) {
     if (caller_source_already_mapped(caller_ra)) return 0;
     if (caller_is_starting_grant(caller_ra)) return s_starting_items_enabled != 0u;
-    // Unknown direct callers stay vanilla. Shops have their own Bank-AB source
-    // rewrite, so no config switch is allowed to turn an unclassified grant
-    // into a randomized one accidentally.
+    // Coupled unit loadout and any future unknown caller remain vanilla. Shops
+    // have their own Bank-AB source rewrite, so no unrelated option broadens
+    // this central classifier.
     return 0;
 }
 
@@ -299,9 +296,9 @@ void func_ovlN_801DC740(unsigned int item_word, unsigned int ignored) {
         recomp_log("universal-item-randomizer: Bank-R starting/setup grant recognized");
         s_setup_log_count++;
     }
-    if (s_log_enabled && caller_is_unclassified_bank_r(caller_ra) && s_unknown_r_log_count < 4u) {
-        recomp_log("universal-item-randomizer: unclassified Bank-R grant left vanilla");
-        s_unknown_r_log_count++;
+    if (s_log_enabled && caller_is_coupled_unit_loadout(caller_ra) && s_loadout_log_count < 4u) {
+        recomp_log("universal-item-randomizer: coupled Bank-R unit loadout left vanilla");
+        s_loadout_log_count++;
     }
 
     delivered = should_randomize_direct_grant(caller_ra) ? uir_map_item_word(raw) : raw;
