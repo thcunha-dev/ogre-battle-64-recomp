@@ -10,6 +10,7 @@ on:
       - 'mods/universal-item-randomizer/include/**'
       - 'tools/test_universal_randomizer_mapping.py'
       - 'tools/test_stock_runtime_coverage.py'
+      - 'tools/test_randomizer_persistence_model.py'
       - '.github/workflows/randomizer-mapping.yml'
 
 jobs:
@@ -19,5 +20,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Mapping invariants
         run: python3 tools/test_universal_randomizer_mapping.py
+      - name: Native-save persistence model
+        run: python3 tools/test_randomizer_persistence_model.py
       - name: Stock-runtime acquisition coverage contract
         run: python3 tools/test_stock_runtime_coverage.py
