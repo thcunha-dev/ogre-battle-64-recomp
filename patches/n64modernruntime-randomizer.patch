@@ -1,0 +1,77 @@
+diff --git a/librecomp/include/librecomp/overlays.hpp b/librecomp/include/librecomp/overlays.hpp
+--- a/librecomp/include/librecomp/overlays.hpp
++++ b/librecomp/include/librecomp/overlays.hpp
+@@ -72,6 +72,12 @@ namespace recomp {
+             recomp_func_t* func;
+         };
+ 
++        // Reference-only registry for code-mod replacements. Unlike
++        // load_function_bank(), this does not make a bank resident or touch the
++        // live function map; it only lets the mod loader resolve a function by
++        // the bank record's ROM address and the function's absolute VRAM.
++        void register_function_bank_symbols(uint32_t rom_start, const BankFunctionEntry* funcs, size_t count);
++
+         void load_function_bank(uint32_t rom_start, int32_t ram_addr, uint32_t size, const BankFunctionEntry* funcs, size_t count);
+         // Keyed by ROM start, not RAM: different records are different banks of
+         // the same RAM and must be able to replace each other.
+diff --git a/librecomp/src/overlays.cpp b/librecomp/src/overlays.cpp
+--- a/librecomp/src/overlays.cpp
++++ b/librecomp/src/overlays.cpp
+@@ -65,6 +65,13 @@ struct LoadedFunctionBank {
+ };
+ static std::vector<LoadedFunctionBank> loaded_function_banks{};
+ static void (*streamed_dma_hook)(uint32_t, uint32_t, uint32_t) = nullptr;
++
++struct RegisteredFunctionBank {
++    const recomp::overlays::BankFunctionEntry* funcs;
++    size_t count;
++};
++static std::unordered_map<uint32_t, RegisteredFunctionBank> registered_function_banks{};
++
+ static std::unordered_map<std::string, recomp_func_t*> base_exports{};
+ static std::unordered_map<std::string, recomp_func_ext_t*> ext_base_exports{};
+ static std::unordered_map<std::string, size_t> base_events;
+@@ -362,6 +369,11 @@ void recomp::overlays::unload_overlapping_overlays(int32_t ram_addr, uint32_t s
+     }
+ }
+ 
++void recomp::overlays::register_function_bank_symbols(uint32_t rom_start, const BankFunctionEntry* funcs, size_t count) {
++    registered_function_banks[rom_start] = { funcs, count };
++}
++
+ void recomp::overlays::load_function_bank(uint32_t rom_start, int32_t ram_addr, uint32_t size, const BankFunctionEntry* funcs, size_t count) {
+     unload_overlapping_overlays(ram_addr, size);
+     for (size_t i = 0; i < count; i++) {
+@@ -680,13 +692,25 @@ recomp_func_t* recomp::overlays::get_func_by_section_index_function_offset(uint
+ // Finds a function given a section's rom address and the function's vram address.
+ recomp_func_t* recomp::overlays::get_func_by_section_rom_function_vram(uint32_t section_rom, uint32_t function_vram) {
+     auto find_section_it = code_sections_by_rom.find(section_rom);
+-    if (find_section_it == code_sections_by_rom.end()) {
+-        return nullptr;
++    if (find_section_it != code_sections_by_rom.end()) {
++        SectionTableEntry* section = &sections_info.code_sections[find_section_it->second];
++        int32_t func_offset = function_vram - section->ram_addr;
++
++        return get_func_by_section_index_function_offset(find_section_it->second, func_offset);
+     }
+ 
+-    SectionTableEntry* section = &sections_info.code_sections[find_section_it->second];
+-    int32_t func_offset = function_vram - section->ram_addr;
+-    
+-    return get_func_by_section_index_function_offset(find_section_it->second, func_offset);
++    // Streamed function banks are deliberately not regular code sections: many
++    // records overlap at the same RAM. Code-mod replacements still need to find
++    // their native recompiled body, so fall back to the reference-only bank
++    // registry. BankFunctionEntry::ram_addr is the function's absolute VRAM.
++    auto bank_it = registered_function_banks.find(section_rom);
++    if (bank_it == registered_function_banks.end()) {
++        return nullptr;
++    }
++    for (size_t i = 0; i < bank_it->second.count; i++) {
++        const BankFunctionEntry& entry = bank_it->second.funcs[i];
++        if ((uint32_t)entry.ram_addr == function_vram) {
++            return entry.func;
++        }
++    }
++    return nullptr;
+ }
