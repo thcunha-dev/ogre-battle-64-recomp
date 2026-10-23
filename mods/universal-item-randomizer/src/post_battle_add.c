@@ -149,7 +149,7 @@ void func_80172820(unsigned int original_id, unsigned int amount) {
 
     original_id &= 0xFFFFu;
     amount &= 0xFFFFu;
-    if (original_id == 0u || amount == 0u) return;
+    if (original_id == 0u) return;
     if (!s_ready) build_map();
     id = original_id <= EQUIP_ID_MAX ? s_map[original_id] : original_id;
 
@@ -158,8 +158,8 @@ void func_80172820(unsigned int original_id, unsigned int amount) {
         unsigned int slot_id = rd16(record);
         if (slot_id == id) {
             unsigned int count = rd8(record + LIST_COUNT);
-            unsigned int next = count + amount;
-            if (next > COUNT_MAX) next = COUNT_MAX;
+            unsigned int next = (count + amount) & 0xFFu;
+            if (next >= 100u) next = COUNT_MAX;
             wr8(record + LIST_COUNT, (unsigned char)next);
             rebuild_equipment_use();
             return;
@@ -169,7 +169,7 @@ void func_80172820(unsigned int original_id, unsigned int amount) {
 
     if (empty != EQUIP_SLOTS) {
         unsigned int record = EQUIP_LIST + empty * LIST_STRIDE;
-        unsigned int count = amount > COUNT_MAX ? COUNT_MAX : amount;
+        unsigned int count = amount & 0xFFu;
         wr16(record, (unsigned short)id);
         wr8(record + LIST_COUNT, (unsigned char)count);
     }
