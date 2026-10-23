@@ -5,31 +5,23 @@
 // source to build the sorted equipment/consumable caches used by the list UI,
 // detail panel, price calculation and purchase. Rewriting the raw source keeps
 // all of those surfaces on the same replacement id.
-//
-// func_ovlAB_80219600 always seeds the raw list with consumables
-// 1,2,3,4,5,6,8 before appending equipment words with bit15 set. Requiring that
-// exact signature prevents us from treating a stale/reused heap pointer as a
-// newly constructed shop list. After one deterministic rewrite the signature no
-// longer matches, so the same shop is not rerolled every frame. Reopening a shop
-// reconstructs the vanilla signature and is mapped again to the same ids.
 
 #include "modding.h"
 
 RECOMP_IMPORT("*", unsigned int recomp_get_config_u32(const char* id));
 RECOMP_IMPORT("*", void recomp_log(const char* message));
 
+void universal_item_randomizer_use_repair_tick_impl(void);
+
 #define RDRAM_LO                 0x80000000u
 #define RDRAM_HI                 0x80800000u
-
 #define BANK_AB_CODE             0x80214FA0u
 #define SHOP_STOCK_PTR           0x80219F40u
 #define SHOP_STOCK_BYTES         0x200u
 #define SHOP_STOCK_MAX_WORDS     (SHOP_STOCK_BYTES / 2u)
-
 #define EQUIP_TABLE              0x8018C42Cu
 #define EQUIP_TABLE_STRIDE       0x20u
 #define EQUIP_ID_MAX             277u
-
 #define CONSUMABLE_TABLE         0x8018E6ECu
 #define CONSUMABLE_TABLE_STRIDE  0x0Cu
 #define CONSUMABLE_TABLE_CLASS   0x04u
@@ -46,21 +38,10 @@ static unsigned char s_ready;
 static unsigned char s_key_items_enabled;
 static unsigned char s_shops_enabled;
 
-static unsigned int rd32(unsigned int addr) {
-    return *(volatile unsigned int*)addr;
-}
-
-static unsigned short rd16(unsigned int addr) {
-    return *(volatile unsigned short*)addr;
-}
-
-static unsigned char rd8(unsigned int addr) {
-    return *(volatile unsigned char*)addr;
-}
-
-static void wr16(unsigned int addr, unsigned short value) {
-    *(volatile unsigned short*)addr = value;
-}
+static unsigned int rd32(unsigned int addr) { return *(volatile unsigned int*)addr; }
+static unsigned short rd16(unsigned int addr) { return *(volatile unsigned short*)addr; }
+static unsigned char rd8(unsigned int addr) { return *(volatile unsigned char*)addr; }
+static void wr16(unsigned int addr, unsigned short value) { *(volatile unsigned short*)addr = value; }
 
 static int bank_ab_present(void) {
     return rd32(BANK_AB_CODE + 0x00u) == 0x3C038022u &&
@@ -149,7 +130,6 @@ static void init_maps(void) {
 
     for (id = 0u; id <= EQUIP_ID_MAX; id++) s_equip_map[id] = (unsigned short)id;
     for (id = 0u; id <= CONSUMABLE_ID_MAX; id++) s_consumable_map[id] = (unsigned short)id;
-
     for (id = 1u; id <= EQUIP_ID_MAX; id++) {
         if (equip_id_valid(id)) equip_pool[equip_count++] = (unsigned short)id;
     }
@@ -163,9 +143,7 @@ static void init_maps(void) {
 
     build_cycle_map(s_equip_map, equip_pool, equip_count, 0x45515549u);
     build_cycle_map(s_consumable_map, safe_pool, safe_count, 0x434F4E53u);
-    if (s_key_items_enabled) {
-        build_cycle_map(s_consumable_map, key_pool, key_count, 0x4B455953u);
-    }
+    if (s_key_items_enabled) build_cycle_map(s_consumable_map, key_pool, key_count, 0x4B455953u);
     s_ready = 1u;
 }
 
@@ -205,8 +183,8 @@ static unsigned int validated_stock_count(unsigned int ptr) {
         if ((raw & 0x8000u) != 0u) {
             if (!equip_id_valid(id)) return 0u;
         }
-        else {
-            if (!consumable_id_valid(id)) return 0u;
+        else if (!consumable_id_valid(id)) {
+            return 0u;
         }
     }
     return 0u;
@@ -218,13 +196,9 @@ static void rewrite_shop_stock(void) {
     unsigned int i;
 
     init_maps();
-    if (!s_shops_enabled) return;
-    if (!bank_ab_present()) return;
-
+    if (!s_shops_enabled || !bank_ab_present()) return;
     ptr = rd32(SHOP_STOCK_PTR);
-    if (!stock_pointer_valid(ptr)) return;
-    if (!stock_has_vanilla_signature(ptr)) return;
-
+    if (!stock_pointer_valid(ptr) || !stock_has_vanilla_signature(ptr)) return;
     count = validated_stock_count(ptr);
     if (count < sizeof(k_shop_signature) / sizeof(k_shop_signature[0])) return;
 
@@ -240,11 +214,12 @@ static void rewrite_shop_stock(void) {
     }
 }
 
-// Called from the mod's single primary frame hook. Keeping shop work behind the
-// same hook avoids multiple code-mod hook records for one guest function while
-// preserving the exact timing: Bank-N returns after constructing the raw stock,
-// then the next main-loop frame reaches this source rewrite before Bank AB uses
-// its sorted caches.
-void universal_item_randomizer_shop_tick_impl(void) {
+// One secondary frame hook handles both non-acquisition maintenance tasks.
+// RecompModTool packages two hooks for func_80072944 reliably; keeping the shop
+// and transient +0x02 repair behind this same record avoids the tool crash seen
+// with three independent hook records while preserving their execution order.
+RECOMP_HOOK("func_80072944")
+void universal_item_randomizer_secondary_tick(void) {
     rewrite_shop_stock();
+    universal_item_randomizer_use_repair_tick_impl();
 }
