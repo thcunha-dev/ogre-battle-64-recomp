@@ -130,21 +130,33 @@ def assert_shared_mapper_contract(repo: Path) -> None:
     assert "map_index != s_pickup_map_index" in central
     assert "reset_pickup_shadow();" in central
 
-    # STARTING ITEMS covers only two audited setup sources: the tutorial helper
-    # literal 1..6 grant and the map-loader's literal starting block. The sole
-    # remaining Bank-R caller stays explicit and fail-closed.
+    # STARTING ITEMS covers only the two audited safe setup sources. The third
+    # Bank-R caller is fully classified as a coupled per-unit consumable loadout:
+    # the loader writes id 28 into unit+0x0D before grant(28,1), so central-only
+    # mapping would split the unit reference from owned inventory.
     assert "#define RA_TUTORIAL_SETUP_R      0x80215BF4u" in central
+    assert "#define RA_UNIT_LOADOUT_R        0x80216D98u" in central
     assert "#define RA_STARTING_R_LO         0x80217070u" in central
     assert "#define RA_STARTING_R_HI         0x8021724Cu" in central
-    assert "#define RA_BANK_R_UNKNOWN        0x80216D98u" in central
     assert "caller_ra == RA_TUTORIAL_SETUP_R" in central
     assert "caller_is_starting_grant" in central
-    assert "caller_is_unclassified_bank_r" in central
-    assert "RA_BANK_R_UNKNOWN_A" not in central
-    assert "RA_BANK_R_UNKNOWN_B" not in central
-    assert "RA_SETUP_R_LO" not in central
-    assert "RA_SETUP_R_HI" not in central
-    assert "unclassified Bank-R grant left vanilla" in central
+    assert "caller_is_coupled_unit_loadout" in central
+    assert "caller_ra == RA_UNIT_LOADOUT_R" in central
+    assert "coupled Bank-R unit loadout left vanilla" in central
+    for stale in (
+        "RA_BANK_R_UNKNOWN",
+        "RA_BANK_R_UNKNOWN_A",
+        "RA_BANK_R_UNKNOWN_B",
+        "caller_is_unclassified_bank_r",
+        "RA_SETUP_R_LO",
+        "RA_SETUP_R_HI",
+    ):
+        assert stale not in central, f"stale Bank-R classification remains: {stale}"
+
+    direct = central.split("static int should_randomize_direct_grant", 1)[1]
+    direct = direct.split("RECOMP_PATCH", 1)[0]
+    assert "caller_is_coupled_unit_loadout" not in direct
+    assert "return 0;" in direct, "future direct grants are not fail-closed"
 
     post_battle = consumers["post_battle"]
     assert "static unsigned char saturated_count" in post_battle
@@ -166,9 +178,6 @@ def assert_shared_mapper_contract(repo: Path) -> None:
         assert stale_duplicate not in post_battle, f"post-battle duplicated use repair: {stale_duplicate}"
 
     assert 'recomp_get_config_u32("shops")' not in central
-    direct = central.split("static int should_randomize_direct_grant", 1)[1]
-    direct = direct.split("RECOMP_PATCH", 1)[0]
-    assert "return 0;" in direct, "unknown direct grants are not fail-closed"
 
 
 def main() -> int:
