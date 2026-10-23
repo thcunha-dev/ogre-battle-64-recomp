@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Host-side invariants for the Universal Item Randomizer mapping.
 
-This mirrors the tiny integer mixer/xorshift/Sattolo code used by the MIPS mod.
-It is deliberately ROM-independent, so GitHub Actions can prove the properties
-we rely on for save/restart determinism without shipping game data.
+The numeric test mirrors the tiny integer mixer/xorshift/Sattolo code used by
+randomizer_map.c. Source-contract checks ensure every acquisition path consumes
+that one mapper instead of silently growing a second implementation.
 """
 
 from __future__ import annotations
@@ -62,31 +62,57 @@ def assert_cycle_properties(seed: int, size: int, salt: int) -> None:
         assert all(k != v for k, v in a.items()), (seed, size, "fixed point")
 
 
-def assert_sources_use_shared_constants(repo: Path) -> None:
-    files = {
-        "central": repo / "mods/universal-item-randomizer/src/universal_item_randomizer.c",
-        "post_battle": repo / "mods/universal-item-randomizer/src/post_battle_add.c",
-        "shop": repo / "mods/universal-item-randomizer/src/shop_stock.c",
+def assert_shared_mapper_contract(repo: Path) -> None:
+    src = repo / "mods/universal-item-randomizer/src"
+    mapper = (src / "randomizer_map.c").read_text()
+    header = (repo / "mods/universal-item-randomizer/include/randomizer_map.h").read_text()
+    consumers = {
+        "central": (src / "universal_item_randomizer.c").read_text(),
+        "post_battle": (src / "post_battle_add.c").read_text(),
+        "shop": (src / "shop_stock.c").read_text(),
     }
-    texts = {name: path.read_text() for name, path in files.items()}
 
-    # Equipment can arrive through all three paths and therefore must use the
-    # same deterministic cycle salt and mixer constants everywhere.
-    for name, text in texts.items():
-        for token in (
-            "0x45515549u",
-            "0x7FEB352Du",
-            "0x846CA68Bu",
-            "0x9E3779B9u",
-            "0xA341316Cu",
-        ):
-            assert token in text, f"{name}: missing shared mapping constant {token}"
+    for token in (
+        "0x45515549u",
+        "0x434F4E53u",
+        "0x4B455953u",
+        "0x7FEB352Du",
+        "0x846CA68Bu",
+        "0x9E3779B9u",
+        "0xA341316Cu",
+    ):
+        assert token in mapper, f"shared mapper missing {token}"
+        for name, text in consumers.items():
+            assert token not in text, f"{name}: duplicated mapper constant {token}"
 
-    # Only the central and shop paths need consumable/key pools.
-    for name in ("central", "shop"):
-        text = texts[name]
-        assert "0x434F4E53u" in text, f"{name}: wrong/missing consumable salt"
-        assert "0x4B455953u" in text, f"{name}: wrong/missing key-item salt"
+    for symbol in (
+        "uir_map_init",
+        "uir_map_equipment_id",
+        "uir_map_consumable_id",
+        "uir_map_item_word",
+    ):
+        assert symbol in header, f"mapper header missing {symbol}"
+        assert symbol in mapper, f"mapper source missing {symbol}"
+
+    assert '#include "randomizer_map.h"' in consumers["central"]
+    assert "uir_map_item_word" in consumers["central"]
+    assert '#include "randomizer_map.h"' in consumers["shop"]
+    assert "uir_map_item_word" in consumers["shop"]
+    assert '#include "randomizer_map.h"' in consumers["post_battle"]
+    assert "uir_map_equipment_id" in consumers["post_battle"]
+
+    # Key items are identity-mapped unless the explicit key_items option is on.
+    assert 'recomp_get_config_u32("key_items")' in mapper
+    assert "if (s_key_items_enabled)" in mapper
+    assert "build_cycle_map(s_consumable_map, key_pool" in mapper
+
+    # Shops have a dedicated Bank-AB source path. The Bank-N replacement must
+    # never use shops=ON as permission to randomize an unclassified caller.
+    central = consumers["central"]
+    assert 'recomp_get_config_u32("shops")' not in central
+    direct = central.split("static int should_randomize_direct_grant", 1)[1]
+    direct = direct.split("RECOMP_PATCH", 1)[0]
+    assert "return 0;" in direct, "unknown direct grants are not fail-closed"
 
 
 def main() -> int:
@@ -97,7 +123,7 @@ def main() -> int:
             assert_cycle_properties(seed, size, CONSUMABLE_SALT)
             assert_cycle_properties(seed, size, KEY_SALT)
 
-    assert_sources_use_shared_constants(Path(__file__).resolve().parents[1])
+    assert_shared_mapper_contract(Path(__file__).resolve().parents[1])
     print("universal randomizer mapping invariants: PASS")
     return 0
 
