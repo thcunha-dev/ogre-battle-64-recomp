@@ -85,10 +85,39 @@ jobs:
           test -s build/mods/universal-item-randomizer.nrm
           sha256sum build/mods/universal-item-randomizer.nrm
 
+      - name: Assemble self-contained QA payload
+        run: |
+          set -eux
+          qa=build/qa/universal-item-randomizer-0.3.1
+          mkdir -p "$qa"
+          cp build/mods/universal-item-randomizer.nrm "$qa/"
+          cp mods/universal-item-randomizer/TESTING.md "$qa/"
+          cp mods/universal-item-randomizer/QA-TELEMETRY.md "$qa/"
+          cp mods/universal-item-randomizer/STATUS.md "$qa/"
+          nrm_sha=$(sha256sum "$qa/universal-item-randomizer.nrm" | awk '{print $1}')
+          nrm_size=$(stat -c '%s' "$qa/universal-item-randomizer.nrm")
+          cat >"$qa/BUILD-MANIFEST.txt" <<EOF
+          Universal Item Randomizer QA Build
+          version=0.3.1
+          source_commit=${GITHUB_SHA}
+          source_branch=${GITHUB_REF_NAME}
+          rev_a_reference_sha1=d26b14bee422a09581ce438d45ba9fec9783fbb8
+          n64recomp_commit=81213c1831fab2521a6a5459c67b63437d67e253
+          nrm_sha256=${nrm_sha}
+          nrm_size_bytes=${nrm_size}
+          save_policy=no_randomizer_metadata_in_native_save
+          EOF
+          test -s "$qa/TESTING.md"
+          test -s "$qa/QA-TELEMETRY.md"
+          test -s "$qa/STATUS.md"
+          grep -q "source_commit=${GITHUB_SHA}" "$qa/BUILD-MANIFEST.txt"
+          grep -q "nrm_sha256=${nrm_sha}" "$qa/BUILD-MANIFEST.txt"
+          cat "$qa/BUILD-MANIFEST.txt"
+
       - uses: actions/upload-artifact@v4
         with:
-          name: universal-item-randomizer-0.3.1-for-windows
-          path: build/mods/universal-item-randomizer.nrm
+          name: universal-item-randomizer-0.3.1-qa-payload
+          path: build/qa/universal-item-randomizer-0.3.1
           if-no-files-found: error
 
   windows:
@@ -143,14 +172,20 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: universal-item-randomizer-0.3.1-for-windows
-          path: build/mods
+          name: universal-item-randomizer-0.3.1-qa-payload
+          path: build/qa
 
-      - name: Verify fresh randomizer replaced bundle copy
+      - name: Verify and stage fresh randomizer from QA payload
         shell: bash
         run: |
           set -eux
-          test -s build/mods/universal-item-randomizer.nrm
+          mkdir -p build/mods
+          test -s build/qa/universal-item-randomizer.nrm
+          test -s build/qa/BUILD-MANIFEST.txt
+          expected=$(grep '^nrm_sha256=' build/qa/BUILD-MANIFEST.txt | cut -d= -f2)
+          actual=$(sha256sum build/qa/universal-item-randomizer.nrm | awk '{print $1}')
+          test "$expected" = "$actual"
+          cp build/qa/universal-item-randomizer.nrm build/mods/
           sha256sum build/mods/universal-item-randomizer.nrm
 
       - name: Prepare patched runtime
