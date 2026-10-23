@@ -1,0 +1,84 @@
+name: Package Universal Randomizer
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - randomizer/universal-grant
+    paths:
+      - 'mods/universal-item-randomizer/**'
+      - '.github/workflows/randomizer-package.yml'
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-mips-linux-gnu cmake ninja-build
+
+      - name: Build RecompModTool
+        run: |
+          set -eux
+          git clone --depth=1 https://github.com/N64Recomp/N64Recomp.git /tmp/N64Recomp
+          cmake -S /tmp/N64Recomp -B /tmp/N64Recomp/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/N64Recomp/build --target RecompModTool
+
+      - name: Build MIPS mod ELF
+        run: |
+          set -eux
+          mod=mods/universal-item-randomizer
+          mkdir -p "$mod/build" build/mods mods/reference
+          mips-linux-gnu-gcc \
+            -mips2 -march=mips2 -mno-check-zero-division -mabi=32 -O2 -G0 \
+            -mno-abicalls -mno-odd-spreg -fno-builtin -ffreestanding -nostdinc \
+            -fno-pic -fno-pie -Wall -Wextra -Wno-unused-parameter \
+            -I "$mod/include" -c "$mod/src/universal_item_randomizer.c" \
+            -o "$mod/build/universal_item_randomizer.o"
+          mips-linux-gnu-ld -nostdlib -T "$mod/mod.ld" \
+            --unresolved-symbols=ignore-all --emit-relocs -e 0 \
+            -o "$mod/build/mod.elf" "$mod/build/universal_item_randomizer.o"
+
+      - name: Write minimal reference symbols
+        run: |
+          cat >mods/reference/dump.toml <<'EOF'
+          # Minimal Rev-A reference context for Universal Item Randomizer packaging.
+          [[section]]
+          name = ".main"
+          rom = 0x00001060
+          vram = 0x80070C60
+          size = 0x3E150
+          functions = [
+            { name = "func_80072944", vram = 0x80072944, size = 0x38 },
+          ]
+
+          [[section]]
+          name = ".bankN_record7"
+          rom = 0x00101D00
+          vram = 0x801AD5C0
+          size = 0x43530
+          functions = [
+            { name = "func_ovlN_801DC740", vram = 0x801DC740, size = 0x1F0 },
+          ]
+          EOF
+          cat >mods/reference/data_dump.toml <<'EOF'
+          # This mod uses fixed guest addresses and no named base-game data symbols.
+          EOF
+
+      - name: Package NRM
+        run: |
+          set -eux
+          tool=/tmp/N64Recomp/build/RecompModTool
+          "$tool" mods/universal-item-randomizer/mod.toml build/mods
+          test -s build/mods/universal-item-randomizer.nrm
+          file build/mods/universal-item-randomizer.nrm
+          ls -lh build/mods/universal-item-randomizer.nrm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: universal-item-randomizer-nrm
+          path: build/mods/universal-item-randomizer.nrm
+          if-no-files-found: error
