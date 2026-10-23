@@ -84,6 +84,13 @@ owned inventory:
 Source shadows prevent the mod from mapping its own value a second time. A map
 reload/restored raw value is mapped again deterministically.
 
+## Shop status
+
+The actual town shop is Bank AB (`ROM 0x1977B0`, RAM `0x80214FA0`). Its stock,
+display and purchase flow still need exact classification before shops can be
+randomized safely. `RANDOMIZE SHOPS` therefore remains OFF by default and is not
+considered a finished 1.0 feature yet.
+
 ## Build/CI state
 
 Automated GitHub Actions currently verifies all of the following without a ROM:
@@ -93,10 +100,12 @@ Automated GitHub Actions currently verifies all of the following without a ROM:
 3. N64ModernRuntime project patch + randomizer patch compose cleanly;
 4. every C source in `mods/universal-item-randomizer/src/` compiles for MIPS;
 5. the linked ELF contains recomp hook/patch sections;
-6. RecompModTool packages the result into a valid `.nrm`;
-7. the `.nrm` is uploaded as a workflow artifact.
+6. both acquisition replacement symbols resolve;
+7. RecompModTool packages the result into a valid `.nrm`;
+8. the `.nrm` is uploaded as a workflow artifact.
 
 The current package contains `mod.json`, `mod_syms.bin` and `mod_binary.bin`.
+The WIP package version is `0.2.0`.
 
 ## Remaining 1.0 work
 
