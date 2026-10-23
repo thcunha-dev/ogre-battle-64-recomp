@@ -13,6 +13,7 @@ on:
       - 'tools/test_stock_runtime_coverage.py'
       - 'tools/test_inventory_writer_taxonomy.py'
       - 'tools/test_randomizer_qa_telemetry.py'
+      - 'tools/test_randomizer_persistence_model.py'
       - 'patches/n64modernruntime-ob64.patch'
       - 'patches/n64modernruntime-n64recomp.patch'
       - 'patches/n64modernruntime-randomizer.patch'
@@ -29,7 +30,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq cmake ninja-build build-essential gcc-mips-linux-gnu
 
-      - name: Randomizer architecture contracts
+      - name: Randomizer architecture and persistence contracts
         run: |
           set -eux
           python3 tools/test_randomizer_save_safety.py
@@ -37,6 +38,7 @@ jobs:
           python3 tools/test_stock_runtime_coverage.py
           python3 tools/test_inventory_writer_taxonomy.py
           python3 tools/test_randomizer_qa_telemetry.py
+          python3 tools/test_randomizer_persistence_model.py
 
       - name: Clone pinned runtime and apply project layers
         run: |
@@ -164,10 +166,12 @@ jobs:
           nrm_sha256=${nrm_sha}
           nrm_size_bytes=${nrm_size}
           save_policy=no_randomizer_metadata_in_native_save
+          persistence_model=5000_on_off_on_sequences
           EOF
           grep -q "source_commit=${GITHUB_SHA}" "$manifest"
           grep -q "nrm_sha256=${nrm_sha}" "$manifest"
           grep -q 'save_policy=no_randomizer_metadata_in_native_save' "$manifest"
+          grep -q 'persistence_model=5000_on_off_on_sequences' "$manifest"
           cat "$manifest"
 
       - uses: actions/upload-artifact@v4
