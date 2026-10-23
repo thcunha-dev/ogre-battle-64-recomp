@@ -7,8 +7,8 @@ this matrix is verified on a real build.
 0.3.1 uses one shared deterministic mapper for every covered acquisition path.
 For a given seed, the same original equipment/consumable id must therefore map to
 the same replacement whether it came from a pickup, battle reward, secondary
-post-battle transfer or shop stock. Unclassified direct Bank-N grant callers are
-fail-closed and remain vanilla.
+post-battle transfer or shop stock. Unclassified direct Bank-N/Bank-R grant
+callers are fail-closed and remain vanilla.
 
 ## Baseline
 
@@ -29,6 +29,9 @@ fail-closed and remain vanilla.
 9. Existing inventory must be unchanged.
 10. Repeat the same original pickup on a clean copy of the baseline save: the
     replacement must be identical.
+11. Move to a different map and acquire another ground item. The second map's
+    pickup source must be mapped independently even if its vanilla id happens to
+    equal the replacement written in the same slot on the previous map.
 
 ## Test B — battle reward
 
@@ -45,9 +48,11 @@ transfer (`func_80172820`). Confirm:
 - the equipment id is deterministic for the seed;
 - if the same original equipment id is obtainable through another covered path,
   both routes give the **same replacement** under the same seed;
-- the full count is added (cap 99);
+- the full count is added and saturates at 99 without wrapping;
+- the native-style full used-count rebuild covers both equipment and consumable
+  lists immediately after the add;
 - the item is immediately equip-eligible when `used < owned`;
-- no unrelated inventory record changes.
+- no unrelated inventory id/count changes.
 
 ## Test D — native save compatibility
 
@@ -63,6 +68,11 @@ transfer (`func_80172820`). Confirm:
 All three transitions — ON→OFF, OFF→OFF after resave, and OFF→ON — must load
 without inventory reconstruction being interpreted as a new acquisition.
 
+The `+0x02` used-count column is transient and rebuilt from the roster; only item
+id and owned count belong to the native save representation. The randomizer's
+repair code may therefore correct `+0x02`, but it must never rewrite id or owned
+count during a load-only step.
+
 ## Test E — seed is not save state
 
 1. Load a randomizer-created save with seed `123456`; note existing inventory.
@@ -74,9 +84,11 @@ without inventory reconstruction being interpreted as a new acquisition.
 
 ## Test F — starting grants
 
-`STARTING ITEMS` is the only current acquisition option whose direct-grant path
-relies on Bank-R caller-range recognition. Treat it as **unverified** until the
-real Windows build proves that recognition.
+`STARTING ITEMS` is intentionally restricted to the one Bank-R straight-line
+literal grant block proven by disassembly (`jal` sites in `0x80217068..0x80217244`).
+The corresponding return-address window in the mod is `0x80217070..0x8021724B`.
+Two other whole-game Bank-R callers (`jal` at `0x80215BEC` and `0x80216D90`) are
+**not** included; they remain vanilla until their game semantics are classified.
 
 ### Starting items OFF
 
@@ -91,15 +103,42 @@ real Windows build proves that recognition.
 2. Set `STARTING ITEMS = ON`, `LOG = ON` and seed `123456`.
 3. During tutorial/map setup, inspect the recomp log.
 4. At least one bounded diagnostic must appear:
-   `universal-item-randomizer: Bank-R starting/setup grant recognized`
-5. Starting grants should then be deterministically remapped and remain stable
-   for the same seed.
+   `universal-item-randomizer: Bank-R starting grant recognized`
+5. Starting consumable grants should then be deterministically remapped and
+   remain stable for the same seed.
 6. Repeat with the same seed on a clean save and require the same replacements.
 7. If the diagnostic never appears, consider `STARTING ITEMS` unsupported for
-   release and leave the option OFF; do not widen the caller range by guesswork.
+   release; do not widen the caller range by guesswork.
 
-The diagnostic is capped to the first four recognized setup grants so it cannot
-flood the log during tutorial batches.
+The diagnostic is capped to the first four recognized starting grants so it
+cannot flood the log during the literal batch.
+
+### Unclassified Bank-R callers
+
+With `LOG = ON`, if either caller at `0x80215BEC` or `0x80216D90` is reached, the
+bounded diagnostic is:
+
+`universal-item-randomizer: unclassified Bank-R grant left vanilla`
+
+For each occurrence:
+
+1. record the scene/event and the original granted item;
+2. repeat with the same seed and `STARTING ITEMS` toggled OFF/ON;
+3. the granted item must remain identical in both runs;
+4. only after its role is proven may that caller receive a dedicated acquisition
+   classification/source rewrite.
+
+This is the preferred route for discovering cutscene/NPC/quest gifts without
+turning the central fallback into an unsafe catch-all.
+
+### Class-default equipment remains vanilla
+
+The same map loader equips four class-derived defaults per created unit through
+`func_ovlN_801DD430`. These are deliberately **not** covered by `STARTING ITEMS`.
+The game later rebuilds used counts from the class-derived equipment table itself;
+randomizing only the owned-list grant would separate the class reference from the
+owned id and can create false `used/owned` state. Leave class-default equipment
+vanilla until a design can change the source/reference and owned list together.
 
 ## Test G — key items
 
@@ -171,31 +210,34 @@ option until the post-builder timing is moved to a bank return hook/replacement.
 
 ## Test J — unclassified direct grants stay vanilla
 
-0.3.1 deliberately does **not** randomize a direct `func_ovlN_801DC740` caller
-merely because `RANDOMIZE SHOPS` is on. Shops have their own Bank-AB source path.
+0.3.1 deliberately does **not** randomize an unknown direct
+`func_ovlN_801DC740` caller merely because another option is on. Shops have their
+own Bank-AB source path, and `STARTING ITEMS` uses only its proven literal block.
 
 During campaign QA, whenever an item grant is observed that is not a known
-pickup/reward/setup/shop route:
+pickup/reward/starting/shop route:
 
-1. Record the scene and original item.
-2. Test it with shops OFF and shops ON using the same seed.
-3. The grant must be identical in both runs unless that caller has been
-   explicitly classified and added as a supported randomizer source.
-4. Never broaden the central fallback to randomize all unknown callers; classify
-   the route first so save reconstruction/script state cannot be caught by
-   accident.
+1. record the scene and original item;
+2. test it with shops OFF/ON and starting items OFF/ON using the same seed;
+3. the grant must be identical in every run unless that caller has been
+   explicitly classified and added as a supported randomizer source;
+4. never broaden the central fallback to randomize all unknown callers; classify
+   the route first so setup/script state cannot be caught by accident.
 
 ## Acceptance criteria for 0.3.1
 
 The build can advance beyond test status only when all of these are true:
 
-- map pickup popup and inventory agree;
+- map pickup popup and inventory agree across map transitions;
 - battle reward UI and inventory agree;
-- post-battle count/equipped-use bookkeeping is correct;
+- post-battle count/equipped-use bookkeeping is correct and never wraps;
 - same seed maps the same original id identically across every covered route;
 - key items and starting items remain vanilla with their options off;
-- `STARTING ITEMS=ON` produces the Bank-R recognition diagnostic before it is
-  considered supported;
+- `STARTING ITEMS=ON` produces the narrow Bank-R recognition diagnostic before
+  it is considered supported;
+- the two other Bank-R grant callers remain vanilla until explicitly classified;
+- class-default equipment remains vanilla until its source/reference coupling is
+  implemented safely;
 - shops are internally consistent when enabled and fully vanilla when disabled;
 - changing seed never rewrites existing inventory;
 - save ON→OFF→ON works;
