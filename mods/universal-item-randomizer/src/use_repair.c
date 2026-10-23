@@ -165,6 +165,19 @@ static int ids_changed(void) {
     return 0;
 }
 
+// The native func_80172820 add-count path invokes the game's complete
+// func_8016B774 rebuild after it changes inventory. Its replacement cannot jal
+// that base guest helper directly, so it calls this mod-local equivalent. Keep
+// this forced form separate from the cheap frame tick: a count-only add may not
+// change any id, but the native routine still performs the rebuild immediately.
+void universal_item_randomizer_force_use_repair(void) {
+    if (!roster_populated()) {
+        s_shadow_ready = 0u;
+        return;
+    }
+    full_repair_and_snapshot();
+}
+
 // Called by the combined secondary frame hook in shop_stock.c. This function
 // is intentionally a normal mod-local call rather than a third RECOMP_HOOK
 // record: RecompModTool currently becomes unstable with three hook records for
