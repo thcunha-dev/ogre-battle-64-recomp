@@ -41,6 +41,13 @@ static unsigned int class_equipment_id(unsigned int class_index,
     return rd16(entry + slot * 2u) & 0xFFFFu;
 }
 
+static unsigned char saturated_count(unsigned int current, unsigned int amount) {
+    // Both inputs originate from <=16-bit guest values, so addition is safe in
+    // host unsigned int. Clamp before narrowing to u8: never wrap through 0xFF.
+    unsigned int total = current + amount;
+    return (unsigned char)(total > COUNT_MAX ? COUNT_MAX : total);
+}
+
 // func_80172820 calls the game's full +0x02 rebuild after changing a count.
 // Recreate the equipment half immediately so callers in the same frame observe
 // the same invariant even though the mod cannot jal directly to func_8016B774.
@@ -80,7 +87,7 @@ void func_80172820(unsigned int original_id, unsigned int amount) {
 
     original_id &= 0xFFFFu;
     amount &= 0xFFFFu;
-    if (original_id == 0u) return;
+    if (original_id == 0u || amount == 0u) return;
     id = uir_map_equipment_id(original_id);
 
     for (i = 0u; i < EQUIP_SLOTS; i++) {
@@ -88,9 +95,7 @@ void func_80172820(unsigned int original_id, unsigned int amount) {
         unsigned int slot_id = rd16(record);
         if (slot_id == id) {
             unsigned int count = rd8(record + LIST_COUNT);
-            unsigned int next = (count + amount) & 0xFFu;
-            if (next >= 100u) next = COUNT_MAX;
-            wr8(record + LIST_COUNT, (unsigned char)next);
+            wr8(record + LIST_COUNT, saturated_count(count, amount));
             rebuild_equipment_use();
             return;
         }
@@ -99,9 +104,8 @@ void func_80172820(unsigned int original_id, unsigned int amount) {
 
     if (empty != EQUIP_SLOTS) {
         unsigned int record = EQUIP_LIST + empty * LIST_STRIDE;
-        unsigned int count = amount & 0xFFu;
         wr16(record, (unsigned short)id);
-        wr8(record + LIST_COUNT, (unsigned char)count);
+        wr8(record + LIST_COUNT, saturated_count(0u, amount));
     }
     rebuild_equipment_use();
 }
