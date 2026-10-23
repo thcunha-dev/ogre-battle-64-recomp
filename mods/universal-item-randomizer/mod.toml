@@ -1,0 +1,70 @@
+[manifest]
+id = "ogre_universal_item_randomizer"
+version = "0.1.0"
+display_name = "Universal Item Randomizer"
+short_description = "Deterministic, save-safe item randomizer."
+description = """
+Work-in-progress replacement for the experimental item randomizer. The mapping is
+rebuilt from the selected seed every launch and never stores randomizer metadata
+inside Ogre Battle 64's native save. Quest/key items, shops and starting gear are
+protected by default while the universal grant path is being validated.
+"""
+authors = [ "Ogre Battle 64 BR" ]
+game_id = "ogrebattle64"
+minimum_recomp_version = "0.1.0"
+dependencies = [ ]
+native_libraries = [ ]
+enabled_by_default = false
+
+[[manifest.config_options]]
+id = "seed"
+name = "SEED"
+description = "Deterministic randomizer seed. The same seed always rebuilds the same item mapping."
+type = "Number"
+min = 1
+max = 4294967295
+step = 1
+precision = 0
+default = 1
+
+[[manifest.config_options]]
+id = "shops"
+name = "RANDOMIZE SHOPS"
+description = "Randomize shop acquisitions. Off until shop display and received item can be kept identical."
+type = "Bool"
+default = false
+
+[[manifest.config_options]]
+id = "starting_items"
+name = "STARTING ITEMS"
+description = "Randomize items granted while a new game/tutorial setup is created."
+type = "Bool"
+default = false
+
+[[manifest.config_options]]
+id = "starting_gear"
+name = "STARTING GEAR"
+description = "Randomize class/default equipment assigned during setup."
+type = "Bool"
+default = false
+
+[[manifest.config_options]]
+id = "key_items"
+name = "KEY ITEMS"
+description = "Randomize quest/key items only inside the key-item pool. Off is the save-safe default."
+type = "Bool"
+default = false
+
+[[manifest.config_options]]
+id = "log"
+name = "LOG"
+description = "Print concise randomizer diagnostics to the port log."
+type = "Bool"
+default = false
+
+[inputs]
+elf_path = "build/mod.elf"
+mod_filename = "universal-item-randomizer"
+func_reference_syms_file = "../reference/dump.toml"
+data_reference_syms_files = [ "../reference/data_dump.toml" ]
+additional_files = [ ]
