@@ -45,19 +45,37 @@ Rev-A game run. Do not promote the mod to 1.0 solely because the build is green.
   acquisition contexts without persisting state or reintroducing inventory-delta
   detection. See `QA-TELEMETRY.md`.
 
-## CI contracts
+## CI and persistence contracts
 
-The integrated runtime workflow must pass all five architecture/QA gates before
-it builds the runtime/mod:
+The integrated runtime workflow must pass all architecture/QA gates before it
+builds the runtime/mod:
 
 1. `tools/test_randomizer_save_safety.py`
 2. `tools/test_universal_randomizer_mapping.py`
 3. `tools/test_stock_runtime_coverage.py`
 4. `tools/test_inventory_writer_taxonomy.py`
 5. `tools/test_randomizer_qa_telemetry.py`
+6. `tools/test_randomizer_persistence_model.py`
 
-It then compiles the patched runtime, builds the MIPS mod ELF, builds the matching
-RecompModTool and packages the `.nrm` against Bank-N-augmented Rev-A references.
+The persistence model executes **5,000 deterministic ON -> OFF -> ON sequences**
+with seed changes, mixed equipment/consumable acquisition, native-save round
+trips, count saturation and key-item protection. It proves the intended policy:
+loading never remaps existing ids; disabling or changing seed only affects future
+acquisitions; the modeled native save contains item ids and counts only.
+
+The save-safety contract scans every current and future `.c`/`.h` in the mod so a
+new source file cannot silently add seed serialization, save hooks or custom
+randomizer metadata outside the original audited files.
+
+The integrated job then compiles the patched runtime, builds the MIPS mod ELF,
+builds the matching RecompModTool and packages the `.nrm` against
+Bank-N-augmented Rev-A references. Its artifact includes a reproducible
+`BUILD-MANIFEST.txt` with source commit, pinned runtime/Recomp commits, Rev-A
+reference SHA-1, NRM SHA-256/size and the explicit native-save policy.
+
+A separate QA-payload workflow also packages the `.nrm`, build manifest,
+`TESTING.md`, `QA-TELEMETRY.md` and this status file together so manual campaign
+validation uses one traceable bundle rather than loose files.
 
 ## Static writer taxonomy
 
