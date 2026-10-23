@@ -13,6 +13,7 @@
 #define EQUIP_SLOTS              278u
 #define CONSUMABLE_LIST          0x80193AE0u
 #define CONSUMABLE_SLOTS         40u
+#define CONSUMABLE_ID_MAX        40u
 #define LIST_STRIDE              4u
 #define LIST_USE                 2u
 
@@ -35,7 +36,9 @@
 #define ROSTER_CLASS_KEY         0x17u
 
 static unsigned short s_equip_refs[EQUIP_SLOTS];
-static unsigned short s_consumable_refs[CONSUMABLE_SLOTS];
+// Consumable ids are 1..40 while the owned list has 40 records. This table is
+// indexed by item id, not by owned-list slot, so it needs entries 0..40.
+static unsigned short s_consumable_refs[CONSUMABLE_ID_MAX + 1u];
 static unsigned short s_equip_shadow[EQUIP_SLOTS];
 static unsigned short s_consumable_shadow[CONSUMABLE_SLOTS];
 static unsigned char s_shadow_ready;
@@ -70,7 +73,7 @@ static void add_ref(unsigned int list, unsigned int id) {
         if (id < EQUIP_SLOTS && s_equip_refs[id] != 0xFFFFu) s_equip_refs[id]++;
     }
     else {
-        if (id < CONSUMABLE_SLOTS && s_consumable_refs[id] != 0xFFFFu) s_consumable_refs[id]++;
+        if (id <= CONSUMABLE_ID_MAX && s_consumable_refs[id] != 0xFFFFu) s_consumable_refs[id]++;
     }
 }
 
@@ -100,7 +103,7 @@ static void build_refs(void) {
     unsigned int i;
 
     for (i = 0u; i < EQUIP_SLOTS; i++) s_equip_refs[i] = 0u;
-    for (i = 0u; i < CONSUMABLE_SLOTS; i++) s_consumable_refs[i] = 0u;
+    for (i = 0u; i <= CONSUMABLE_ID_MAX; i++) s_consumable_refs[i] = 0u;
 
     for (i = 0u; i < ROSTER_UNIT_COUNT; i++) {
         unsigned int base = ROSTER_UNITS + i * ROSTER_UNIT_STRIDE;
@@ -146,7 +149,7 @@ static void full_repair_and_snapshot(void) {
         unsigned int id = rd16(record);
         s_consumable_shadow[i] = (unsigned short)id;
         wr8(record + LIST_USE,
-            (unsigned char)((id != 0u && id < CONSUMABLE_SLOTS) ? clamp_use(s_consumable_refs[id]) : 0u));
+            (unsigned char)((id != 0u && id <= CONSUMABLE_ID_MAX) ? clamp_use(s_consumable_refs[id]) : 0u));
     }
     s_shadow_ready = 1u;
 }
