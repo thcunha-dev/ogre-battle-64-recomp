@@ -17,6 +17,7 @@ TESTS = (
     "tools/test_randomizer_persistence_model.py",
     "tools/test_randomizer_source_shadow_model.py",
     "tools/test_randomizer_shop_model.py",
+    "tools/test_randomizer_inventory_capacity_model.py",
 )
 
 
