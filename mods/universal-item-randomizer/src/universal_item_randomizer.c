@@ -44,15 +44,17 @@ RECOMP_IMPORT("*", void recomp_log(const char* message));
 #define RA_GROUND_PICKUP         0x801BB93Cu
 #define RA_BATTLE_REWARD         0x801E53E4u
 
-// The only Bank-R calls proven to be the literal starting-consumable batch live
-// in the straight-line block 0x80217068..0x80217244. Use return-address bounds,
-// not the whole Bank-R module: two other Bank-R grant calls exist at 0x80215BEC
-// and 0x80216D90 and remain deliberately unclassified/fail-closed until their
-// game semantics are proven.
+// Bank-R setup has two proven direct-grant forms:
+//  * func_ovlR_8021592C loops literal consumable ids 1..6; its grant jal is
+//    0x80215BEC, reached from the tutorial/practice unit-setup path.
+//  * func_ovlR_80215C38 ends with the larger literal starting-consumable block
+//    at 0x80217068..0x80217244.
+// STARTING ITEMS controls only these exact audited setup sources. The remaining
+// Bank-R grant at 0x80216D90 stays fail-closed until its semantics are proven.
+#define RA_TUTORIAL_SETUP_R      0x80215BF4u
 #define RA_STARTING_R_LO         0x80217070u
 #define RA_STARTING_R_HI         0x8021724Cu
-#define RA_BANK_R_UNKNOWN_A      0x80215BF4u
-#define RA_BANK_R_UNKNOWN_B      0x80216D98u
+#define RA_BANK_R_UNKNOWN        0x80216D98u
 
 static unsigned char s_ready;
 static unsigned char s_starting_items_enabled;
@@ -266,11 +268,12 @@ static int caller_source_already_mapped(unsigned int caller_ra) {
 }
 
 static int caller_is_starting_grant(unsigned int caller_ra) {
-    return caller_ra >= RA_STARTING_R_LO && caller_ra < RA_STARTING_R_HI;
+    return caller_ra == RA_TUTORIAL_SETUP_R ||
+           (caller_ra >= RA_STARTING_R_LO && caller_ra < RA_STARTING_R_HI);
 }
 
 static int caller_is_unclassified_bank_r(unsigned int caller_ra) {
-    return caller_ra == RA_BANK_R_UNKNOWN_A || caller_ra == RA_BANK_R_UNKNOWN_B;
+    return caller_ra == RA_BANK_R_UNKNOWN;
 }
 
 static int should_randomize_direct_grant(unsigned int caller_ra) {
@@ -292,11 +295,8 @@ void func_ovlN_801DC740(unsigned int item_word, unsigned int ignored) {
     (void)ignored;
     randomizer_init();
 
-    // STARTING ITEMS now recognizes only the proven literal grant block. The
-    // other two Bank-R callers are explicitly observable but stay vanilla until
-    // their role is classified from disassembly/runtime QA.
     if (s_log_enabled && caller_is_starting_grant(caller_ra) && s_setup_log_count < 4u) {
-        recomp_log("universal-item-randomizer: Bank-R starting grant recognized");
+        recomp_log("universal-item-randomizer: Bank-R starting/setup grant recognized");
         s_setup_log_count++;
     }
     if (s_log_enabled && caller_is_unclassified_bank_r(caller_ra) && s_unknown_r_log_count < 4u) {
