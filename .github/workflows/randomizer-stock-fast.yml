@@ -28,7 +28,7 @@ jobs:
           set -eux
           src=mods/universal-item-randomizer
           mod=/tmp/stock-mod
-          mkdir -p "$mod/src" "$mod/include" "$mod/build" mods/reference build/mods-stock
+          mkdir -p "$mod/src" "$mod/include" "$mod/build" /tmp/reference build/mods-stock
           cp "$src"/src/*.c "$mod/src/"
           cp "$src"/include/* "$mod/include/"
           cp "$src"/mod.ld "$mod/mod.ld"
@@ -96,7 +96,7 @@ jobs:
 
       - name: Write base-only reference symbols
         run: |
-          cat >mods/reference/dump.toml <<'EOF'
+          cat >/tmp/reference/dump.toml <<'EOF'
           [[section]]
           name = ".main"
           rom = 0x00001060
