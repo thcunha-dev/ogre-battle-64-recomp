@@ -45,6 +45,7 @@ RECOMP_IMPORT("*", void recomp_log(const char* message));
 
 #define REWARD_QUEUE             0x801936D8u
 #define REWARD_SLOTS             20u
+#define MAP_OBJECT_POPUP_ID      0x801F36C2u
 
 #define RDRAM_LO                 0x80000000u
 #define RDRAM_HI                 0x80800000u
@@ -415,7 +416,7 @@ static int caller_is_setup_grant(unsigned int caller_ra) {
 
 static int should_randomize_direct_grant(unsigned int caller_ra) {
     if (caller_source_already_mapped(caller_ra)) return 0;
-    if (caller_ra == RA_MAP_OBJECT_B) return 1; // pending per-unit id: no table rewrite yet
+    if (caller_ra == RA_MAP_OBJECT_B) return 1; // pending per-unit id: no source rewrite
     if (caller_is_setup_grant(caller_ra)) return s_starting_items_enabled != 0u;
     // Unknown direct callers are preserved by default. SHOPS is an explicit
     // validation-mode opt-in until every direct caller has been classified.
@@ -432,8 +433,16 @@ void func_ovlN_801DC740(unsigned int item_word, unsigned int ignored) {
     (void)ignored;
     randomizer_init();
     delivered = should_randomize_direct_grant(caller_ra) ? mapped_item_word(raw) : raw;
-    id = delivered & 0x7FFFu;
 
+    // The second map-object arm copies its pending id into the popup state before
+    // calling the grant, then clears the pending slot after return. Updating only
+    // the transient UI halfword here keeps the displayed name/icon identical to
+    // the delivered item without mutating a persistent/savable pending source.
+    if (caller_ra == RA_MAP_OBJECT_B && delivered != raw) {
+        wr16(MAP_OBJECT_POPUP_ID, delivered);
+    }
+
+    id = delivered & 0x7FFFu;
     if ((delivered & 0x8000u) != 0u) {
         grant_vanilla(EQUIP_LIST, EQUIP_SLOTS, id);
     }
