@@ -116,9 +116,9 @@ jobs:
           name = ".streamedB"
           rom = 0x00040E80
           vram = 0x8016AF80
-          size = 0x25B0
+          size = 0x265B0
           functions = [
-            { name = "func_80172820", vram = 0x80172820, size = 0xDC },
+            { name = "func_80172820", vram = 0x80172820, size = 0x100 },
           ]
 
           [[section]]
