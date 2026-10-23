@@ -65,16 +65,63 @@ jobs:
           grep -q 'register_function_bank_symbols' /tmp/N64ModernRuntime/librecomp/include/librecomp/overlays.hpp
           grep -q 'registered_function_banks' /tmp/N64ModernRuntime/librecomp/src/overlays.cpp
 
-      - name: Compile universal mod source for MIPS
+      - name: Compile and link universal mod for MIPS
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc-mips-linux-gnu
+          sudo apt-get install -y -qq gcc-mips-linux-gnu cmake ninja-build
+          mod=mods/universal-item-randomizer
+          mkdir -p "$mod/build"
           mips-linux-gnu-gcc \
             -mips2 -march=mips2 -mno-check-zero-division -mabi=32 -O2 -G0 \
             -mno-abicalls -mno-odd-spreg -fno-builtin -ffreestanding -nostdinc \
             -fno-pic -fno-pie -Wall -Wextra -Wno-unused-parameter \
-            -I mods/universal-item-randomizer/include \
-            -c mods/universal-item-randomizer/src/universal_item_randomizer.c \
-            -o /tmp/universal_item_randomizer.o
-          mips-linux-gnu-objdump -h /tmp/universal_item_randomizer.o | \
+            -I "$mod/include" -c "$mod/src/universal_item_randomizer.c" \
+            -o "$mod/build/universal_item_randomizer.o"
+          mips-linux-gnu-objdump -h "$mod/build/universal_item_randomizer.o" | \
             grep -E 'recomp_hook|recomp_hook_return|recomp_patch'
+          mips-linux-gnu-ld -nostdlib -T "$mod/mod.ld" \
+            --unresolved-symbols=ignore-all --emit-relocs -e 0 \
+            -o "$mod/build/mod.elf" "$mod/build/universal_item_randomizer.o"
+
+      - name: Build RecompModTool
+        run: |
+          set -eux
+          git clone --depth=1 --recurse-submodules https://github.com/N64Recomp/N64Recomp.git /tmp/N64Recomp
+          cmake -S /tmp/N64Recomp -B /tmp/N64Recomp/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/N64Recomp/build --target RecompModTool
+
+      - name: Package NRM with minimal Rev-A references
+        run: |
+          set -eux
+          mkdir -p mods/reference build/mods
+          cat >mods/reference/dump.toml <<'EOF'
+          # Minimal Rev-A reference context for Universal Item Randomizer packaging.
+          [[section]]
+          name = ".main"
+          rom = 0x00001060
+          vram = 0x80070C60
+          size = 0x3E150
+          functions = [
+            { name = "func_80072944", vram = 0x80072944, size = 0x38 },
+          ]
+
+          [[section]]
+          name = ".bankN_record7"
+          rom = 0x00101D00
+          vram = 0x801AD5C0
+          size = 0x43530
+          functions = [
+            { name = "func_ovlN_801DC740", vram = 0x801DC740, size = 0x1F0 },
+          ]
+          EOF
+          printf '# no named data references\n' >mods/reference/data_dump.toml
+          /tmp/N64Recomp/build/RecompModTool \
+            mods/universal-item-randomizer/mod.toml build/mods
+          test -s build/mods/universal-item-randomizer.nrm
+          ls -lh build/mods/universal-item-randomizer.nrm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: universal-item-randomizer-nrm
+          path: build/mods/universal-item-randomizer.nrm
+          if-no-files-found: error
