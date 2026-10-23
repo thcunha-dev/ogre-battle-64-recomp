@@ -14,7 +14,7 @@ this matrix is verified on a real build.
 
 1. Enable `Universal Item Randomizer`.
 2. Set `SEED = 123456`.
-3. Leave `STARTING ITEMS = OFF` and `KEY ITEMS = OFF`.
+3. Leave `STARTING ITEMS = OFF`, `KEY ITEMS = OFF` and `RANDOMIZE SHOPS = OFF`.
 4. Load the baseline save.
 5. Pick up a normal map/ground item.
 6. Confirm the popup name/icon is the same item that appears in inventory.
@@ -83,9 +83,45 @@ normal mode has passed the full campaign regression.
 This is the acceptance test for the failure mode reported in the older
 randomizer.
 
-## Shops
+## Test I — shops (0.3.0+)
 
-Shop randomization is **not exposed** in 0.2.1. Town shops must remain vanilla
-until Bank AB's stock/display/purchase path is mapped end to end. If a normal
-0.2.1 test changes shop stock or delivers a different item than displayed, treat
-that as a bug.
+The Rev-A ROM audit identified the real town shop as Bank AB. Its stock builder
+allocates a 0x200-byte, zero-terminated raw `u16 item_word` list and stores the
+pointer at `0x80219F40`. The list begins with the vanilla consumable signature
+`1,2,3,4,5,6,8`; Bank AB later derives its sorted equipment/consumable caches,
+name/detail panel, price and purchased id from that source.
+
+The unique call that constructs this source is at Bank-N ROM `0x10BC40`
+(`jal 0x80219600`). After it returns, the caller only sets a transition flag at
+`0x801F367D`, restores its frame and returns. This gives the main frame hook a
+window to map the raw stock before the shop's next update builds/uses the caches.
+
+Test both modes:
+
+### Shops OFF
+
+1. Keep `RANDOMIZE SHOPS = OFF` and use seed `123456`.
+2. Open a normal town shop.
+3. Stock, names and prices must remain vanilla.
+4. Buy one item and verify the exact displayed item/count is added.
+
+### Shops ON
+
+1. On a clean save/copy, enable `RANDOMIZE SHOPS` with seed `123456`.
+2. Open the same shop.
+3. Confirm its visible stock is changed deterministically.
+4. Select at least one equipment item and one consumable:
+   - list name/icon must match detail name;
+   - displayed price must correspond to the replacement item;
+   - purchase must add exactly that displayed replacement item;
+   - quantity/count must be correct.
+5. Exit and reopen the same shop with the same seed: stock must map identically.
+6. Reopen with seed `654321`: future shop stock may change, but existing owned
+   inventory must not.
+7. Save after a randomized shop purchase, disable the mod, reopen and load the
+   same save. The save must remain valid and the purchased item remains a normal
+   vanilla item id.
+
+If the shop briefly shows vanilla stock before changing, or if a displayed item
+and purchased item ever differ, treat that as a timing bug and disable the shop
+option until the post-builder timing is moved to a bank return hook/replacement.
