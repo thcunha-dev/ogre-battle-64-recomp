@@ -9,6 +9,8 @@ on:
       - 'mods/universal-item-randomizer/**'
       - 'tools/ensure_randomizer_mod_syms.py'
       - 'tools/test_randomizer_save_safety.py'
+      - 'tools/test_universal_randomizer_mapping.py'
+      - 'tools/test_stock_runtime_coverage.py'
       - 'patches/n64modernruntime-ob64.patch'
       - 'patches/n64modernruntime-n64recomp.patch'
       - 'patches/n64modernruntime-randomizer.patch'
@@ -25,8 +27,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq cmake ninja-build build-essential gcc-mips-linux-gnu
 
-      - name: Save-safety source contract
-        run: python3 tools/test_randomizer_save_safety.py
+      - name: Randomizer architecture contracts
+        run: |
+          set -eux
+          python3 tools/test_randomizer_save_safety.py
+          python3 tools/test_universal_randomizer_mapping.py
+          python3 tools/test_stock_runtime_coverage.py
 
       - name: Clone pinned runtime and apply project layers
         run: |
@@ -38,9 +44,6 @@ jobs:
           git -C /tmp/N64ModernRuntime submodule update --init --recursive
           test "$(git -C /tmp/N64ModernRuntime/N64Recomp rev-parse HEAD)" = "$N64RECOMP_COMMIT"
 
-          # Reproduce the project's real nested-toolchain composition. The OB64
-          # runtime uses ctx->cop0_regs and the Cop0/TLB helpers supplied by the
-          # project's patch to N64ModernRuntime's N64Recomp submodule.
           git -C /tmp/N64ModernRuntime/N64Recomp apply \
             "$GITHUB_WORKSPACE/patches/n64modernruntime-n64recomp.patch"
           git -C /tmp/N64ModernRuntime apply \
