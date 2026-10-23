@@ -128,6 +128,19 @@ def assert_shared_mapper_contract(repo: Path) -> None:
     assert "s_consumable_refs[CONSUMABLE_SLOTS]" not in use_repair
     assert "id < CONSUMABLE_SLOTS" not in use_repair
 
+    # The pickup list reuses fixed RAM across maps. Its shadow therefore needs
+    # a source generation key: a new map can legitimately contain a vanilla id
+    # equal to the previous map's replacement in the same slot. The map index
+    # must invalidate the shadow before the new list is transformed.
+    central = consumers["central"]
+    assert "#define MAP_INDEX                0x8018F4A1u" in central
+    assert "s_pickup_map_index" in central
+    assert "s_pickup_map_known" in central
+    assert "static void reset_pickup_shadow" in central
+    assert "map_index = rd8(MAP_INDEX);" in central
+    assert "map_index != s_pickup_map_index" in central
+    assert "reset_pickup_shadow();" in central
+
     # The post-battle route must clamp in wide arithmetic before narrowing to
     # u8. The old '& 0xFF' path could wrap a large award below 99.
     post_battle = consumers["post_battle"]
@@ -140,7 +153,6 @@ def assert_shared_mapper_contract(repo: Path) -> None:
 
     # Shops have a dedicated Bank-AB source path. The Bank-N replacement must
     # never use shops=ON as permission to randomize an unclassified caller.
-    central = consumers["central"]
     assert 'recomp_get_config_u32("shops")' not in central
     direct = central.split("static int should_randomize_direct_grant", 1)[1]
     direct = direct.split("RECOMP_PATCH", 1)[0]
