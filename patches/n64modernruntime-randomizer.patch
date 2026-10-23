@@ -17,7 +17,7 @@ diff --git a/librecomp/include/librecomp/overlays.hpp b/librecomp/include/librec
 diff --git a/librecomp/src/overlays.cpp b/librecomp/src/overlays.cpp
 --- a/librecomp/src/overlays.cpp
 +++ b/librecomp/src/overlays.cpp
-@@ -65,6 +65,13 @@ struct LoadedFunctionBank {
+@@ -65,6 +65,17 @@ struct LoadedFunctionBank {
  };
  static std::vector<LoadedFunctionBank> loaded_function_banks{};
  static void (*streamed_dma_hook)(uint32_t, uint32_t, uint32_t) = nullptr;
@@ -26,23 +26,30 @@ diff --git a/librecomp/src/overlays.cpp b/librecomp/src/overlays.cpp
 +    const recomp::overlays::BankFunctionEntry* funcs;
 +    size_t count;
 +};
-+static std::unordered_map<uint32_t, RegisteredFunctionBank> registered_function_banks{};
++
++// A function-local static makes registration safe from another translation
++// unit's static constructor (app/src/bank_funcs.inc): there is no cross-TU
++// initialization-order dependency.
++static std::unordered_map<uint32_t, RegisteredFunctionBank>& registered_function_banks() {
++    static std::unordered_map<uint32_t, RegisteredFunctionBank> banks{};
++    return banks;
++}
 +
  static std::unordered_map<std::string, recomp_func_t*> base_exports{};
  static std::unordered_map<std::string, recomp_func_ext_t*> ext_base_exports{};
  static std::unordered_map<std::string, size_t> base_events;
-@@ -362,6 +369,11 @@ void recomp::overlays::unload_overlapping_overlays(int32_t ram_addr, uint32_t s
+@@ -362,6 +373,11 @@ void recomp::overlays::unload_overlapping_overlays(int32_t ram_addr, uint32_t s
      }
  }
  
 +void recomp::overlays::register_function_bank_symbols(uint32_t rom_start, const BankFunctionEntry* funcs, size_t count) {
-+    registered_function_banks[rom_start] = { funcs, count };
++    registered_function_banks()[rom_start] = { funcs, count };
 +}
 +
  void recomp::overlays::load_function_bank(uint32_t rom_start, int32_t ram_addr, uint32_t size, const BankFunctionEntry* funcs, size_t count) {
      unload_overlapping_overlays(ram_addr, size);
      for (size_t i = 0; i < count; i++) {
-@@ -680,13 +692,25 @@ recomp_func_t* recomp::overlays::get_func_by_section_index_function_offset(uint
+@@ -680,13 +696,26 @@ recomp_func_t* recomp::overlays::get_func_by_section_index_function_offset(uint
  // Finds a function given a section's rom address and the function's vram address.
  recomp_func_t* recomp::overlays::get_func_by_section_rom_function_vram(uint32_t section_rom, uint32_t function_vram) {
      auto find_section_it = code_sections_by_rom.find(section_rom);
@@ -63,8 +70,9 @@ diff --git a/librecomp/src/overlays.cpp b/librecomp/src/overlays.cpp
 +    // records overlap at the same RAM. Code-mod replacements still need to find
 +    // their native recompiled body, so fall back to the reference-only bank
 +    // registry. BankFunctionEntry::ram_addr is the function's absolute VRAM.
-+    auto bank_it = registered_function_banks.find(section_rom);
-+    if (bank_it == registered_function_banks.end()) {
++    auto& banks = registered_function_banks();
++    auto bank_it = banks.find(section_rom);
++    if (bank_it == banks.end()) {
 +        return nullptr;
 +    }
 +    for (size_t i = 0; i < bank_it->second.count; i++) {
