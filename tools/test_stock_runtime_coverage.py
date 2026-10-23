@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Static acquisition-source contract for Universal Item Randomizer.
 
-Rev-A whole-game analysis found every call to func_ovlN_801DC740. Four ordinary
-Bank-N gameplay calls consume transient sources that are mapped before UI/final
-delivery. Bank R contributes one proven tutorial/setup helper, one still-
-unclassified call, plus the proven straight-line starting-consumable block.
+Rev-A whole-game analysis accounts for every call to func_ovlN_801DC740. Four
+Bank-N gameplay calls consume transient UI sources, Bank R has two safe starting/
+setup sources, and its remaining caller is a coupled unit-loadout operation that
+must stay vanilla until the unit reference and owned inventory can be mapped
+atomically.
 """
 
 from pathlib import Path
@@ -21,7 +22,7 @@ SOURCE_CALLERS = {
 }
 
 TUTORIAL_SETUP = (0x80215BEC, 0x80215BF4, "RA_TUTORIAL_SETUP_R")
-UNKNOWN_BANK_R = (0x80216D90, 0x80216D98, "RA_BANK_R_UNKNOWN")
+UNIT_LOADOUT = (0x80216D90, 0x80216D98, "RA_UNIT_LOADOUT_R")
 STARTING_JAL_LO = 0x80217068
 STARTING_JAL_HI = 0x80217244
 STARTING_RA_LO = STARTING_JAL_LO + 8
@@ -49,8 +50,6 @@ def main() -> int:
         require(f"caller_ra == {macro}")
         print(f"{name}: jal={jal:#010x} ra={ra:#010x} source={source}")
 
-    # Bank-R tutorial helper: func_ovlR_8021592C loops literal consumable ids
-    # 1..6. It is a setup acquisition and follows STARTING ITEMS exactly.
     tutorial_jal, tutorial_ra, tutorial_macro = TUTORIAL_SETUP
     assert tutorial_jal + 8 == tutorial_ra
     require(f"#define {tutorial_macro}      0x80215BF4u")
@@ -69,27 +68,29 @@ def main() -> int:
     starting_cfg = MANIFEST.split('id = "starting_items"', 1)[1].split("[[manifest.config_options]]", 1)[0]
     assert "default = false" in starting_cfg
 
-    # Sole remaining Bank-R caller is named and observable but not accepted by
-    # the randomizing classifier until its semantics are proven.
-    unknown_jal, unknown_ra, unknown_macro = UNKNOWN_BANK_R
-    assert unknown_jal + 8 == unknown_ra
-    require(f"#define {unknown_macro}        0x80216D98u")
-    require(f"caller_ra == {unknown_macro}")
-    require("caller_is_unclassified_bank_r")
-    require("unclassified Bank-R grant left vanilla")
+    # Rev-1 disassembly at 0x80216D74..0x80216D98 proves this path scans each
+    # active unit's ten-byte consumable loadout at unit+0x0D, writes literal id
+    # 28 into the first empty slot, then calls grant(28,1). It is therefore a
+    # coupled reference+inventory setup operation, not an unknown or quest gift.
+    loadout_jal, loadout_ra, loadout_macro = UNIT_LOADOUT
+    assert loadout_jal + 8 == loadout_ra
+    require(f"#define {loadout_macro}        0x80216D98u")
+    require(f"caller_ra == {loadout_macro}")
+    require("caller_is_coupled_unit_loadout")
+    require("coupled Bank-R unit loadout left vanilla")
 
     classifier = SRC.split("static int should_randomize_direct_grant", 1)[1]
     classifier = classifier.split("RECOMP_PATCH", 1)[0]
-    assert "caller_is_unclassified_bank_r" not in classifier, "unknown Bank-R caller became randomizable"
-    assert classifier.rstrip().endswith("return 0;\n}"), "unknown direct callers are not fail-closed"
+    assert "caller_is_coupled_unit_loadout" not in classifier, "coupled unit loadout became randomizable"
+    assert classifier.rstrip().endswith("return 0;\n}"), "unknown/future direct callers are not fail-closed"
 
     for stale in (
-        "RA_SETUP_R_LO", "RA_SETUP_R_HI", "RA_BANK_R_UNKNOWN_A", "RA_BANK_R_UNKNOWN_B",
-        "0x80215000u", "0x80217300u",
+        "RA_SETUP_R_LO", "RA_SETUP_R_HI", "RA_BANK_R_UNKNOWN", "RA_BANK_R_UNKNOWN_A",
+        "RA_BANK_R_UNKNOWN_B", "caller_is_unclassified_bank_r", "0x80215000u", "0x80217300u",
     ):
         assert stale not in SRC, f"stale/broad Bank-R classification returned: {stale}"
 
-    print("universal whole-game main-grant caller coverage: PASS")
+    print("universal whole-game main-grant caller coverage: PASS (all callers classified)")
     return 0
 
 
