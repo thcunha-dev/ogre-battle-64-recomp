@@ -4,7 +4,9 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "mods/universal-item-randomizer/src"
+MOD = ROOT / "mods/universal-item-randomizer"
+SRC = MOD / "src"
+INCLUDE = MOD / "include"
 
 
 def body(text: str, signature: str, next_marker: str | None = None) -> str:
@@ -43,14 +45,31 @@ def strip_c_comments(text: str) -> str:
     return "".join(out)
 
 
+def read_all_mod_code() -> tuple[list[Path], str]:
+    files = sorted(SRC.glob("*.c")) + sorted(INCLUDE.glob("*.h"))
+    assert files, "no randomizer source files found"
+    required = {
+        "universal_item_randomizer.c",
+        "randomizer_map.c",
+        "shop_stock.c",
+        "post_battle_add.c",
+        "use_repair.c",
+    }
+    present = {p.name for p in files}
+    missing = required - present
+    assert not missing, f"expected core randomizer sources missing: {sorted(missing)}"
+    return files, "\n".join(p.read_text() for p in files)
+
+
 def main() -> int:
     central = (SRC / "universal_item_randomizer.c").read_text()
     mapper = (SRC / "randomizer_map.c").read_text()
     shop = (SRC / "shop_stock.c").read_text()
     post = (SRC / "post_battle_add.c").read_text()
     repair = (SRC / "use_repair.c").read_text()
-    all_text = "\n".join((central, mapper, shop, post, repair))
+    code_files, all_text = read_all_mod_code()
 
+    # No source/header in the mod may patch or hook the known save/load path.
     for forbidden in (
         "func_800749C0",
         "RECOMP_HOOK(\"func_800749C0\")",
@@ -110,11 +129,31 @@ def main() -> int:
     ):
         assert forbidden not in repair_code, f"transient repair can affect saved state: {forbidden}"
 
+    # Persistence ban applies to every current and future .c/.h in this mod.
     lowered = strip_c_comments(all_text).lower()
-    for forbidden in ("save_seed", "saved_seed", "serialize_randomizer", "randomizer_save", "save_metadata"):
+    for forbidden in (
+        "save_seed",
+        "saved_seed",
+        "serialize_randomizer",
+        "randomizer_save",
+        "save_metadata",
+        "persist_seed",
+        "persistent_seed",
+        "seed_in_save",
+    ):
         assert forbidden not in lowered, f"randomizer persistence introduced: {forbidden}"
 
-    print("universal randomizer save-safety contract: PASS")
+    # The randomizer config is external state; no source may define a custom save blob API.
+    for forbidden in (
+        "fopen(",
+        "fwrite(",
+        "fprintf(",
+        "serialize(",
+        "deserialize(",
+    ):
+        assert forbidden not in lowered, f"unexpected persistence/file API introduced: {forbidden}"
+
+    print(f"universal randomizer save-safety contract: PASS ({len(code_files)} code files scanned)")
     return 0
 
 
