@@ -21,6 +21,7 @@ RECOMP_IMPORT("*", void recomp_log(const char* message));
 #define RDRAM_LO                 0x80000000u
 #define RDRAM_HI                 0x80800000u
 
+#define BANK_AB_CODE             0x80214FA0u
 #define SHOP_STOCK_PTR           0x80219F40u
 #define SHOP_STOCK_BYTES         0x200u
 #define SHOP_STOCK_MAX_WORDS     (SHOP_STOCK_BYTES / 2u)
@@ -35,9 +36,6 @@ RECOMP_IMPORT("*", void recomp_log(const char* message));
 #define CONSUMABLE_ID_MAX        40u
 #define CONSUMABLE_SAFE_MAX      2u
 #define CONSUMABLE_KEY_MIN       3u
-
-#define LIST_CONSUMABLE          0u
-#define LIST_EQUIPMENT           1u
 
 static const unsigned short k_shop_signature[] = { 1u, 2u, 3u, 4u, 5u, 6u, 8u };
 
@@ -62,6 +60,17 @@ static unsigned char rd8(unsigned int addr) {
 
 static void wr16(unsigned int addr, unsigned short value) {
     *(volatile unsigned short*)addr = value;
+}
+
+// Record-9 banks all share RAM 0x80214FA0. Before touching Bank-AB state, prove
+// that the shop module is actually resident. These first four Rev-A words are
+// unique in the complete 40 MiB cart (ROM 0x1977B0) and cover both the Bank-AB
+// state load and the function prologue.
+static int bank_ab_present(void) {
+    return rd32(BANK_AB_CODE + 0x00u) == 0x3C038022u &&
+           rd32(BANK_AB_CODE + 0x04u) == 0x90639D44u &&
+           rd32(BANK_AB_CODE + 0x08u) == 0x27BDFF90u &&
+           rd32(BANK_AB_CODE + 0x0Cu) == 0xAFBF006Cu;
 }
 
 static int readable_string_pointer(unsigned int ptr) {
@@ -217,6 +226,7 @@ static void rewrite_shop_stock(void) {
 
     init_maps();
     if (!s_shops_enabled) return;
+    if (!bank_ab_present()) return;
 
     ptr = rd32(SHOP_STOCK_PTR);
     if (!stock_pointer_valid(ptr)) return;
@@ -237,11 +247,12 @@ static void rewrite_shop_stock(void) {
     }
 }
 
-// The Bank-N loader calls func_ovlAB_80219600 to build the raw stock before the
-// shop's per-frame Bank-AB state machine consumes it. The main frame hook runs
-// after that transition in the normal loop; this source rewrite is therefore
-// visible to the cache builder on the following shop frame. The signature gate
-// makes the operation idempotent and safe across allocator reuse.
+// The Bank-N loader calls the currently resident record-9 stock builder before
+// the shop's per-frame Bank-AB state machine consumes the source. The Rev-A
+// caller returns immediately after setting a transition flag, so the main frame
+// hook has a clean window before the next screen update. The Bank-AB fingerprint
+// plus vanilla-stock signature make this idempotent and safe across arena/heap
+// reuse.
 RECOMP_HOOK("func_80072944")
 void universal_item_randomizer_shop_tick(void) {
     rewrite_shop_stock();
