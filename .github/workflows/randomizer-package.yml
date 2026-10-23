@@ -7,6 +7,7 @@ on:
       - randomizer/universal-grant
     paths:
       - 'mods/universal-item-randomizer/**'
+      - 'tools/ensure_randomizer_mod_syms.py'
       - '.github/workflows/randomizer-package.yml'
 
 jobs:
@@ -50,11 +51,12 @@ jobs:
           mips-linux-gnu-ld -nostdlib -T "$mod/mod.ld" \
             --unresolved-symbols=ignore-all --emit-relocs -e 0 \
             -o "$mod/build/mod.elf" $objs
+          test -s "$mod/build/mod.elf"
 
-      - name: Write minimal reference symbols
+      - name: Write normal Rev-A references and augment Bank N
         run: |
+          set -eux
           cat >mods/reference/dump.toml <<'EOF'
-          # Minimal Rev-A reference context for Universal Item Randomizer packaging.
           [[section]]
           name = ".main"
           rom = 0x00001060
@@ -72,28 +74,25 @@ jobs:
           functions = [
             { name = "func_80172820", vram = 0x80172820, size = 0x100 },
           ]
-
-          [[section]]
-          name = ".bankN_record7"
-          rom = 0x00101D00
-          vram = 0x801AD5C0
-          size = 0x43530
-          functions = [
-            { name = "func_ovlN_801DC740", vram = 0x801DC740, size = 0x1F0 },
-          ]
           EOF
+          ! grep -q 'func_ovlN_801DC740' mods/reference/dump.toml
+          python3 tools/ensure_randomizer_mod_syms.py mods/reference/dump.toml
+          grep -q 'name = "func_ovlN_801DC740"' mods/reference/dump.toml
+          test "$(grep -c 'name = "func_ovlN_801DC740"' mods/reference/dump.toml)" = 1
 
-      - name: Package NRM
+      - name: Package NRM 0.3.1
         run: |
           set -eux
           tool=/tmp/N64Recomp/build/RecompModTool
+          grep -q 'version = "0.3.1"' mods/universal-item-randomizer/mod.toml
           "$tool" mods/universal-item-randomizer/mod.toml build/mods
           test -s build/mods/universal-item-randomizer.nrm
+          sha256sum build/mods/universal-item-randomizer.nrm
           file build/mods/universal-item-randomizer.nrm
           ls -lh build/mods/universal-item-randomizer.nrm
 
       - uses: actions/upload-artifact@v4
         with:
-          name: universal-item-randomizer-nrm
+          name: universal-item-randomizer-0.3.1-nrm
           path: build/mods/universal-item-randomizer.nrm
           if-no-files-found: error
