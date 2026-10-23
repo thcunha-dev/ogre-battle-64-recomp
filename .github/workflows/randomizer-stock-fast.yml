@@ -42,7 +42,10 @@ jobs:
           s=p.read_text()
           needle='RECOMP_PATCH\nvoid func_ovlN_801DC740('
           assert s.count(needle)==1
-          s=s.replace(needle,'void func_ovlN_801DC740(',1)
+          s=s.replace(needle,'static void stock_unused_func_ovlN_801DC740(',1)
+          start_cfg='s_starting_items_enabled = recomp_get_config_u32("starting_items") != 0u;'
+          assert s.count(start_cfg)==1
+          s=s.replace(start_cfg,'s_starting_items_enabled = 0u;',1)
           p.write_text(s)
 
           m=Path('/tmp/stock-mod/mod.toml')
@@ -74,6 +77,9 @@ jobs:
           mips-linux-gnu-ld -nostdlib -T "$mod/mod.ld" \
             --unresolved-symbols=ignore-all --emit-relocs -e 0 \
             -o "$mod/build/mod.elf" $objs
+
+          # No Bank-N replacement/symbol is allowed in the compatibility ELF.
+          ! mips-linux-gnu-nm "$mod/build/mod.elf" | grep -q 'func_ovlN_801DC740'
 
           cat >mods/reference/dump.toml <<'EOF'
           [[section]]
