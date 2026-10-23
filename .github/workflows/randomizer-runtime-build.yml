@@ -6,13 +6,16 @@ on:
     branches:
       - randomizer/universal-grant
     paths:
+      - 'mods/universal-item-randomizer/**'
+      - 'tools/ensure_randomizer_mod_syms.py'
+      - 'tools/test_randomizer_save_safety.py'
       - 'patches/n64modernruntime-ob64.patch'
       - 'patches/n64modernruntime-n64recomp.patch'
       - 'patches/n64modernruntime-randomizer.patch'
       - '.github/workflows/randomizer-runtime-build.yml'
 
 jobs:
-  librecomp-overlay:
+  integrated-runtime-mod:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +23,10 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq cmake ninja-build build-essential
+          sudo apt-get install -y -qq cmake ninja-build build-essential gcc-mips-linux-gnu
+
+      - name: Save-safety source contract
+        run: python3 tools/test_randomizer_save_safety.py
 
       - name: Clone pinned runtime and apply project layers
         run: |
@@ -68,3 +74,73 @@ jobs:
           ls -lh /tmp/N64ModernRuntime/build/librecomp/liblibrecomp.a
           nm -C /tmp/N64ModernRuntime/build/librecomp/liblibrecomp.a | \
             grep -E 'register_function_bank_symbols|registered_function_banks'
+
+      - name: Build universal mod MIPS ELF
+        run: |
+          set -eux
+          mod=mods/universal-item-randomizer
+          mkdir -p "$mod/build"
+          objs=""
+          for src in "$mod"/src/*.c; do
+            base=$(basename "${src%.c}")
+            obj="$mod/build/$base.o"
+            mips-linux-gnu-gcc \
+              -mips2 -march=mips2 -mno-check-zero-division -mabi=32 -O2 -G0 \
+              -mno-abicalls -mno-odd-spreg -fno-builtin -ffreestanding -nostdinc \
+              -fno-pic -fno-pie -Wall -Wextra -Wno-unused-parameter \
+              -I "$mod/include" -c "$src" -o "$obj"
+            objs="$objs $obj"
+          done
+          mips-linux-gnu-ld -nostdlib -T "$mod/mod.ld" \
+            --unresolved-symbols=ignore-all --emit-relocs -e 0 \
+            -o "$mod/build/mod.elf" $objs
+          test -s "$mod/build/mod.elf"
+          mips-linux-gnu-objdump -h "$mod/build/mod.elf" | \
+            grep -E 'recomp_hook|recomp_hook_return|recomp_patch'
+
+      - name: Build matching RecompModTool
+        run: |
+          set -eux
+          cmake -S /tmp/N64ModernRuntime/N64Recomp \
+            -B /tmp/N64ModernRuntime/N64Recomp/build-modtool \
+            -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/N64ModernRuntime/N64Recomp/build-modtool --target RecompModTool
+          test -x /tmp/N64ModernRuntime/N64Recomp/build-modtool/RecompModTool
+
+      - name: Package NRM against Bank-N augmented Rev-A references
+        run: |
+          set -eux
+          mkdir -p mods/reference build/mods
+          cat >mods/reference/dump.toml <<'EOF'
+          [[section]]
+          name = ".main"
+          rom = 0x00001060
+          vram = 0x80070C60
+          size = 0x3E150
+          functions = [
+            { name = "func_80072944", vram = 0x80072944, size = 0x38 },
+          ]
+
+          [[section]]
+          name = ".streamedB"
+          rom = 0x00040E80
+          vram = 0x8016AF80
+          size = 0x265B0
+          functions = [
+            { name = "func_80172820", vram = 0x80172820, size = 0x100 },
+          ]
+          EOF
+          python3 tools/ensure_randomizer_mod_syms.py mods/reference/dump.toml
+          grep -q 'name = "func_ovlN_801DC740"' mods/reference/dump.toml
+          /tmp/N64ModernRuntime/N64Recomp/build-modtool/RecompModTool \
+            mods/universal-item-randomizer/mod.toml build/mods
+          test -s build/mods/universal-item-randomizer.nrm
+          grep -q 'version = "0.3.1"' mods/universal-item-randomizer/mod.toml
+          sha256sum build/mods/universal-item-randomizer.nrm
+          ls -lh build/mods/universal-item-randomizer.nrm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: universal-item-randomizer-0.3.1-integrated
+          path: build/mods/universal-item-randomizer.nrm
+          if-no-files-found: error
