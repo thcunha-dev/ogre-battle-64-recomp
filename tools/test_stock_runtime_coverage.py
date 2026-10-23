@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 """Static acquisition-source contract for Universal Item Randomizer.
 
-Rev-A analysis proved four ordinary gameplay calls to func_ovlN_801DC740 in the
-Bank-N mission module. Each consumes a transient source that the frame hook maps
-*before* popup/reward text and final delivery, so the central replacement must
-recognize those callers as already mapped rather than applying the permutation a
-second time.
-
-Direct setup/tutorial grants are a separate opt-in class. Every unclassified
-direct caller is deliberately fail-closed and stays vanilla until its source and
-save semantics are understood.
+Rev-A whole-game analysis found every call to func_ovlN_801DC740. Four ordinary
+Bank-N gameplay calls consume transient sources that are mapped before UI/final
+delivery. Bank R contributes two still-unclassified calls plus the proven
+straight-line starting-consumable block. This test makes that caller inventory a
+contract: every audited caller must be explicitly accounted for, and unknowns
+must remain fail-closed.
 """
 
 from pathlib import Path
@@ -18,13 +15,27 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = (ROOT / "mods/universal-item-randomizer/src/universal_item_randomizer.c").read_text()
 MANIFEST = (ROOT / "mods/universal-item-randomizer/mod.toml").read_text()
 
-# jal addresses and return addresses proven from the Rev-A cart.
-CALLERS = {
-    "map_object_a": (0x801ADEA8, 0x801ADEB0, "DROP_TABLE"),
-    "map_object_b": (0x801AE188, 0x801AE190, "DROP_TABLE"),
-    "ground_table_p": (0x801BB934, 0x801BB93C, "PICKUP_IDS"),
-    "battle_reward": (0x801E53DC, 0x801E53E4, "REWARD_QUEUE"),
+# Exact Bank-N jal addresses and return addresses proven from the Rev-A cart.
+SOURCE_CALLERS = {
+    "map_object_a": (0x801ADEA8, 0x801ADEB0, "RA_MAP_OBJECT_A", "DROP_TABLE"),
+    "map_object_b": (0x801AE188, 0x801AE190, "RA_MAP_OBJECT_B", "DROP_TABLE"),
+    "ground_pickup": (0x801BB934, 0x801BB93C, "RA_GROUND_PICKUP", "PICKUP_IDS"),
+    "battle_reward": (0x801E53DC, 0x801E53E4, "RA_BATTLE_REWARD", "REWARD_QUEUE"),
 }
+
+# The two non-literal Bank-R calls found by the same whole-game scan. Their game
+# meaning is not yet proven, so they are named/observable but never randomized.
+UNKNOWN_BANK_R = {
+    "bank_r_unknown_a": (0x80215BEC, 0x80215BF4, "RA_BANK_R_UNKNOWN_A"),
+    "bank_r_unknown_b": (0x80216D90, 0x80216D98, "RA_BANK_R_UNKNOWN_B"),
+}
+
+# Proven literal starting-consumable jal block. The last documented jal lies at
+# or below 0x80217244, hence return addresses are inside [0x80217070,0x8021724c).
+STARTING_JAL_LO = 0x80217068
+STARTING_JAL_HI = 0x80217244
+STARTING_RA_LO = STARTING_JAL_LO + 8
+STARTING_RA_HI_EXCLUSIVE = STARTING_JAL_HI + 8
 
 
 def require(token: str) -> None:
@@ -32,8 +43,6 @@ def require(token: str) -> None:
 
 
 def main() -> int:
-    # Ordinary pickup/reward sources are transformed before the game consumes
-    # them, keeping displayed and delivered ids identical.
     for token in (
         "rewrite_drop_table();",
         "rewrite_pickup_list();",
@@ -44,39 +53,50 @@ def main() -> int:
     ):
         require(token)
 
-    # These exact caller return addresses must remain classified as already
-    # mapped. A second application of a Sattolo cycle would deterministically
-    # produce a different item and desync UI/source semantics.
-    for token in (
-        "caller_ra == RA_MAP_OBJECT_A",
-        "caller_ra == RA_MAP_OBJECT_B",
-        "caller_ra == RA_GROUND_PICKUP",
-        "caller_ra == RA_BATTLE_REWARD",
-    ):
-        require(token)
-
-    for name, (jal, ra, source) in CALLERS.items():
+    # Known display-sensitive routes must be transformed at their source and the
+    # central grant must recognize their exact return addresses as already mapped.
+    for name, (jal, ra, macro, source) in SOURCE_CALLERS.items():
         assert jal + 8 == ra, name
+        require(f"#define {macro}")
+        require(f"caller_ra == {macro}")
         print(f"{name}: jal={jal:#010x} ra={ra:#010x} source={source}")
 
-    # Starting/setup grants are explicit opt-in behavior, not part of ordinary
-    # pickup coverage. The range classification and manifest switch must both
-    # exist, and the direct-grant classifier must still end fail-closed.
+    # Starting items are the only direct Bank-R class currently eligible for
+    # mapping, and only inside the disassembly-proven literal block.
+    assert STARTING_RA_LO == 0x80217070
+    assert STARTING_RA_HI_EXCLUSIVE == 0x8021724C
     for token in (
-        "#define RA_SETUP_R_LO",
-        "#define RA_SETUP_R_HI",
-        "caller_is_setup_grant(caller_ra)",
+        "#define RA_STARTING_R_LO         0x80217070u",
+        "#define RA_STARTING_R_HI         0x8021724Cu",
+        "caller_is_starting_grant(caller_ra)",
         "s_starting_items_enabled",
     ):
         require(token)
     assert 'id = "starting_items"' in MANIFEST
-    assert 'default = false' in MANIFEST.split('id = "starting_items"', 1)[1].split("[[manifest.config_options]]", 1)[0]
+    starting_cfg = MANIFEST.split('id = "starting_items"', 1)[1].split("[[manifest.config_options]]", 1)[0]
+    assert "default = false" in starting_cfg
+
+    # The remaining Bank-R callers are explicitly represented and observable,
+    # but are not accepted by should_randomize_direct_grant().
+    for name, (jal, ra, macro) in UNKNOWN_BANK_R.items():
+        assert jal + 8 == ra, name
+        require(f"#define {macro}")
+        require(f"caller_ra == {macro}")
+        print(f"{name}: jal={jal:#010x} ra={ra:#010x} classification=vanilla")
+    require("caller_is_unclassified_bank_r")
+    require("unclassified Bank-R grant left vanilla")
 
     classifier = SRC.split("static int should_randomize_direct_grant", 1)[1]
     classifier = classifier.split("RECOMP_PATCH", 1)[0]
+    assert "caller_is_unclassified_bank_r" not in classifier, "unknown Bank-R caller became randomizable"
     assert classifier.rstrip().endswith("return 0;\n}"), "unknown direct callers are not fail-closed"
 
-    print("universal normal acquisition coverage: PASS")
+    # Do not regress to the old broad Bank-R module range, which accidentally
+    # included both unknown calls under STARTING ITEMS.
+    for stale in ("RA_SETUP_R_LO", "RA_SETUP_R_HI", "0x80215000u", "0x80217300u"):
+        assert stale not in SRC, f"broad Bank-R classification returned: {stale}"
+
+    print("universal whole-game main-grant caller coverage: PASS")
     return 0
 
 
