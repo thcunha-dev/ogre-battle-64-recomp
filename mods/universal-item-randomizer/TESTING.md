@@ -74,14 +74,32 @@ without inventory reconstruction being interpreted as a new acquisition.
 
 ## Test F — starting grants
 
-With `STARTING ITEMS = OFF`, start a New Game and verify the game's normal
-starting consumables are unchanged.
+`STARTING ITEMS` is the only current acquisition option whose direct-grant path
+relies on Bank-R caller-range recognition. Treat it as **unverified** until the
+real Windows build proves that recognition.
 
-Then on a separate clean run set `STARTING ITEMS = ON`; starting grants should be
-deterministically remapped and remain stable for the same seed.
+### Starting items OFF
 
-Starting-items OFF is also a caller-classification regression test: setup calls in
-Bank R must stay vanilla even though normal pickups/rewards are randomized.
+1. Start a clean New Game with `STARTING ITEMS = OFF`.
+2. Verify the game's normal starting consumables are unchanged.
+3. Normal pickups/rewards should still randomize, proving setup grants are not
+   caught by the normal-source paths.
+
+### Starting items ON + caller-recognition proof
+
+1. Use a separate disposable New Game.
+2. Set `STARTING ITEMS = ON`, `LOG = ON` and seed `123456`.
+3. During tutorial/map setup, inspect the recomp log.
+4. At least one bounded diagnostic must appear:
+   `universal-item-randomizer: Bank-R starting/setup grant recognized`
+5. Starting grants should then be deterministically remapped and remain stable
+   for the same seed.
+6. Repeat with the same seed on a clean save and require the same replacements.
+7. If the diagnostic never appears, consider `STARTING ITEMS` unsupported for
+   release and leave the option OFF; do not widen the caller range by guesswork.
+
+The diagnostic is capped to the first four recognized setup grants so it cannot
+flood the log during tutorial batches.
 
 ## Test G — key items
 
@@ -90,8 +108,9 @@ vanilla. Do not test `KEY ITEMS = ON` on an irreplaceable campaign save until th
 normal mode has passed the full campaign regression.
 
 When testing `KEY ITEMS = ON` on a disposable save, a key item may only map to
-another member of the key-item pool; it must never map into ordinary consumables
-or equipment.
+another member of the audited class-3/4 key-item pool; it must never map into
+ordinary consumables, equipment, or an unknown class. Classes outside 0..4 are
+fail-closed and remain identity-mapped.
 
 ## Test H — post-game regression
 
@@ -175,6 +194,8 @@ The build can advance beyond test status only when all of these are true:
 - post-battle count/equipped-use bookkeeping is correct;
 - same seed maps the same original id identically across every covered route;
 - key items and starting items remain vanilla with their options off;
+- `STARTING ITEMS=ON` produces the Bank-R recognition diagnostic before it is
+  considered supported;
 - shops are internally consistent when enabled and fully vanilla when disabled;
 - changing seed never rewrites existing inventory;
 - save ON→OFF→ON works;
