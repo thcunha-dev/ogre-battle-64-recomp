@@ -1,6 +1,6 @@
 [manifest]
 id = "ogre_universal_item_randomizer"
-version = "0.2.0"
+version = "0.2.1"
 display_name = "Universal Item Randomizer"
 short_description = "Deterministic, save-safe item randomizer."
 description = """
@@ -26,13 +26,6 @@ max = 4294967295
 step = 1
 precision = 0
 default = 1
-
-[[manifest.config_options]]
-id = "shops"
-name = "RANDOMIZE SHOPS"
-description = "Randomize unclassified direct grants while shop-specific display handling is still being validated. Keep OFF for normal play."
-type = "Bool"
-default = false
 
 [[manifest.config_options]]
 id = "starting_items"
