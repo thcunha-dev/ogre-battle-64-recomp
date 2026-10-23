@@ -20,6 +20,11 @@ self-contained table:
         ...
     };
 
+The generated include also installs a static BankSymbolRegistrar. It registers
+every record's ROM -> function table with librecomp before code mods are loaded,
+so RECOMP_PATCH can target functions from streamed banks without pretending the
+overlapping records are ordinary ELF code sections.
+
     <ram end> is the record's RAM end (exclusive) from the game's segment table
     (ROM 0x387C0, 0x28-byte entries); the loader zeroes [ram start + size,
     ram end) as BSS on every load. Records that are not segment-table entries
@@ -189,8 +194,25 @@ def main() -> int:
             f"    {{ 0x{rom:08X}u, (int32_t)0x{ram:08X}u, 0x{size:08X}u, "
             f"(int32_t)0x{ram_end:08X}u, {table}, ARRLEN({table}) }},"
         )
-    out.append("};")
-    out.append("")
+    out.extend(
+        [
+            "};",
+            "",
+            "// Code mods are loaded before the game streams these records. Register",
+            "// their function tables at native startup so RECOMP_PATCH can resolve a",
+            "// bank function by (record ROM, absolute VRAM) without making it resident.",
+            "struct BankSymbolRegistrar {",
+            "    BankSymbolRegistrar() {",
+            "        for (const BankRecord& record : kBankRecords) {",
+            "            recomp::overlays::register_function_bank_symbols(",
+            "                record.rom_start, record.funcs, record.num_funcs);",
+            "        }",
+            "    }",
+            "};",
+            "static BankSymbolRegistrar kBankSymbolRegistrar;",
+            "",
+        ]
+    )
 
     out_path.write_text("\n".join(out))
     print(
