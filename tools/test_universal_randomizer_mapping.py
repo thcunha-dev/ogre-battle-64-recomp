@@ -141,6 +141,19 @@ def assert_shared_mapper_contract(repo: Path) -> None:
     assert "map_index != s_pickup_map_index" in central
     assert "reset_pickup_shadow();" in central
 
+    # STARTING ITEMS may only cover the audited literal grant block in Bank R.
+    # Two other whole-game callers at 0x80215BEC and 0x80216D90 are deliberately
+    # unclassified and must remain vanilla until their semantics are proven.
+    assert "#define RA_STARTING_R_LO         0x80217070u" in central
+    assert "#define RA_STARTING_R_HI         0x8021724Cu" in central
+    assert "#define RA_BANK_R_UNKNOWN_A      0x80215BF4u" in central
+    assert "#define RA_BANK_R_UNKNOWN_B      0x80216D98u" in central
+    assert "caller_is_starting_grant" in central
+    assert "caller_is_unclassified_bank_r" in central
+    assert "RA_SETUP_R_LO" not in central
+    assert "RA_SETUP_R_HI" not in central
+    assert "unclassified Bank-R grant left vanilla" in central
+
     # The post-battle route must clamp in wide arithmetic before narrowing to
     # u8. The old '& 0xFF' path could wrap a large award below 99.
     post_battle = consumers["post_battle"]
