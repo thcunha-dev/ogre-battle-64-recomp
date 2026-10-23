@@ -6,8 +6,8 @@ short_description = "Deterministic, save-safe item randomizer."
 description = """
 Work-in-progress replacement for the experimental item randomizer. The mapping is
 rebuilt from the selected seed every launch and never stores randomizer metadata
-inside Ogre Battle 64's native save. Quest/key items, shops and starting gear are
-protected by default while the universal grant path is being validated.
+inside Ogre Battle 64's native save. Quest/key items, shops and starting grants
+are protected by default while the universal grant path is being validated.
 """
 authors = [ "Ogre Battle 64 BR" ]
 game_id = "ogrebattle64"
@@ -30,7 +30,7 @@ default = 1
 [[manifest.config_options]]
 id = "shops"
 name = "RANDOMIZE SHOPS"
-description = "Randomize shop acquisitions. Off until shop display and received item can be kept identical."
+description = "Randomize unclassified direct grants while shop-specific display handling is still being validated. Keep OFF for normal play."
 type = "Bool"
 default = false
 
@@ -38,13 +38,6 @@ default = false
 id = "starting_items"
 name = "STARTING ITEMS"
 description = "Randomize items granted while a new game/tutorial setup is created."
-type = "Bool"
-default = false
-
-[[manifest.config_options]]
-id = "starting_gear"
-name = "STARTING GEAR"
-description = "Randomize class/default equipment assigned during setup."
 type = "Bool"
 default = false
 
@@ -66,5 +59,5 @@ default = false
 elf_path = "build/mod.elf"
 mod_filename = "universal-item-randomizer"
 func_reference_syms_file = "../reference/dump.toml"
-data_reference_syms_files = [ "../reference/data_dump.toml" ]
+data_reference_syms_files = [ ]
 additional_files = [ ]
