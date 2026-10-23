@@ -60,4 +60,5 @@ default = false
 elf_path = "build/mod.elf"
 mod_filename = "universal-item-randomizer"
 func_reference_syms_file = "../reference/dump.toml"
+data_reference_syms_files = [ ]
 additional_files = [ ]
