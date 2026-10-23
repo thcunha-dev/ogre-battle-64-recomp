@@ -7,6 +7,7 @@ on:
       - randomizer/universal-grant
     paths:
       - 'patches/n64modernruntime-ob64.patch'
+      - 'patches/n64modernruntime-n64recomp.patch'
       - 'patches/n64modernruntime-randomizer.patch'
       - '.github/workflows/randomizer-runtime-build.yml'
 
@@ -25,14 +26,27 @@ jobs:
         run: |
           set -eux
           RUNTIME_COMMIT=589bbf018a3e6d3646ddf7de1e7919f1b7e99bb1
+          N64RECOMP_COMMIT=81213c1831fab2521a6a5459c67b63437d67e253
           git clone --recurse-submodules https://github.com/N64Recomp/N64ModernRuntime.git /tmp/N64ModernRuntime
           git -C /tmp/N64ModernRuntime checkout "$RUNTIME_COMMIT"
           git -C /tmp/N64ModernRuntime submodule update --init --recursive
-          git -C /tmp/N64ModernRuntime apply "$GITHUB_WORKSPACE/patches/n64modernruntime-ob64.patch"
-          git -C /tmp/N64ModernRuntime apply "$GITHUB_WORKSPACE/patches/n64modernruntime-randomizer.patch"
+          test "$(git -C /tmp/N64ModernRuntime/N64Recomp rev-parse HEAD)" = "$N64RECOMP_COMMIT"
+
+          # Reproduce the project's real nested-toolchain composition. The OB64
+          # runtime uses ctx->cop0_regs and the Cop0/TLB helpers supplied by the
+          # project's patch to N64ModernRuntime's N64Recomp submodule.
+          git -C /tmp/N64ModernRuntime/N64Recomp apply \
+            "$GITHUB_WORKSPACE/patches/n64modernruntime-n64recomp.patch"
+          git -C /tmp/N64ModernRuntime apply \
+            "$GITHUB_WORKSPACE/patches/n64modernruntime-ob64.patch"
+          git -C /tmp/N64ModernRuntime apply \
+            "$GITHUB_WORKSPACE/patches/n64modernruntime-randomizer.patch"
+
+          git -C /tmp/N64ModernRuntime/N64Recomp diff --check
           git -C /tmp/N64ModernRuntime diff --check -- \
             librecomp/include/librecomp/overlays.hpp \
             librecomp/src/overlays.cpp
+          grep -q 'cop0_regs\[32\]' /tmp/N64ModernRuntime/N64Recomp/include/recomp.h
 
       - name: Configure runtime
         run: |
@@ -53,4 +67,4 @@ jobs:
           test -s /tmp/N64ModernRuntime/build/librecomp/liblibrecomp.a
           ls -lh /tmp/N64ModernRuntime/build/librecomp/liblibrecomp.a
           nm -C /tmp/N64ModernRuntime/build/librecomp/liblibrecomp.a | \
-            grep -E 'register_bank_hook_sections|find_bank_hook_section|get_bank_hook_func_entry'
+            grep -E 'register_function_bank_symbols|registered_function_banks'
