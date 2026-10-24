@@ -50,8 +50,13 @@ if ($Manifest["config_lifecycle"] -ne "restart_required") {
     throw "Unexpected or missing config lifecycle marker"
 }
 
+if ($Manifest["use_repair"] -ne "native_slot_indexed") {
+    throw "Unexpected or missing native slot-indexed use-repair marker"
+}
+
 Write-Host "Universal Item Randomizer QA payload: PASS"
 Write-Host "Version: $($Manifest['version'])"
 Write-Host "Source commit: $($Manifest['source_commit'])"
 Write-Host "Host suite: $($Manifest['host_suite'])"
+Write-Host "Use repair: $($Manifest['use_repair'])"
 Write-Host "NRM SHA-256: $Actual"
