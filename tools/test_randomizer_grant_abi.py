@@ -23,8 +23,10 @@ def word_bytes(*words: int) -> bytes:
 def main() -> int:
     text = SOURCE.read_text()
 
-    # The replacement deliberately does not promise a return value.
-    assert "RECOMP_PATCH\nvoid func_ovlN_801DC740(unsigned int item_word, unsigned int ignored)" in text
+    # The replacement deliberately does not promise a return value, but does
+    # preserve the native second argument as the consumable in-use flag.
+    assert "RECOMP_PATCH\nvoid func_ovlN_801DC740(unsigned int item_word, unsigned int used_flag)" in text
+    assert "used_flag & 0xFFu" in text
 
     # Rev-A whole-cart facts captured by the ROM-assisted auditor.
     assert mod.JAL_WORD == 0x0C0771D0
