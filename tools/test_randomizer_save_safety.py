@@ -95,16 +95,26 @@ def main() -> int:
     direct = body(central, "static int should_randomize_direct_grant", "RECOMP_PATCH")
     assert "caller_is_starting_grant" in direct
     assert "s_starting_items_enabled" in direct
+    assert "if (caller_is_coupled_unit_grant(caller_ra)) return 0;" in direct
     assert direct.rstrip().endswith("return 0;\n}"), "unknown/future direct grant is not fail-closed"
     assert "#define RA_TUTORIAL_SETUP_R      0x80215BF4u" in central
     assert "#define RA_UNIT_LOADOUT_R        0x80216D98u" in central
     assert "#define RA_STARTING_R_LO         0x80217070u" in central
     assert "#define RA_STARTING_R_HI         0x8021724Cu" in central
     assert "caller_ra == RA_TUTORIAL_SETUP_R" in central
-    assert "caller_is_coupled_unit_loadout" in central
-    assert "coupled Bank-R unit loadout left vanilla" in central
-    assert "caller_is_coupled_unit_loadout" not in direct
-    for stale in ("RA_BANK_R_UNKNOWN", "caller_is_unclassified_bank_r", "RA_SETUP_R_LO", "RA_SETUP_R_HI"):
+    assert "caller_ra == RA_UNIT_LOADOUT_R" in central
+    assert "caller_is_coupled_unit_grant" in central
+    assert "coupled Bank-R unit/setup grant left vanilla" in central
+
+    starting = body(central, "static int caller_is_starting_grant", "static int caller_is_coupled_unit_grant")
+    assert "RA_TUTORIAL_SETUP_R" not in starting
+    assert "RA_UNIT_LOADOUT_R" not in starting
+    assert "RA_STARTING_R_LO" in starting and "RA_STARTING_R_HI" in starting
+
+    for stale in (
+        "RA_BANK_R_UNKNOWN", "caller_is_unclassified_bank_r", "RA_SETUP_R_LO", "RA_SETUP_R_HI",
+        "caller_is_coupled_unit_loadout",
+    ):
         assert stale not in central, f"stale broad/unknown classification remains: {stale}"
     assert 'recomp_get_config_u32("shops")' not in central
 
