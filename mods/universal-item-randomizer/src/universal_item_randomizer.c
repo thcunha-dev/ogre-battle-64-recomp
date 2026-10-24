@@ -74,10 +74,13 @@ static unsigned char s_post_battle_log_count;
 
 // Source shadows: a value written by this mod is not transformed again on the
 // next frame. If the game reloads/changes a source slot, the new raw value differs
-// from the shadow and is mapped once.
+// from the shadow and is mapped once. Map-owned sources also key their shadow by
+// MAP_INDEX so a new map cannot inherit a coincidentally equal replacement.
 static unsigned short s_drop_written[DROP_ENTRY_MAX * 3u];
 static unsigned char s_drop_valid[DROP_ENTRY_MAX * 3u];
 static unsigned char s_drop_present;
+static unsigned char s_drop_map_index;
+static unsigned char s_drop_map_known;
 static unsigned short s_pickup_written[PICKUP_MAX];
 static unsigned char s_pickup_valid[PICKUP_MAX];
 static unsigned char s_pickup_map_index;
@@ -146,19 +149,29 @@ static int drop_table_readable(void) {
     return 1;
 }
 
+static void reset_drop_shadow(void) {
+    unsigned int i;
+    for (i = 0u; i < DROP_ENTRY_MAX * 3u; i++) s_drop_valid[i] = 0u;
+}
+
 static void rewrite_drop_table(void) {
     unsigned int entry;
     unsigned int column;
+    unsigned int map_index;
     int present = drop_table_present() && drop_table_readable();
 
     if (!present) {
-        if (s_drop_present) {
-            for (entry = 0u; entry < DROP_ENTRY_MAX * 3u; entry++) {
-                s_drop_valid[entry] = 0u;
-            }
-        }
+        reset_drop_shadow();
         s_drop_present = 0u;
+        s_drop_map_known = 0u;
         return;
+    }
+
+    map_index = rd8(MAP_INDEX);
+    if (!s_drop_map_known || map_index != s_drop_map_index) {
+        reset_drop_shadow();
+        s_drop_map_index = (unsigned char)map_index;
+        s_drop_map_known = 1u;
     }
     s_drop_present = 1u;
 
