@@ -1,0 +1,5 @@
+Reference ROM used only for validation/extraction; ROM is NOT included in this package.
+Title: Ogre Battle 64 - Person of Lordly Caliber (USA) (Rev 1)
+Revision: USA Rev 1 / Rev A
+Format: big-endian .z64
+SHA-256: 3bfbaf0af968795102f6d136713665e347c22723b4ca75bd5494fdc97df5919e
