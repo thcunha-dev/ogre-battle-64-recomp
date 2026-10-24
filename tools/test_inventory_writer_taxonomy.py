@@ -16,41 +16,29 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = ROOT / "mods/universal-item-randomizer/src"
 MOD_TEXT = "\n".join(path.read_text() for path in sorted(SRC_DIR.glob("*.c")))
 
-# True gameplay acquisition writers covered by replacements/source mapping.
 ACQUISITION_WRITERS = {
     "main_grant": "func_ovlN_801DC740",
     "post_battle_add": "func_80172820",
 }
 
-# Writers/operations that alter inventory bookkeeping but are not acquisitions.
-# They must never become RECOMP_PATCH/HOOK targets in this mod merely because
-# they touch the owned lists.
 NON_ACQUISITION_WRITERS = {
-    # Base class-change transfer/copy. Moves/rebuilds equipment ownership around
-    # class changes; randomizing here would rerandomize existing owned state.
     "class_change_base": "func_80172C64",
-    # Bank-M scene-local analogue of the same transfer behavior.
     "class_change_bank_m": "func_ovlM_801A4110",
-    # Full transient +0x02 roster-reference rebuild. Called after load and other
-    # bookkeeping; it is explicitly not an acquisition signal.
     "used_count_rebuild": "func_8016B774",
-    # Save-load restore path calls the rebuild and reconstructs native inventory.
     "save_restore": "func_8016CEC4",
-    # Bank-S developer/debug path that sets owned counts for existing items.
     "debug_cheat": "func_ovlS_801C214C",
-    # Class-derived default equipment setup is source-coupled to roster/class
-    # references and remains vanilla until source and inventory can map together.
     "class_default_equipment": "func_ovlN_801DD430",
 }
 
-# The remaining Bank-R direct main-grant caller is also coupled setup, but it is
-# classified by return address rather than a separate callee function: the ROM
-# writes consumable id 28 into unit+0x0D first, then grant(28,1). The central
-# replacement must recognize it and preserve the raw id.
+# Two Bank-R main-grant callers are coupled to a unit's consumable loadout. Both
+# pass a1=1 and write/maintain the unit+0x0D slot references before granting the
+# matching consumable. Central-only mapping would split roster references from
+# the owned-list slot, so both are fail-closed/vanilla.
 COUPLED_LOADOUT_TOKENS = (
+    "RA_TUTORIAL_SETUP_R",
     "RA_UNIT_LOADOUT_R",
-    "caller_is_coupled_unit_loadout",
-    "coupled Bank-R unit loadout left vanilla",
+    "caller_is_coupled_unit_grant",
+    "coupled Bank-R unit/setup grant left vanilla",
 )
 
 
@@ -61,8 +49,6 @@ def target_marker(symbol: str, kind: str) -> str:
 
 
 def main() -> int:
-    # Both proven acquisition writers must be explicit replacements. The main
-    # grant is accompanied by source rewrites so UI and delivered id agree.
     for name, symbol in ACQUISITION_WRITERS.items():
         assert target_marker(symbol, "patch") in MOD_TEXT, f"missing acquisition patch: {name} {symbol}"
 
@@ -75,14 +61,10 @@ def main() -> int:
     ):
         assert required in central, f"main acquisition source coverage lost: {required}"
 
-    # Never hook/patch transfer, restore, bookkeeping, debug, or class-default
-    # writers. Seeing their symbol names in comments/tests is fine; executable
-    # target markers are what would change semantics.
     for category, symbol in NON_ACQUISITION_WRITERS.items():
         assert target_marker(symbol, "patch") not in MOD_TEXT, f"non-acquisition patched: {category} {symbol}"
         assert target_marker(symbol, "hook") not in MOD_TEXT, f"non-acquisition hooked: {category} {symbol}"
 
-    # No save-load function may be used as an acquisition detector.
     for forbidden in (
         'RECOMP_HOOK("func_800749C0")',
         "RECOMP_PATCH\nvoid func_800749C0",
@@ -91,23 +73,31 @@ def main() -> int:
     ):
         assert forbidden not in MOD_TEXT, f"save/load path became acquisition signal: {forbidden}"
 
-    # The coupled per-unit consumable loadout is explicitly classified and must
-    # not be accepted by the direct randomizing classifier.
     for token in COUPLED_LOADOUT_TOKENS:
-        assert token in central, f"coupled unit loadout classification lost: {token}"
+        assert token in central, f"coupled unit/setup classification lost: {token}"
+
+    coupled = central.split("static int caller_is_coupled_unit_grant", 1)[1]
+    coupled = coupled.split("static int should_randomize_direct_grant", 1)[0]
+    assert "caller_ra == RA_TUTORIAL_SETUP_R" in coupled
+    assert "caller_ra == RA_UNIT_LOADOUT_R" in coupled
+
+    starting = central.split("static int caller_is_starting_grant", 1)[1]
+    starting = starting.split("static int caller_is_coupled_unit_grant", 1)[0]
+    assert "RA_TUTORIAL_SETUP_R" not in starting
+    assert "RA_UNIT_LOADOUT_R" not in starting
+
     classifier = central.split("static int should_randomize_direct_grant", 1)[1].split("RECOMP_PATCH", 1)[0]
-    assert "caller_is_coupled_unit_loadout" not in classifier, "coupled unit loadout became randomizable"
+    assert "if (caller_is_coupled_unit_grant(caller_ra)) return 0;" in classifier
+    assert classifier.index("caller_is_coupled_unit_grant") < classifier.index("caller_is_starting_grant")
     assert classifier.rstrip().endswith("return 0;\n}"), "future direct callers are not fail-closed"
 
-    # Class-default equipment is intentionally absent from config until an
-    # atomic source/reference-safe implementation exists.
     manifest = (ROOT / "mods/universal-item-randomizer/mod.toml").read_text()
     for unsafe_option in ("class_equipment", "class_defaults", "starting_equipment"):
         assert f'id = "{unsafe_option}"' not in manifest, f"unsafe class equipment option exposed: {unsafe_option}"
 
     print("inventory writer taxonomy: PASS")
     print("  acquisition: func_ovlN_801DC740, func_80172820")
-    print("  protected: class change, save/rebuild, debug, class defaults, coupled unit loadout")
+    print("  protected: class change, save/rebuild, debug, class defaults, coupled Bank-R unit/setup grants")
     return 0
 
 
