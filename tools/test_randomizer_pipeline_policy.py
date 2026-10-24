@@ -18,6 +18,7 @@ ELF_TRIGGER = "tools/verify_randomizer_elf.sh"
 ABI_AUDIT_TRIGGER = "tools/audit_randomizer_*_abi_rom.py"
 ROM_VERIFY_TRIGGER = "tools/verify_randomizer_rev_a_rom.py"
 ROM_VERIFY_FILE = "verify_randomizer_rev_a_rom.py"
+POSTGAME_MARKER = "postgame_persistence_model=2000_finished_game_on_off_on_sequences"
 
 ABI_AUDIT_FILES = (
     "audit_randomizer_grant_abi_rom.py",
@@ -88,6 +89,8 @@ def main() -> int:
 
     assert ROM_VERIFY_TRIGGER in windows, "windows QA: ROM verifier not in path trigger"
     assert "rom_verifier=one_command_four_audits" in windows, "windows QA: ROM verifier marker missing"
+    assert "persistence_model=5000_on_off_on_sequences" in windows, "windows QA: base persistence marker missing"
+    assert POSTGAME_MARKER in windows, "windows QA: post-game persistence marker missing"
     assert f"cp tools/{ROM_VERIFY_FILE} \"$qa/\"" in windows, "QA payload does not ship ROM verifier"
 
     for token in (
@@ -104,6 +107,8 @@ def main() -> int:
         assert f"cp tools/{audit} \"$qa/\"" in windows, f"QA payload does not ship {audit}"
 
     verifier = (ROOT / "mods/universal-item-randomizer/VERIFY-QA.ps1").read_text()
+    assert '$Manifest["persistence_model"] -ne "5000_on_off_on_sequences"' in verifier
+    assert '$Manifest["postgame_persistence_model"] -ne "2000_finished_game_on_off_on_sequences"' in verifier
     assert '$Manifest["use_repair"] -ne "native_slot_indexed"' in verifier
     assert '$Manifest["central_grant_a1"] -ne "native_consumable_used_flag"' in verifier
     assert '$Manifest["bank_r_coupled_grants"] -ne "two_a1_one_callers_fail_closed"' in verifier
