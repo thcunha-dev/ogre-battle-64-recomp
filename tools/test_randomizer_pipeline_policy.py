@@ -17,6 +17,19 @@ ELF_VERIFY = "bash tools/verify_randomizer_elf.sh"
 ELF_TRIGGER = "tools/verify_randomizer_elf.sh"
 ABI_AUDIT_TRIGGER = "tools/audit_randomizer_*_abi_rom.py"
 
+ABI_AUDIT_FILES = (
+    "audit_randomizer_grant_abi_rom.py",
+    "audit_randomizer_post_battle_abi_rom.py",
+    "audit_randomizer_coupled_a1_abi_rom.py",
+    "audit_randomizer_starting_block_abi_rom.py",
+)
+
+ARTIFACT_MARKERS = (
+    "central_grant_a1=native_consumable_used_flag",
+    "bank_r_coupled_grants=two_a1_one_callers_fail_closed",
+    "starting_items_scope=forty_literal_a1_zero_no_store_calls",
+)
+
 
 def assert_ordered(path: Path, required_after: tuple[str, ...]) -> None:
     text = path.read_text()
@@ -66,6 +79,8 @@ def main() -> int:
         assert "host_suite=${suite_count}_tests" in text, f"{name}: suite count not dynamic"
         assert "elf_symbols=critical_replacements_present" in text, f"{name}: ELF marker missing"
         assert "use_repair=native_slot_indexed" in text, f"{name}: native slot-indexed use repair marker missing"
+        for marker in ARTIFACT_MARKERS:
+            assert marker in text, f"{name}: ABI/Bank-R artifact marker missing: {marker}"
         assert "seed_vectors=123456_locked" in text, f"{name}: golden-vector marker missing"
 
     for token in (
@@ -78,8 +93,16 @@ def main() -> int:
     ):
         assert token in windows, f"windows QA pipeline missing {token}"
 
+    for audit in ABI_AUDIT_FILES:
+        assert f"cp tools/{audit} \"$qa/\"" in windows, f"QA payload does not ship {audit}"
+
     verifier = (ROOT / "mods/universal-item-randomizer/VERIFY-QA.ps1").read_text()
     assert '$Manifest["use_repair"] -ne "native_slot_indexed"' in verifier
+    assert '$Manifest["central_grant_a1"] -ne "native_consumable_used_flag"' in verifier
+    assert '$Manifest["bank_r_coupled_grants"] -ne "two_a1_one_callers_fail_closed"' in verifier
+    assert '$Manifest["starting_items_scope"] -ne "forty_literal_a1_zero_no_store_calls"' in verifier
+    for audit in ABI_AUDIT_FILES:
+        assert f'"{audit}"' in verifier, f"VERIFY-QA does not require {audit}"
 
     print("universal randomizer pipeline policy: PASS")
     return 0
