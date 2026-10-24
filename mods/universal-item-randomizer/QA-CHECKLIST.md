@@ -4,24 +4,23 @@ Use this as the short execution sheet. `TESTING.md` remains the detailed source
 of truth for each procedure. Do not mark 1.0 ready until every required manual
 box below has evidence from a real Rev-A recomp build.
 
-## Automated preflight — already PASS for candidate `bf7b34a`
+## Automated preflight
 
-These are CI-backed facts for source commit
-`bf7b34afe1315efcd7e985e484512da098948af6`; they are not manual gameplay claims.
+The current engineering candidate is based on the 31-test suite. CI-backed facts are
+not manual gameplay claims.
 
-- [x] Full host suite: 30/30 PASS.
+- [x] Full host suite: 31/31 PASS.
+- [x] Artifact manifest parity across package/integrated/Windows/stock QA PASS.
 - [x] Persistence model: 5,000 ON -> OFF -> ON sequences PASS.
 - [x] Post-game persistence model: 2,000 finished-game sequences PASS.
 - [x] Campaign stress: 1,000 campaigns x 600 events = 600,000 events PASS.
-- [x] Package `.nrm` pipeline PASS.
-- [x] Self-contained QA payload build + `VERIFY-QA.ps1` self-verification PASS.
-- [x] Stock-runtime QA NRM packaging PASS.
-- [x] Official-v0.8.3 ready-to-run Windows stock-runtime QA bundle assembly PASS.
-- [x] Integrated custom runtime/library + MIPS ELF + Bank-N-augmented NRM build PASS.
-- [x] All four principal artifacts are pinned in `STATUS.md` with workflow artifact IDs and archive SHA-256 values.
+- [x] Package `.nrm` pipeline + provenance manifest PASS.
+- [x] Self-contained QA payload build + `VERIFY-QA.ps1` self-verification has a previously green candidate and must be green again for the final candidate.
+- [x] Stock-runtime QA NRM packaging has a previously green candidate and must be green again for the final candidate.
+- [x] Official-v0.8.3 ready-to-run Windows stock-runtime QA bundle assembly has a previously green candidate and must be green again for the final candidate.
+- [x] Integrated custom runtime/library + MIPS ELF + Bank-N-augmented NRM has a previously green candidate and must be green again for the final candidate.
 
-A newer source commit may supersede this candidate only after its own relevant gates
-are green. Never mix an older runtime/NRM with a newer manifest/checklist.
+Never mix an older runtime/NRM with a newer manifest/checklist.
 
 ## Build identity — verify on the exact package you execute
 
@@ -30,7 +29,7 @@ are green. Never mix an older runtime/NRM with a newer manifest/checklist.
 - [ ] `source_commit` matches the tested branch artifact.
 - [ ] `.nrm` SHA-256 matches `nrm_sha256` in the manifest.
 - [ ] Rev-A reference SHA-1 is `d26b14bee422a09581ce438d45ba9fec9783fbb8`.
-- [ ] Host suite count in manifest matches `python3 tools/test_universal_randomizer_all.py --count` (currently 30).
+- [ ] Host suite count in manifest matches `python3 tools/test_universal_randomizer_all.py --count` (currently 31).
 - [ ] Manifest contains `persistence_model=5000_on_off_on_sequences`.
 - [ ] Manifest contains `postgame_persistence_model=2000_finished_game_on_off_on_sequences`.
 - [ ] Manifest contains `campaign_stress_model=1000_campaigns_x_600_events`.
