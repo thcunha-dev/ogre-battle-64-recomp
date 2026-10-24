@@ -11,7 +11,11 @@ $Required = @(
     "QA-CHECKLIST.md",
     "QA-TELEMETRY.md",
     "STATUS.md",
-    "SEED-VECTORS.md"
+    "SEED-VECTORS.md",
+    "audit_randomizer_grant_abi_rom.py",
+    "audit_randomizer_post_battle_abi_rom.py",
+    "audit_randomizer_coupled_a1_abi_rom.py",
+    "audit_randomizer_starting_block_abi_rom.py"
 )
 
 foreach ($Name in $Required) {
@@ -54,9 +58,24 @@ if ($Manifest["use_repair"] -ne "native_slot_indexed") {
     throw "Unexpected or missing native slot-indexed use-repair marker"
 }
 
+if ($Manifest["central_grant_a1"] -ne "native_consumable_used_flag") {
+    throw "Unexpected or missing central-grant a1 marker"
+}
+
+if ($Manifest["bank_r_coupled_grants"] -ne "two_a1_one_callers_fail_closed") {
+    throw "Unexpected or missing coupled Bank-R grant marker"
+}
+
+if ($Manifest["starting_items_scope"] -ne "forty_literal_a1_zero_no_store_calls") {
+    throw "Unexpected or missing STARTING ITEMS scope marker"
+}
+
 Write-Host "Universal Item Randomizer QA payload: PASS"
 Write-Host "Version: $($Manifest['version'])"
 Write-Host "Source commit: $($Manifest['source_commit'])"
 Write-Host "Host suite: $($Manifest['host_suite'])"
 Write-Host "Use repair: $($Manifest['use_repair'])"
+Write-Host "Central grant a1: $($Manifest['central_grant_a1'])"
+Write-Host "Bank-R coupled grants: $($Manifest['bank_r_coupled_grants'])"
+Write-Host "Starting items scope: $($Manifest['starting_items_scope'])"
 Write-Host "NRM SHA-256: $Actual"
