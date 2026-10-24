@@ -1,0 +1,40 @@
+name: Build patched N64 tools
+
+on:
+  push:
+    paths:
+      - '.github/workflows/build-n64-tools.yml'
+      - 'patches/n64recomp-ob64.patch'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build patched N64Recomp and RSPRecomp
+        shell: bash
+        run: |
+          set -euxo pipefail
+          N64RECOMP_COMMIT=ffb39cdad1da5de07eaaa48bd1db4a89a7986771
+          git clone https://github.com/N64Recomp/N64Recomp.git --recurse-submodules N64RecompSource
+          git -C N64RecompSource checkout "$N64RECOMP_COMMIT"
+          git -C N64RecompSource submodule update --init --recursive
+          ( cd N64RecompSource && git apply ../patches/n64recomp-ob64.patch )
+          cmake -S N64RecompSource -B N64RecompSource/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build N64RecompSource/build --target N64RecompCLI RSPRecomp --parallel 2
+          mkdir -p artifact
+          cp N64RecompSource/build/N64Recomp artifact/N64Recomp
+          cp N64RecompSource/build/RSPRecomp artifact/RSPRecomp
+          chmod +x artifact/N64Recomp artifact/RSPRecomp
+          artifact/N64Recomp --help >/dev/null 2>&1 || true
+      - name: Upload patched tools
+        uses: actions/upload-artifact@v4
+        with:
+          name: ogre-n64-tools-linux
+          path: artifact/
+          if-no-files-found: error
+          retention-days: 7
