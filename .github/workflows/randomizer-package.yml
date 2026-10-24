@@ -6,7 +6,10 @@ on:
     branches:
       - randomizer/universal-grant
     paths:
-      - 'mods/universal-item-randomizer/**'
+      - 'mods/universal-item-randomizer/src/**'
+      - 'mods/universal-item-randomizer/include/**'
+      - 'mods/universal-item-randomizer/mod.toml'
+      - 'mods/universal-item-randomizer/mod.ld'
       - 'tools/ensure_randomizer_mod_syms.py'
       - 'tools/test_randomizer_*.py'
       - 'tools/test_universal_randomizer_*.py'
