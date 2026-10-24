@@ -8,6 +8,7 @@ on:
     paths:
       - 'mods/universal-item-randomizer/src/**'
       - 'mods/universal-item-randomizer/include/**'
+      - 'tools/verify_randomizer_rev_a_rom.py'
       - 'tools/audit_randomizer_*_abi_rom.py'
       - 'tools/test_randomizer_*.py'
       - 'tools/test_universal_randomizer_*.py'
