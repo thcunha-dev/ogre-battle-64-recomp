@@ -1,0 +1,66 @@
+name: Build DX9 Windows cross SDK
+
+on:
+  push:
+    paths:
+      - '.github/workflows/build-dx9-cross-sdk.yml'
+      - 'patches/n64modernruntime-ob64.patch'
+      - 'patches/n64modernruntime-n64recomp.patch'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare LLVM-MinGW, patched runtime, and static SDL2
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p artifact/llvm-mingw artifact/SDL2-prefix
+
+          LLVM_MINGW_TAG=20261020
+          LLVM_MINGW_FILE=llvm-mingw-${LLVM_MINGW_TAG}-msvcrt-ubuntu-22.04-x86_64.tar.xz
+          curl -fL --retry 3 -o /tmp/llvm-mingw.tar.xz \
+            "https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_TAG}/${LLVM_MINGW_FILE}"
+          tar -xJf /tmp/llvm-mingw.tar.xz -C artifact/llvm-mingw --strip-components=1
+
+          RUNTIME_COMMIT=589bbf018a3e6d3646ddf7de1e7919f1b7e99bb1
+          git clone https://github.com/N64Recomp/N64ModernRuntime.git --recurse-submodules runtime
+          git -C runtime checkout "$RUNTIME_COMMIT"
+          git -C runtime submodule update --init --recursive
+          ( cd runtime && git apply ../patches/n64modernruntime-ob64.patch )
+          ( cd runtime/N64Recomp && git apply ../../patches/n64modernruntime-n64recomp.patch )
+          rm -rf runtime/.git runtime/N64Recomp/.git
+          mv runtime artifact/N64ModernRuntime
+
+          SDL_VERSION=2.32.10
+          curl -fL --retry 3 -o /tmp/sdl.tar.gz \
+            "https://github.com/libsdl-org/SDL/releases/download/release-${SDL_VERSION}/SDL2-${SDL_VERSION}.tar.gz"
+          tar -xzf /tmp/sdl.tar.gz -C /tmp
+          CC="$PWD/artifact/llvm-mingw/bin/x86_64-w64-mingw32-clang"
+          CXX="$PWD/artifact/llvm-mingw/bin/x86_64-w64-mingw32-clang++"
+          cmake -S "/tmp/SDL2-${SDL_VERSION}" -B /tmp/sdl-build -G Ninja \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_C_COMPILER="$CC" \
+            -DCMAKE_CXX_COMPILER="$CXX" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST=OFF -DSDL_TESTS=OFF \
+            -DCMAKE_INSTALL_PREFIX="$PWD/artifact/SDL2-prefix"
+          cmake --build /tmp/sdl-build --parallel 2
+          cmake --install /tmp/sdl-build
+
+          printf 'LLVM-MinGW %s\nRuntime %s\nSDL2 %s\n' "$LLVM_MINGW_TAG" "$RUNTIME_COMMIT" "$SDL_VERSION" > artifact/VERSIONS.txt
+          artifact/llvm-mingw/bin/x86_64-w64-mingw32-clang --version | head -1
+          find artifact/SDL2-prefix -name 'SDL2Config.cmake' -print
+      - name: Upload DX9 cross SDK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ogre-dx9-cross-sdk-linux
+          path: artifact/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 6
