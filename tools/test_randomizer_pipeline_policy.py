@@ -19,6 +19,7 @@ ABI_AUDIT_TRIGGER = "tools/audit_randomizer_*_abi_rom.py"
 ROM_VERIFY_TRIGGER = "tools/verify_randomizer_rev_a_rom.py"
 ROM_VERIFY_FILE = "verify_randomizer_rev_a_rom.py"
 POSTGAME_MARKER = "postgame_persistence_model=2000_finished_game_on_off_on_sequences"
+CAMPAIGN_STRESS_MARKER = "campaign_stress_model=1000_campaigns_x_600_events"
 
 ABI_AUDIT_FILES = (
     "audit_randomizer_grant_abi_rom.py",
@@ -88,6 +89,13 @@ def main() -> int:
         assert "seed_vectors=123456_locked" in text, f"{name}: golden-vector marker missing"
         assert "persistence_model=5000_on_off_on_sequences" in text, f"{name}: base persistence marker missing"
         assert POSTGAME_MARKER in text, f"{name}: post-game persistence marker missing"
+        assert CAMPAIGN_STRESS_MARKER in text, f"{name}: campaign stress marker missing"
+
+    stock = (WF / "randomizer-stock-runtime-qa.yml").read_text()
+    assert "host_suite=${suite_count}_tests" in stock, "stock QA: dynamic suite count missing"
+    assert "persistence_model=5000_on_off_on_sequences" in stock, "stock QA: base persistence marker missing"
+    assert POSTGAME_MARKER in stock, "stock QA: post-game persistence marker missing"
+    assert CAMPAIGN_STRESS_MARKER in stock, "stock QA: campaign stress marker missing"
 
     assert ROM_VERIFY_TRIGGER in windows, "windows QA: ROM verifier not in path trigger"
     assert "rom_verifier=one_command_four_audits" in windows, "windows QA: ROM verifier marker missing"
@@ -109,6 +117,7 @@ def main() -> int:
     verifier = (ROOT / "mods/universal-item-randomizer/VERIFY-QA.ps1").read_text()
     assert '$Manifest["persistence_model"] -ne "5000_on_off_on_sequences"' in verifier
     assert '$Manifest["postgame_persistence_model"] -ne "2000_finished_game_on_off_on_sequences"' in verifier
+    assert '$Manifest["campaign_stress_model"] -ne "1000_campaigns_x_600_events"' in verifier
     assert '$Manifest["use_repair"] -ne "native_slot_indexed"' in verifier
     assert '$Manifest["central_grant_a1"] -ne "native_consumable_used_flag"' in verifier
     assert '$Manifest["bank_r_coupled_grants"] -ne "two_a1_one_callers_fail_closed"' in verifier
