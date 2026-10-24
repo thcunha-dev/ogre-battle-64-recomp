@@ -32,7 +32,10 @@ RECOMP_IMPORT("*", void recomp_log(const char* message));
 
 #define PICKUP_COUNT             0x801F1002u
 #define PICKUP_IDS               0x801F1004u
-#define PICKUP_MAX               64u
+// The u16 id array ends exactly where the first per-entry byte array begins at
+// 0x801F1024: 0x20 bytes / 2 = 16 physical item slots. Never treat the adjacent
+// flag/metadata arrays as extra ids even if a transient count byte is corrupt.
+#define PICKUP_MAX               16u
 #define MAP_INDEX                0x8018F4A1u
 
 #define REWARD_QUEUE             0x801936D8u
