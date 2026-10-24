@@ -22,6 +22,7 @@ TESTS = (
     "tools/test_randomizer_persistence_model.py",
     "tools/test_randomizer_source_shadow_model.py",
     "tools/test_randomizer_drop_table_validation.py",
+    "tools/test_randomizer_pickup_reward_validation.py",
     "tools/test_randomizer_shop_model.py",
     "tools/test_randomizer_inventory_capacity_model.py",
     "tools/test_randomizer_use_repair_model.py",
