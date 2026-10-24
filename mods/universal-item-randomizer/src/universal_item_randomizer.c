@@ -209,6 +209,14 @@ static void reset_pickup_shadow(void) {
     for (i = 0u; i < PICKUP_MAX; i++) s_pickup_valid[i] = 0u;
 }
 
+static int pickup_list_readable(unsigned int count) {
+    unsigned int i;
+    for (i = 0u; i < count; i++) {
+        if (!source_item_word_valid(rd16(PICKUP_IDS + i * 2u))) return 0;
+    }
+    return 1;
+}
+
 static void rewrite_pickup_list(void) {
     unsigned int count;
     unsigned int i;
@@ -228,7 +236,10 @@ static void rewrite_pickup_list(void) {
     }
 
     count = rd8(PICKUP_COUNT);
-    if (count > PICKUP_MAX) return;
+    if (count > PICKUP_MAX || !pickup_list_readable(count)) {
+        reset_pickup_shadow();
+        return;
+    }
 
     for (i = 0u; i < PICKUP_MAX; i++) {
         if (i >= count) {
@@ -253,8 +264,30 @@ static void rewrite_pickup_list(void) {
     }
 }
 
+static void reset_reward_shadow(void) {
+    unsigned int i;
+    for (i = 0u; i < REWARD_SLOTS; i++) {
+        s_reward_valid[i] = 0u;
+        s_reward_written[i] = 0u;
+    }
+}
+
+static int reward_queue_readable(void) {
+    unsigned int i;
+    for (i = 0u; i < REWARD_SLOTS; i++) {
+        if (!source_item_word_valid(rd16(REWARD_QUEUE + i * 2u))) return 0;
+    }
+    return 1;
+}
+
 static void rewrite_reward_queue(void) {
     unsigned int i;
+
+    if (!reward_queue_readable()) {
+        reset_reward_shadow();
+        return;
+    }
+
     for (i = 0u; i < REWARD_SLOTS; i++) {
         unsigned int addr = REWARD_QUEUE + i * 2u;
         unsigned short raw = rd16(addr);
