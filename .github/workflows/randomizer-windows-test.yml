@@ -8,6 +8,7 @@ on:
     paths:
       - 'mods/universal-item-randomizer/**'
       - 'tools/verify_randomizer_elf.sh'
+      - 'tools/audit_randomizer_*_abi_rom.py'
       - 'tools/test_randomizer_*.py'
       - 'tools/test_universal_randomizer_*.py'
       - 'tools/test_stock_runtime_coverage.py'
@@ -158,10 +159,6 @@ jobs:
   windows:
     name: Build Windows test bundle
     needs: mod
-    # Push builds use a GitHub-hosted runner only when the generated-code data
-    # repository is configured. A self-hosted Windows fallback is intentionally
-    # reserved for workflow_dispatch, otherwise every source commit can sit in
-    # the queue forever on forks that have no self-hosted runner registered.
     if: ${{ vars.OGRE_DATA_REPO != '' || github.event_name == 'workflow_dispatch' }}
     runs-on: ${{ vars.OGRE_DATA_REPO != '' && 'windows-2022' || fromJSON('["self-hosted","Windows","X64"]') }}
     steps:
@@ -239,8 +236,6 @@ jobs:
             ( cd tools/N64ModernRuntime && git apply ../../patches/n64modernruntime-ob64.patch )
             ( cd tools/N64ModernRuntime/N64Recomp && git apply ../../../patches/n64modernruntime-n64recomp.patch )
           fi
-          # release-build.sh audits the canonical OB64 layer first, then applies
-          # n64modernruntime-randomizer.patch itself.
           git -C tools/N64ModernRuntime apply --check ../../patches/n64modernruntime-randomizer.patch || \
             git -C tools/N64ModernRuntime apply --reverse --check ../../patches/n64modernruntime-randomizer.patch
 
