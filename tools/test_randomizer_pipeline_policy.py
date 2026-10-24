@@ -45,10 +45,27 @@ def assert_ordered(path: Path, required_after: tuple[str, ...]) -> None:
         assert at > suite_at, f"{path.name}: {token} can occur before host suite"
 
 
+def assert_manifest_contract(name: str, text: str) -> None:
+    assert "BUILD-MANIFEST.txt" in text, f"{name}: provenance manifest missing"
+    assert "source_commit=${GITHUB_SHA}" in text, f"{name}: source commit missing"
+    assert "nrm_sha256=${nrm_sha}" in text, f"{name}: NRM hash missing"
+    assert "nrm_size_bytes=${nrm_size}" in text, f"{name}: NRM size missing"
+    assert "config_lifecycle=restart_required" in text, f"{name}: lifecycle marker missing"
+    assert "host_suite=${suite_count}_tests" in text, f"{name}: suite count not dynamic"
+    assert "elf_symbols=critical_replacements_present" in text, f"{name}: ELF marker missing"
+    assert "use_repair=native_slot_indexed" in text, f"{name}: native slot-indexed use repair marker missing"
+    for marker in ARTIFACT_MARKERS:
+        assert marker in text, f"{name}: ABI/Bank-R artifact marker missing: {marker}"
+    assert "seed_vectors=123456_locked" in text, f"{name}: golden-vector marker missing"
+    assert "persistence_model=5000_on_off_on_sequences" in text, f"{name}: base persistence marker missing"
+    assert POSTGAME_MARKER in text, f"{name}: post-game persistence marker missing"
+    assert CAMPAIGN_STRESS_MARKER in text, f"{name}: campaign stress marker missing"
+
+
 def main() -> int:
     assert_ordered(
         WF / "randomizer-package.yml",
-        (ELF_VERIFY, "RecompModTool", "actions/upload-artifact@v4"),
+        (ELF_VERIFY, "RecompModTool", "Write reproducible package manifest", "actions/upload-artifact@v4"),
     )
     assert_ordered(
         WF / "randomizer-runtime-build.yml",
@@ -76,20 +93,14 @@ def main() -> int:
         assert ELF_TRIGGER in text, f"{name}: ELF verifier not in path trigger"
         assert ELF_VERIFY in text, f"{name}: shared ELF verifier not executed"
 
+    package = (WF / "randomizer-package.yml").read_text()
     runtime = (WF / "randomizer-runtime-build.yml").read_text()
     windows = (WF / "randomizer-windows-test.yml").read_text()
 
-    for name, text in (("runtime", runtime), ("windows", windows)):
-        assert "config_lifecycle=restart_required" in text, f"{name}: lifecycle marker missing"
-        assert "host_suite=${suite_count}_tests" in text, f"{name}: suite count not dynamic"
-        assert "elf_symbols=critical_replacements_present" in text, f"{name}: ELF marker missing"
-        assert "use_repair=native_slot_indexed" in text, f"{name}: native slot-indexed use repair marker missing"
-        for marker in ARTIFACT_MARKERS:
-            assert marker in text, f"{name}: ABI/Bank-R artifact marker missing: {marker}"
-        assert "seed_vectors=123456_locked" in text, f"{name}: golden-vector marker missing"
-        assert "persistence_model=5000_on_off_on_sequences" in text, f"{name}: base persistence marker missing"
-        assert POSTGAME_MARKER in text, f"{name}: post-game persistence marker missing"
-        assert CAMPAIGN_STRESS_MARKER in text, f"{name}: campaign stress marker missing"
+    for name, text in (("package", package), ("runtime", runtime), ("windows", windows)):
+        assert_manifest_contract(name, text)
+
+    assert "build/mods/BUILD-MANIFEST.txt" in package, "package: manifest not uploaded with NRM"
 
     stock = (WF / "randomizer-stock-runtime-qa.yml").read_text()
     assert "host_suite=${suite_count}_tests" in stock, "stock QA: dynamic suite count missing"
