@@ -104,6 +104,7 @@ jobs:
           cp mods/universal-item-randomizer/SEED-VECTORS.md "$qa/"
           nrm_sha=$(sha256sum "$qa/universal-item-randomizer.nrm" | awk '{print $1}')
           nrm_size=$(stat -c '%s' "$qa/universal-item-randomizer.nrm")
+          suite_count=$(python3 tools/test_universal_randomizer_all.py --count)
           cat >"$qa/BUILD-MANIFEST.txt" <<EOF
           Universal Item Randomizer QA Build
           version=0.3.1
@@ -114,8 +115,10 @@ jobs:
           nrm_sha256=${nrm_sha}
           nrm_size_bytes=${nrm_size}
           save_policy=no_randomizer_metadata_in_native_save
-          host_suite=10_tests
+          host_suite=${suite_count}_tests
           seed_vectors=123456_locked
+          release_policy=safe_defaults_locked
+          pipeline_policy=artifact_gates_locked
           persistence_model=5000_on_off_on_sequences
           source_shadow_model=map_reward_generation_checked
           shop_source_model=bit15_terminator_single_pass_checked
@@ -127,8 +130,10 @@ jobs:
           test -s "$qa/SEED-VECTORS.md"
           grep -q "source_commit=${GITHUB_SHA}" "$qa/BUILD-MANIFEST.txt"
           grep -q "nrm_sha256=${nrm_sha}" "$qa/BUILD-MANIFEST.txt"
-          grep -q 'host_suite=10_tests' "$qa/BUILD-MANIFEST.txt"
+          grep -q "host_suite=${suite_count}_tests" "$qa/BUILD-MANIFEST.txt"
           grep -q 'seed_vectors=123456_locked' "$qa/BUILD-MANIFEST.txt"
+          grep -q 'release_policy=safe_defaults_locked' "$qa/BUILD-MANIFEST.txt"
+          grep -q 'pipeline_policy=artifact_gates_locked' "$qa/BUILD-MANIFEST.txt"
           cat "$qa/BUILD-MANIFEST.txt"
 
       - uses: actions/upload-artifact@v4
