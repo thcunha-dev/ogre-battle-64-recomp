@@ -17,8 +17,12 @@ symbols="$(mktemp)"
 trap 'rm -f "$sections" "$symbols"' EXIT
 
 "$objdump_bin" -h "$elf" | tee "$sections"
-for section in recomp_patch recomp_hook recomp_hook_return; do
-  grep -q "$section" "$sections" || {
+
+# This mod currently contains two RECOMP_PATCH replacements and one frame hook
+# on func_80072944. A recomp_hook_return section is optional and is only emitted
+# when a hook-return patch is actually used, so it is deliberately not required.
+for section in '.recomp_patch' '.recomp_hook.func_80072944'; do
+  grep -Fq "$section" "$sections" || {
     echo "missing required ELF section: $section" >&2
     exit 1
   }
