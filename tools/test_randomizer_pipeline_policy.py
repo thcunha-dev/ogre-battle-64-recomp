@@ -67,6 +67,7 @@ def main() -> int:
         assert "config_lifecycle=restart_required" in text, f"{name}: lifecycle marker missing"
         assert "host_suite=${suite_count}_tests" in text, f"{name}: suite count not dynamic"
         assert "elf_symbols=critical_replacements_present" in text, f"{name}: ELF marker missing"
+        assert "use_repair=native_slot_indexed" in text, f"{name}: native slot-indexed use repair marker missing"
         assert "seed_vectors=123456_locked" in text, f"{name}: golden-vector marker missing"
 
     # The self-contained QA artifact must carry its executable integrity check and
@@ -80,6 +81,9 @@ def main() -> int:
         "./build/qa/VERIFY-QA.ps1",
     ):
         assert token in windows, f"windows QA pipeline missing {token}"
+
+    verifier = (ROOT / "mods/universal-item-randomizer/VERIFY-QA.ps1").read_text()
+    assert '$Manifest["use_repair"] -ne "native_slot_indexed"' in verifier
 
     print("universal randomizer pipeline policy: PASS")
     return 0
