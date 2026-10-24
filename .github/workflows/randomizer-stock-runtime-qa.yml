@@ -11,6 +11,7 @@ on:
       - 'mods/universal-item-randomizer/mod-stock-qa.toml'
       - 'mods/universal-item-randomizer/mod.ld'
       - 'mods/universal-item-randomizer/STOCK-RUNTIME-QA.md'
+      - 'mods/universal-item-randomizer/STOCK-QA-CHECKLIST.md'
       - 'tools/test_randomizer_*.py'
       - 'tools/test_universal_randomizer_*.py'
       - 'tools/test_stock_runtime_coverage.py'
@@ -152,6 +153,7 @@ jobs:
           mkdir -p "$qa"
           cp build/mods/universal-item-randomizer-stock-qa.nrm "$qa/"
           cp mods/universal-item-randomizer/STOCK-RUNTIME-QA.md "$qa/README.md"
+          cp mods/universal-item-randomizer/STOCK-QA-CHECKLIST.md "$qa/STOCK-QA-CHECKLIST.md"
           cp mods/universal-item-randomizer/TESTING.md "$qa/TESTING.md"
           cp mods/universal-item-randomizer/QA-CHECKLIST.md "$qa/QA-CHECKLIST.md"
           cat >"$qa/BUILD-MANIFEST.txt" <<EOF
@@ -194,9 +196,11 @@ jobs:
           mkdir -p "$appdir/mods"
           cp build/mods/universal-item-randomizer-stock-qa.nrm "$appdir/mods/"
           cp mods/universal-item-randomizer/STOCK-RUNTIME-QA.md "$appdir/STOCK-RUNTIME-QA.md"
+          cp mods/universal-item-randomizer/STOCK-QA-CHECKLIST.md "$appdir/STOCK-QA-CHECKLIST.md"
           cp build/stock-runtime-qa/BUILD-MANIFEST.txt "$appdir/STOCK-RUNTIME-QA-MANIFEST.txt"
 
           test -s "$appdir/mods/universal-item-randomizer-stock-qa.nrm"
+          test -s "$appdir/STOCK-QA-CHECKLIST.md"
           test -z "$(find "$root" -type f \( -iname '*.z64' -o -iname '*.n64' -o -iname '*.v64' \) -print -quit)"
 
           (cd "$root" && zip -qr "$GITHUB_WORKSPACE/$out" .)
@@ -204,6 +208,7 @@ jobs:
           unzip -t "$out"
           unzip -Z1 "$out" | tee /tmp/windows-stock-qa-files.txt
           grep -q 'mods/universal-item-randomizer-stock-qa.nrm$' /tmp/windows-stock-qa-files.txt
+          grep -q 'STOCK-QA-CHECKLIST.md$' /tmp/windows-stock-qa-files.txt
           sha256sum "$official" "$out" build/mods/universal-item-randomizer-stock-qa.nrm
 
       - uses: actions/upload-artifact@v4
