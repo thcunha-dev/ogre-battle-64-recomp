@@ -7,7 +7,7 @@ from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-AUDIT = ROOT / "tools/audit_randomizer_coupled_a1_rom.py"
+AUDIT = ROOT / "tools/audit_randomizer_coupled_a1_abi_rom.py"
 SOURCE = ROOT / "mods/universal-item-randomizer/src/universal_item_randomizer.c"
 
 spec = spec_from_file_location("coupled_a1_audit", AUDIT)
