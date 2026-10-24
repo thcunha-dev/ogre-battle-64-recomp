@@ -123,6 +123,14 @@ def assert_shared_mapper_contract(repo: Path) -> None:
 
     central = consumers["central"]
     assert "#define MAP_INDEX                0x8018F4A1u" in central
+
+    # Both map-owned source shadows must use MAP_INDEX as a generation boundary.
+    assert "s_drop_map_index" in central
+    assert "s_drop_map_known" in central
+    assert "static void reset_drop_shadow" in central
+    assert "map_index != s_drop_map_index" in central
+    assert "reset_drop_shadow();" in central
+
     assert "s_pickup_map_index" in central
     assert "s_pickup_map_known" in central
     assert "static void reset_pickup_shadow" in central
