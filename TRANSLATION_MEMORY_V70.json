@@ -1,0 +1,10 @@
+{
+  "dialogue_pairs_total": 4569,
+  "dialogue_pairs_ascii_usable": 4523,
+  "pairs_with_aligned_control_sequences": 4523,
+  "source_keys": 40828,
+  "auto_safe_keys": 39918,
+  "ambiguous_keys": 910,
+  "rows": 41933,
+  "sha256": "a941055fca2dac90fc538a140b200badd0d6bfe9c2ea7034cb508e75903f9ac5"
+}
