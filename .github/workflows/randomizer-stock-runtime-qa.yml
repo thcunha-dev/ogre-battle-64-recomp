@@ -156,6 +156,7 @@ jobs:
           cp mods/universal-item-randomizer/STOCK-QA-CHECKLIST.md "$qa/STOCK-QA-CHECKLIST.md"
           cp mods/universal-item-randomizer/TESTING.md "$qa/TESTING.md"
           cp mods/universal-item-randomizer/QA-CHECKLIST.md "$qa/QA-CHECKLIST.md"
+          suite_count=$(python3 tools/test_universal_randomizer_all.py --count)
           cat >"$qa/BUILD-MANIFEST.txt" <<EOF
           version=0.3.1
           variant=stock_runtime_qa
@@ -167,11 +168,17 @@ jobs:
           shop_source_rewrite=available_default_off
           native_save_metadata=none
           use_repair=native_slot_indexed
+          host_suite=${suite_count}_tests
+          persistence_model=5000_on_off_on_sequences
+          postgame_persistence_model=2000_finished_game_on_off_on_sequences
           official_windows_runtime_sha256=d9c269587b2f2b224bc6203c7ac9c4f42022f6990643cd38a870cb56df243169
           head_sha=${GITHUB_SHA}
           EOF
           ! grep -q 'central_bank_n_patch=enabled' "$qa/BUILD-MANIFEST.txt"
           grep -q 'central_bank_n_patch=disabled' "$qa/BUILD-MANIFEST.txt"
+          grep -q "host_suite=${suite_count}_tests" "$qa/BUILD-MANIFEST.txt"
+          grep -q 'persistence_model=5000_on_off_on_sequences' "$qa/BUILD-MANIFEST.txt"
+          grep -q 'postgame_persistence_model=2000_finished_game_on_off_on_sequences' "$qa/BUILD-MANIFEST.txt"
           sha256sum "$qa"/*
 
       - name: Assemble ready-to-run Windows QA bundle from official v0.8.3
@@ -209,6 +216,7 @@ jobs:
           unzip -Z1 "$out" | tee /tmp/windows-stock-qa-files.txt
           grep -q 'mods/universal-item-randomizer-stock-qa.nrm$' /tmp/windows-stock-qa-files.txt
           grep -q 'STOCK-QA-CHECKLIST.md$' /tmp/windows-stock-qa-files.txt
+          grep -q 'STOCK-RUNTIME-QA-MANIFEST.txt$' /tmp/windows-stock-qa-files.txt
           sha256sum "$official" "$out" build/mods/universal-item-randomizer-stock-qa.nrm
 
       - uses: actions/upload-artifact@v4
