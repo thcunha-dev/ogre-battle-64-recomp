@@ -48,18 +48,25 @@ RECOMP_IMPORT("*", void recomp_log(const char* message));
 #define RA_GROUND_PICKUP         0x801BB93Cu
 #define RA_BATTLE_REWARD         0x801E53E4u
 
-// Bank-R setup has two safe direct-grant forms controlled by STARTING ITEMS:
-//  * func_ovlR_8021592C loops literal consumable ids 1..6; grant jal 0x80215BEC.
-//  * func_ovlR_80215C38 ends with the larger literal starting-consumable block
-//    at 0x80217068..0x80217244.
+// Bank-R setup classification from the verified Rev-1 ROM:
 //
-// A third Bank-R grant at 0x80216D90 is now classified from the Rev-1 ROM. For
-// each active unit, the loader scans that unit's ten-byte consumable loadout at
-// unit+0x0D, writes literal id 28 into the first empty slot, then calls the main
-// grant as func_ovlN_801DC740(28, 1). Randomizing only the global grant would
-// leave the unit referencing 28 while inventory owns a different id, corrupting
-// the used/owned relationship. Keep this coupled loadout grant vanilla until a
-// future implementation rewrites both the unit reference and inventory id.
+// Safe opt-in STARTING ITEMS range:
+//  * func_ovlR_80215C38 ends with a literal starting-consumable block at
+//    0x80217068..0x80217244. These calls pass a1=0 and do not first write a
+//    matching unit-loadout reference, so they may be mapped when explicitly
+//    enabled.
+//
+// Coupled unit/setup grants that MUST remain vanilla:
+//  * jal 0x80215BEC (RA 0x80215BF4) is inside a unit setup loop. Immediately
+//    before the grant the game writes s1 to 0x8019721D + unit*0x19, i.e. the
+//    unit's ten-byte consumable loadout at unit+0x0D, then calls the grant with
+//    a1=1. Mapping only the global inventory id would desynchronize that unit
+//    reference from the owned consumable slot.
+//  * jal 0x80216D90 (RA 0x80216D98) scans the same unit loadout, writes literal
+//    id 28 into the first empty reference byte, then grants item 28 with a1=1.
+//
+// Both coupled callers are fail-closed until a future implementation rewrites
+// the unit reference and owned-list acquisition atomically.
 #define RA_TUTORIAL_SETUP_R      0x80215BF4u
 #define RA_UNIT_LOADOUT_R        0x80216D98u
 #define RA_STARTING_R_LO         0x80217070u
@@ -362,20 +369,20 @@ static int caller_source_already_mapped(unsigned int caller_ra) {
 }
 
 static int caller_is_starting_grant(unsigned int caller_ra) {
-    return caller_ra == RA_TUTORIAL_SETUP_R ||
-           (caller_ra >= RA_STARTING_R_LO && caller_ra < RA_STARTING_R_HI);
+    return caller_ra >= RA_STARTING_R_LO && caller_ra < RA_STARTING_R_HI;
 }
 
-static int caller_is_coupled_unit_loadout(unsigned int caller_ra) {
-    return caller_ra == RA_UNIT_LOADOUT_R;
+static int caller_is_coupled_unit_grant(unsigned int caller_ra) {
+    return caller_ra == RA_TUTORIAL_SETUP_R ||
+           caller_ra == RA_UNIT_LOADOUT_R;
 }
 
 static int should_randomize_direct_grant(unsigned int caller_ra) {
     if (caller_source_already_mapped(caller_ra)) return 0;
+    if (caller_is_coupled_unit_grant(caller_ra)) return 0;
     if (caller_is_starting_grant(caller_ra)) return s_starting_items_enabled != 0u;
-    // Coupled unit loadout and any future unknown caller remain vanilla. Shops
-    // have their own Bank-AB source rewrite, so no unrelated option broadens
-    // this central classifier.
+    // Every other direct caller remains vanilla. Shops have their own Bank-AB
+    // source rewrite, so no unrelated option broadens this central classifier.
     return 0;
 }
 
@@ -397,8 +404,8 @@ void func_ovlN_801DC740(unsigned int item_word, unsigned int used_flag) {
         recomp_log("universal-item-randomizer: Bank-R starting/setup grant recognized");
         s_setup_log_count++;
     }
-    if (s_log_enabled && caller_is_coupled_unit_loadout(caller_ra) && s_loadout_log_count < 4u) {
-        recomp_log("universal-item-randomizer: coupled Bank-R unit loadout left vanilla");
+    if (s_log_enabled && caller_is_coupled_unit_grant(caller_ra) && s_loadout_log_count < 4u) {
+        recomp_log("universal-item-randomizer: coupled Bank-R unit/setup grant left vanilla");
         s_loadout_log_count++;
     }
 
