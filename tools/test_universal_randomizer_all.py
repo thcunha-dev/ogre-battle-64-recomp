@@ -14,6 +14,7 @@ TESTS = (
     "tools/test_randomizer_golden_vectors.py",
     "tools/test_randomizer_release_policy.py",
     "tools/test_randomizer_pipeline_policy.py",
+    "tools/test_randomizer_stock_runtime_qa_policy.py",
     "tools/test_randomizer_version_consistency.py",
     "tools/test_randomizer_config_lifecycle.py",
     "tools/test_stock_runtime_coverage.py",
