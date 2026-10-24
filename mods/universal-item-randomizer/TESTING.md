@@ -34,6 +34,17 @@ until their unit reference and owned inventory can be remapped together.
 2. Reward text/name must match inventory.
 3. Owned count increments normally and never exceeds 99.
 4. Equipment must not acquire a false unusable `1/1` state.
+5. With `LOG = ON`, run **two consecutive item-reward battles** and inspect the
+   20-word reward queue at `0x801936D8` between them with a debugger/memory viewer.
+6. The reward queue must become fully zero after the first reward generation and
+   before the second generation is populated. Repeat across several battles.
+7. If no all-zero boundary is observed between two consecutive reward generations,
+   reward-shadow safety is unresolved: do not promote this build to release/1.0.
+   Do not guess a generation address; reverse engineer a real battle-generation key.
+
+The current reward shadow deliberately treats zero queue slots as generation
+boundaries. This QA requirement prevents that assumption from becoming an
+unverified release invariant.
 
 ## Test C — secondary post-battle add
 
@@ -184,6 +195,8 @@ central fallback merely to catch it.
 
 - map popup and inventory agree across map transitions;
 - battle reward UI and inventory agree;
+- reward queue reaches an all-zero boundary between two consecutive reward
+  generations; otherwise release/1.0 is blocked pending a proven generation key;
 - post-battle counts saturate at 99 and used-count rebuild is correct;
 - same seed gives the same replacement across every covered route;
 - starting/setup and key-item behavior respects defaults/options;
