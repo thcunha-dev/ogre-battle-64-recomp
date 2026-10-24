@@ -146,6 +146,7 @@ jobs:
           manifest=build/mods/BUILD-MANIFEST.txt
           nrm_sha=$(sha256sum "$nrm" | awk '{print $1}')
           nrm_size=$(stat -c '%s' "$nrm")
+          suite_count=$(python3 tools/test_universal_randomizer_all.py --count)
           cat >"$manifest" <<EOF
           Universal Item Randomizer QA Build
           version=0.3.1
@@ -157,8 +158,10 @@ jobs:
           nrm_sha256=${nrm_sha}
           nrm_size_bytes=${nrm_size}
           save_policy=no_randomizer_metadata_in_native_save
-          host_suite=10_tests
+          host_suite=${suite_count}_tests
           seed_vectors=123456_locked
+          release_policy=safe_defaults_locked
+          pipeline_policy=artifact_gates_locked
           persistence_model=5000_on_off_on_sequences
           source_shadow_model=map_reward_generation_checked
           shop_source_model=bit15_terminator_single_pass_checked
@@ -167,8 +170,10 @@ jobs:
           grep -q "source_commit=${GITHUB_SHA}" "$manifest"
           grep -q "nrm_sha256=${nrm_sha}" "$manifest"
           grep -q 'save_policy=no_randomizer_metadata_in_native_save' "$manifest"
-          grep -q 'host_suite=10_tests' "$manifest"
+          grep -q "host_suite=${suite_count}_tests" "$manifest"
           grep -q 'seed_vectors=123456_locked' "$manifest"
+          grep -q 'release_policy=safe_defaults_locked' "$manifest"
+          grep -q 'pipeline_policy=artifact_gates_locked' "$manifest"
           grep -q 'persistence_model=5000_on_off_on_sequences' "$manifest"
           grep -q 'source_shadow_model=map_reward_generation_checked' "$manifest"
           grep -q 'shop_source_model=bit15_terminator_single_pass_checked' "$manifest"
