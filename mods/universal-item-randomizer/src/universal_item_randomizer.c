@@ -134,16 +134,24 @@ static int drop_table_present(void) {
            rd16(DROP_LAST_TYPE_ADDR) == DROP_TYPE_LAST;
 }
 
+static int source_item_word_valid(unsigned int raw) {
+    unsigned int id = raw & 0x7FFFu;
+    if (id == 0u) return 1;
+    if ((raw & 0x8000u) != 0u) return id <= EQUIP_ID_MAX;
+    return id <= CONSUMABLE_ID_MAX;
+}
+
+// Validate the complete 35 x 3 item-word payload before mutating any Table-O
+// entry. A partially initialized or wrong overlay table therefore fails closed
+// instead of being half-randomized before an invalid word is encountered.
 static int drop_table_readable(void) {
+    unsigned int entry;
     unsigned int column;
-    for (column = 0u; column < 3u; column++) {
-        unsigned int raw = rd16(DROP_TABLE + DROP_ITEM_A + column * 2u);
-        unsigned int id = raw & 0x7FFFu;
-        if ((raw & 0x8000u) != 0u) {
-            if (id != 0u && id > EQUIP_ID_MAX) return 0;
-        }
-        else if (id != 0u && id > CONSUMABLE_ID_MAX) {
-            return 0;
+    for (entry = 0u; entry < DROP_ENTRY_MAX; entry++) {
+        for (column = 0u; column < 3u; column++) {
+            unsigned int raw = rd16(DROP_TABLE + entry * DROP_ENTRY_STRIDE +
+                                    DROP_ITEM_A + column * 2u);
+            if (!source_item_word_valid(raw)) return 0;
         }
     }
     return 1;
