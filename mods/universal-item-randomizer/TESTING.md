@@ -34,17 +34,22 @@ until their unit reference and owned inventory can be remapped together.
 2. Reward text/name must match inventory.
 3. Owned count increments normally and never exceeds 99.
 4. Equipment must not acquire a false unusable `1/1` state.
-5. With `LOG = ON`, run **two consecutive item-reward battles** and inspect the
-   20-word reward queue at `0x801936D8` between them with a debugger/memory viewer.
-6. The reward queue must become fully zero after the first reward generation and
-   before the second generation is populated. Repeat across several battles.
-7. If no all-zero boundary is observed between two consecutive reward generations,
-   reward-shadow safety is unresolved: do not promote this build to release/1.0.
-   Do not guess a generation address; reverse engineer a real battle-generation key.
+5. With `LOG = ON`, run repeated item-reward battles and, when a debugger/memory
+   viewer is available, inspect the 20-word reward queue beginning at `0x801936D8`.
+6. Treat queue lifecycle **per-slot**, not as one global generation. A consumed or
+   reused slot must pass through zero or otherwise change away from the mod-written
+   replacement before that same physical slot is populated with a new vanilla reward.
+7. Do **not** require the entire reward queue to clear between battles; multiple
+   queue positions can legitimately hold pending rewards at the same time.
+8. The primary slot has a proven native boundary: Bank N reads `0x801936D8`, grants
+   at `0x801E53DC`, then `0x801E53F4` clears `0x801936D8` after the grant.
+9. If real QA ever observes one physical reward slot reused for a new reward without
+   a zero/change boundary, do not promote to release/1.0 until that slot's queue
+   advance/generation state is reverse engineered. Do not guess a generation address.
 
-The current reward shadow deliberately treats zero queue slots as generation
-boundaries. This QA requirement prevents that assumption from becoming an
-unverified release invariant.
+The current reward shadow mirrors this per-slot lifecycle: when a live queue word
+is zero, only that slot's shadow is invalidated. This avoids imposing a false
+whole-queue reset rule on a structure that can contain multiple pending rewards.
 
 ## Test C — secondary post-battle add
 
@@ -120,7 +125,7 @@ the map loader:
 
 This is not a quest/NPC gift and is not an unknown caller. It is a coupled
 reference+inventory setup operation. Randomizing only the central grant would
-leave the unit using ID 28 while inventory owns another ID, producing incorrect
+leave the unit referencing 28 while inventory owns another ID, producing incorrect
 `used/owned` bookkeeping. Therefore it stays vanilla even with `STARTING ITEMS = ON`.
 
 With `LOG = ON`, reaching it emits the bounded diagnostic:
@@ -195,8 +200,10 @@ central fallback merely to catch it.
 
 - map popup and inventory agree across map transitions;
 - battle reward UI and inventory agree;
-- reward queue reaches an all-zero boundary between two consecutive reward
-  generations; otherwise release/1.0 is blocked pending a proven generation key;
+- reward queue shadow lifecycle is correct per-slot; `0x801E53F4` supplies the
+  proven native post-grant clear of primary slot `0x801936D8`;
+- repeated reward QA shows no physical slot reused as a fresh vanilla reward while
+  still indistinguishable from that slot's previous mod-written replacement;
 - post-battle counts saturate at 99 and used-count rebuild is correct;
 - same seed gives the same replacement across every covered route;
 - starting/setup and key-item behavior respects defaults/options;
