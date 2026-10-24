@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Audit func_ovlN_801DC740 call-site ABI against the Rev-A ROM.
+"""Audit func_ovlN_801DC740 ABI and terminal behavior against Rev-A ROM.
 
 The universal randomizer replaces this streamed Bank-N grant with a `void`
 RECOMP_PATCH. That is only safe if callers do not consume the original `$v0`
-return value. This scanner validates the exact Rev-A ROM, locates every
-`jal 0x801DC740`, and symbolically follows each post-return path until `$v0`
-is either overwritten/call-clobbered or read.
+return value. The replacement also omits the original full-inventory tail call;
+Rev-A proves that call targets a five-instruction spill-only stub with no global
+side effect. This scanner validates both facts directly from the known ROM.
 
 Usage:
     python3 tools/audit_randomizer_grant_abi_rom.py /path/to/rev1.z64
@@ -35,6 +35,29 @@ EXPECTED_CALL_OFFSETS = (
 BANK_N_ROM = 0x101D00
 BANK_N_VRAM = 0x801AD5C0
 BANK_R_DELTA = 0x8007FB70
+
+# When both owned lists cannot accept the item, the original Bank-N grant tail
+# loads 0x801FE8E8, calls 0x80093540, then immediately enters its epilogue.
+GRANT_FULL_TAIL_ROM = 0x131050
+GRANT_FULL_TAIL_WORDS = (
+    0x3C04801F,  # lui a0,0x801f
+    0x2484E8E8,  # addiu a0,a0,-5912 -> 0x801FE8E8
+    0x0C024D50,  # jal 0x80093540
+    0x01002821,  # addu a1,t0,zero (delay slot)
+    0x8FBF0010,  # lw ra,0x10(sp) -- epilogue starts immediately
+)
+
+# 0x80093540 is in .main (ROM = VRAM - 0x8006FC00). It is not a UI/error
+# dispatcher: it only spills a0..a3 into the caller argument-save area and
+# returns. Those scratch writes die with func_ovlN_801DC740's frame.
+FULL_HELPER_ROM = 0x23940
+FULL_HELPER_WORDS = (
+    0xAFA40000,  # sw a0,0(sp)
+    0xAFA50004,  # sw a1,4(sp)
+    0xAFA60008,  # sw a2,8(sp)
+    0x03E00008,  # jr ra
+    0xAFA7000C,  # sw a3,12(sp) (delay slot)
+)
 
 
 def section_delta(rom_offset: int) -> int:
@@ -126,6 +149,13 @@ def call_offsets(rom: bytes) -> tuple[int, ...]:
     return tuple(found)
 
 
+def words_at(rom: bytes, offset: int, count: int) -> tuple[int, ...]:
+    return tuple(
+        int.from_bytes(rom[offset + i * 4:offset + i * 4 + 4], "big")
+        for i in range(count)
+    )
+
+
 def v0_safe_after_call(rom: bytes, call_offset: int, max_steps: int = 256) -> tuple[bool, str]:
     """Prove no `$v0` read occurs before a definite ABI clobber on every path."""
     delta = section_delta(call_offset)
@@ -203,7 +233,15 @@ def audit_rom(path: Path) -> None:
         if not safe:
             raise SystemExit(f"grant ABI unsafe at ROM 0x{offset:X}: {reason}")
 
-    print(f"central grant ABI ROM audit: PASS ({len(found)} callers, v0 discarded)")
+    if words_at(rom, GRANT_FULL_TAIL_ROM, len(GRANT_FULL_TAIL_WORDS)) != GRANT_FULL_TAIL_WORDS:
+        raise SystemExit("central grant full-inventory tail changed")
+    if words_at(rom, FULL_HELPER_ROM, len(FULL_HELPER_WORDS)) != FULL_HELPER_WORDS:
+        raise SystemExit("0x80093540 is no longer the proven spill-only stub")
+
+    print(
+        f"central grant ABI ROM audit: PASS ({len(found)} callers, v0 discarded; "
+        "full-inventory helper spill-only)"
+    )
 
 
 def main() -> int:
