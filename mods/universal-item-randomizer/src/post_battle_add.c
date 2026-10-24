@@ -8,6 +8,7 @@
 #include "modding.h"
 #include "randomizer_map.h"
 
+#define EQUIP_ID_MAX             277u
 #define EQUIP_LIST               0x80196B20u
 #define EQUIP_SLOTS              278u
 #define LIST_STRIDE              4u
@@ -37,8 +38,10 @@ void func_80172820(unsigned int original_id, unsigned int amount) {
 
     original_id &= 0xFFFFu;
     amount &= 0xFFFFu;
-    if (original_id == 0u || amount == 0u) return;
+    if (original_id == 0u || original_id > EQUIP_ID_MAX || amount == 0u) return;
+
     id = uir_map_equipment_id(original_id);
+    if (id == 0u || id > EQUIP_ID_MAX) return;
     universal_item_randomizer_log_post_battle();
 
     for (i = 0u; i < EQUIP_SLOTS; i++) {
