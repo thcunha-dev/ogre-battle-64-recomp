@@ -32,27 +32,39 @@ changing and are therefore direct caller-observation diagnostics.
 The post-battle diagnostic also logs the route invocation even if a particular
 mapped equipment id happens to be a fixed point.
 
-## Battle reward queue generation gate
+## Battle reward queue lifecycle
 
-The 0.3.1 reward-source shadow has no independently proven battle-generation
-counter. Its currently verified reset boundary is the game's zeroed reward queue:
-when a reward slot reads zero, that slot's shadow is cleared before a later reward
-can be mapped as a new source value.
+The reward source at `0x801936D8` is a persisted block of 20 `u16` reward words.
+Observed gameplay from the upstream reverse-engineering work has shown real
+reward entries in multiple positions (including indices 0, 2, 3 and 4), so this
+is not a single-value generation blob and QA must **not** require the whole block
+to become zero between battles.
 
-Before release/1.0, run **two consecutive item-reward battles** with `LOG = ON` and
-inspect the live reward queue at `0x801936D8` (20 `u16` words) between them using a
-debugger/memory viewer. The queue must become fully zero at least once after the
-first reward generation and before the second generation is populated. Repeat this
-across several battles, including battles that award the same item when possible.
+Shadow safety is **per-slot**. In the mod, when one live reward word becomes zero,
+only that slot's `s_reward_valid[]` / `s_reward_written[]` state is cleared. A
+later non-zero value in that slot is then mapped as a fresh source value.
 
-If the reward queue does **not** become fully zero between two consecutive reward
-generations, treat reward-shadow safety as unresolved and do not promote the mod.
-Do not guess a battle-generation address or broaden the rewrite. Instead, reverse
-engineer a real generation/state key and key the reward shadow to that proven state.
+The primary consumption path is statically proven in Bank N:
 
-This is deliberately a release gate rather than a speculative code change: the
-current code remains deterministic and fail-closed while real gameplay supplies
-the missing lifecycle evidence.
+- `0x801E5230` reads the primary word at `0x801936D8`;
+- `0x801E5254` reads `0x801936DA` as its fallback;
+- `0x801E53DC` calls the central grant;
+- `0x801E53F4` executes the native post-grant clear of `0x801936D8`.
+
+That `0x801E53F4` clear gives the primary slot a concrete native reuse boundary;
+it is not an invented battle-generation address.
+
+Before release/1.0, exercise repeated item rewards with `LOG = ON` and, when a
+debugger/memory viewer is available, watch the 20 words beginning at
+`0x801936D8`. Verify that a consumed/reused slot passes through zero or otherwise
+changes away from the mod-written replacement before it is repopulated. It is
+fine for *other* reward slots to remain non-zero because they may represent other
+pending rewards.
+
+If QA ever observes the same physical slot being reused for a new vanilla reward
+without a zero/change boundary, treat that specific slot lifecycle as unresolved
+and do not promote the build until a proven queue-advance/generation state is
+identified. Do not replace the per-slot rule with a guessed global generation key.
 
 ## Save-safety invariant
 
@@ -73,8 +85,9 @@ inventory-writer taxonomy contracts.
 1. Set a known seed, enable `LOG`, leave key items/shops/starting items at their
    intended test values.
 2. Obtain one ground/map item and one battle reward.
-3. Run two consecutive item-reward battles and prove the reward queue reaches an
-   all-zero generation boundary between them before considering release/1.0.
+3. Run repeated item-reward battles and, when possible, observe slot reuse in the
+   reward queue. Confirm the per-slot zero/change boundary; do **not** require the
+   entire queue to clear globally.
 4. Exercise a post-battle equipment-add case when available.
 5. On a disposable New Game, test `STARTING ITEMS = OFF`, then ON.
 6. Confirm the coupled Bank-R loadout diagnostic leaves its item/reference
