@@ -25,6 +25,12 @@ TESTS = (
 
 
 def main() -> int:
+    if sys.argv[1:] == ["--count"]:
+        print(len(TESTS))
+        return 0
+    if sys.argv[1:]:
+        raise SystemExit("usage: test_universal_randomizer_all.py [--count]")
+
     for rel in TESTS:
         path = ROOT / rel
         if not path.is_file():
