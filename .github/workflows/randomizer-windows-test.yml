@@ -139,6 +139,7 @@ jobs:
           pipeline_policy=artifact_gates_locked
           persistence_model=5000_on_off_on_sequences
           postgame_persistence_model=2000_finished_game_on_off_on_sequences
+          campaign_stress_model=1000_campaigns_x_600_events
           source_shadow_model=map_reward_generation_checked
           shop_source_model=bit15_terminator_single_pass_checked
           inventory_capacity_model=full_inventory_no_overwrite
@@ -165,6 +166,7 @@ jobs:
           grep -q 'pipeline_policy=artifact_gates_locked' "$qa/BUILD-MANIFEST.txt"
           grep -q 'persistence_model=5000_on_off_on_sequences' "$qa/BUILD-MANIFEST.txt"
           grep -q 'postgame_persistence_model=2000_finished_game_on_off_on_sequences' "$qa/BUILD-MANIFEST.txt"
+          grep -q 'campaign_stress_model=1000_campaigns_x_600_events' "$qa/BUILD-MANIFEST.txt"
           cat "$qa/BUILD-MANIFEST.txt"
 
       - name: Self-verify QA payload
