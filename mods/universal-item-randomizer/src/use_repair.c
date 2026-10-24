@@ -33,6 +33,7 @@
 
 #define ROSTER_CLASS_TABLE       0x80187C62u
 #define ROSTER_CLASS_STRIDE      0x48u
+#define ROSTER_CLASS_COUNT       255u
 #define ROSTER_CLASS_KEY         0x17u
 
 static unsigned short s_equip_refs[EQUIP_SLOTS];
@@ -58,8 +59,16 @@ static void wr8(unsigned int addr, unsigned char value) {
 static unsigned int class_equipment_id(unsigned int class_index,
                                        unsigned int cls,
                                        unsigned int slot) {
-    unsigned int table = ROSTER_CLASS_TABLE + class_index * ROSTER_CLASS_STRIDE;
-    unsigned int entry = table;
+    unsigned int table;
+    unsigned int entry;
+
+    // The class table has 255 complete 0x48-byte entries before the equipment
+    // table begins at 0x8018C42C. Class byte 0xFF would start at 0x8018C41A and
+    // overlap the equipment table, so treat it as invalid/fail-closed.
+    if (cls >= ROSTER_CLASS_COUNT) return 0u;
+
+    table = ROSTER_CLASS_TABLE + class_index * ROSTER_CLASS_STRIDE;
+    entry = table;
 
     if (rd8(table + ROSTER_CLASS_KEY) != (cls & 0xFFu)) {
         entry = ROSTER_CLASS_TABLE + cls * ROSTER_CLASS_STRIDE;
