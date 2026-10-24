@@ -86,11 +86,11 @@ def main() -> int:
         for marker in ARTIFACT_MARKERS:
             assert marker in text, f"{name}: ABI/Bank-R artifact marker missing: {marker}"
         assert "seed_vectors=123456_locked" in text, f"{name}: golden-vector marker missing"
+        assert "persistence_model=5000_on_off_on_sequences" in text, f"{name}: base persistence marker missing"
+        assert POSTGAME_MARKER in text, f"{name}: post-game persistence marker missing"
 
     assert ROM_VERIFY_TRIGGER in windows, "windows QA: ROM verifier not in path trigger"
     assert "rom_verifier=one_command_four_audits" in windows, "windows QA: ROM verifier marker missing"
-    assert "persistence_model=5000_on_off_on_sequences" in windows, "windows QA: base persistence marker missing"
-    assert POSTGAME_MARKER in windows, "windows QA: post-game persistence marker missing"
     assert f"cp tools/{ROM_VERIFY_FILE} \"$qa/\"" in windows, "QA payload does not ship ROM verifier"
 
     for token in (
