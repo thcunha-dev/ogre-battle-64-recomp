@@ -27,6 +27,7 @@ TESTS = (
     "tools/test_randomizer_grant_validation.py",
     "tools/test_randomizer_grant_abi.py",
     "tools/test_randomizer_post_battle_abi.py",
+    "tools/test_randomizer_grant_used_flag.py",
     "tools/test_randomizer_shop_model.py",
     "tools/test_randomizer_inventory_capacity_model.py",
     "tools/test_randomizer_use_repair_model.py",
