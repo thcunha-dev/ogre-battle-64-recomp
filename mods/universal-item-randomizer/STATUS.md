@@ -1,195 +1,144 @@
 # Universal Item Randomizer 0.3.1 — engineering status
 
-Status: **feature-complete for the currently safe acquisition model; campaign QA pending**.
+Status: **feature-complete for the currently safe acquisition model; real campaign QA pending**.
 
-This file distinguishes static/CI proof from behaviour that still requires a real
-Rev-A game run. Do not promote the mod to 1.0 solely because the build is green.
+Do not promote this mod to 1.0 solely because CI is green. The remaining blocker is behavioural proof on a real Rev-A recomp build, especially native-save transitions and post-game loading.
 
-## Implemented and statically verified
+## Core architecture
 
-- Deterministic external seed; no randomizer state is stored in the native save.
-- One shared mapping for all covered routes; same original id + same seed gives
-  the same replacement.
-- Equipment and consumables remain in their own id/list spaces.
-- Key/quest consumables are identity by default; optional key randomization is
-  constrained to the audited key classes.
-- Main Bank-N grant `func_ovlN_801DC740` is replaced with native id/count list
-  semantics and bank-hook runtime support.
-- Every Rev-A caller of the main grant is classified:
-  - map object/drop source;
-  - ground pickup source;
-  - battle reward source;
-  - tutorial/setup literal 1..6 grants;
-  - map-loader literal starting-consumable block;
-  - coupled per-unit consumable-28 loadout, deliberately left vanilla.
-- Secondary post-battle equipment add `func_80172820(id,count)` is replaced and
-  uses the shared mapper; count saturates at 99 before narrowing.
-- Display-sensitive map/drop/pickup/reward sources are transformed before UI and
-  final grant, avoiding popup/inventory mismatches and double mapping.
-- Both Table-O/map-object and Table-P/ground-pickup source shadows are keyed by
-  `MAP_INDEX`. RAM reuse across maps therefore cannot suppress a legitimate new
-  mapping even when a new vanilla id exactly equals the replacement written on
-  the previous map.
-- Town shop stock is mapped at the Bank-AB source when `RANDOMIZE SHOPS` is ON;
-  shops are vanilla by default.
-- `+0x02` used counts are rebuilt from roster references without touching item
-  ids, owned counts, seed or save metadata. Consumable id 40 is covered.
-- Post-battle add forces the same full used-count rebuild as the native path.
-- The old inventory-delta/save-load acquisition heuristic is gone.
-- Save-load functions are explicitly excluded from acquisition detection.
-- Class-change transfers, class-default equipment, debug/cheat writers and save
-  reconstruction are classified as non-acquisition writers and are protected by
-  CI from accidental hooking/patching.
-- Class-default equipment and the coupled per-unit consumable-28 setup remain
-  vanilla because their roster/source references must be changed atomically with
-  owned inventory to be safe.
-- `LOG` QA telemetry is route-scoped and bounded; it observes the major covered
-  acquisition contexts without persisting state or reintroducing inventory-delta
-  detection. See `QA-TELEMETRY.md`.
+- External deterministic seed; no seed, flag, map id or randomizer metadata is stored in Ogre Battle 64's native save.
+- One shared mapper is used by every covered acquisition route.
+- Equipment pool: valid IDs 1..277. ROM sentinel 278 (`None`) is excluded.
+- Consumables: IDs 1..40. Classes 0..2 are normal; audited key/quest classes 3..4 are protected by default and may only map inside their own pool when explicitly enabled.
+- Unknown consumable classes remain identity-mapped.
+- Mapping is deterministic and one-to-one; Sattolo cycles avoid collisions/fixed points for pools larger than one.
+- Main grant `func_ovlN_801DC740` and secondary post-battle grant `func_80172820(id,count)` are replaced.
+- Count operations saturate at 99; full inventories never overwrite occupied slots.
+- Both grant replacements now reject invalid IDs/item-words before touching owned inventory.
+
+## Proven acquisition/source coverage
+
+All Rev-A callers of the main grant are classified. Normal display-sensitive routes are mapped at their source so UI and delivered item remain aligned:
+
+- Table-O/map-object source;
+- Table-P/ground-pickup source;
+- battle reward queue;
+- audited tutorial/starting direct grants, optional and OFF by default;
+- Bank-AB shop raw stock, optional and OFF by default;
+- secondary Bank-L post-battle equipment add.
+
+The remaining Bank-R per-unit consumable-28 loadout is deliberately vanilla: the game writes ID 28 into the unit loadout before adding the owned copy. Mapping only the owned copy would split the reference from inventory. Class-default equipment is also deliberately vanilla until reference + owned item can be transformed atomically.
+
+## Source-generation and fail-closed hardening
+
+The latest hardening fixed a real stale-shadow bug class and made all display-sensitive sources transactional:
+
+- Table-O and Table-P shadows are keyed by `MAP_INDEX`, so a new map cannot inherit an old map's coincidentally equal replacement.
+- Table-O validates all **35 x 3 = 105 item words** before writing any replacement.
+- Pickup lists validate every active entry before any write.
+- Battle reward queue validates all 20 slots before any write.
+- An invalid source generation clears its shadow and remains untouched for that frame; no partial randomization.
+- Reward zeroing, map changes and Table-O unload/reload are explicit shadow-generation boundaries.
+- Main grant validates raw and mapped item-words before inventory mutation.
+- Post-battle add rejects original or mapped equipment IDs outside 1..277.
+
+## Native-save policy
+
+- Existing inventory is never scanned as an acquisition source.
+- Load/save reconstruction is explicitly excluded from acquisition detection.
+- Changing seed affects future acquisitions only.
+- Saves created with the randomizer enabled contain ordinary vanilla-valid item IDs/counts and are intended to load with the mod disabled.
+- `+0x02` used/equipped is transient bookkeeping, not custom persistence. Repair only writes that byte and derives references from native roster/class state.
+- Equipment ID 277 and consumable ID 40 are covered; invalid references become zero-use and use counts clamp at 255.
 
 ## Configuration lifecycle
 
-0.3.1 intentionally snapshots randomizer configuration once per game process.
-`seed`, `key_items`, `starting_items`, `shops` and diagnostic logging are **not
-hot-reload settings**. After changing one of them, close the game completely and
-reopen it; the new value becomes active on the **next launch / next process**.
-Existing inventory remains untouched because configuration is external and only
-future acquisitions use the newly constructed mapping.
+0.3.1 snapshots config once per game process. `seed`, `key_items`, `starting_items`, `shops` and `log` are **not hot-reload settings**.
 
-This process-lifetime snapshot is deliberate for 0.3.1: it prevents a running
-map/shop source from changing mapping policy halfway through a source generation.
-Live hot-reload can be considered later only with explicit generation invalidation
-for every mapped source.
+After changing any of them, close the game completely and reopen it. The new value applies on the next process. Existing inventory remains unchanged.
 
-## Host verification suite
+## Unified host verification suite
 
-`python3 tools/test_universal_randomizer_all.py` is the single source of truth for
-all host-side verification. The suite count is exposed through `--count` so build
-manifests derive the number automatically instead of hard-coding it. It currently
-runs **14 tests**:
+`python3 tools/test_universal_randomizer_all.py` is the single source of truth. `--count` exposes the suite size so build manifests derive it automatically.
 
-1. `tools/test_randomizer_save_safety.py`
-2. `tools/test_universal_randomizer_mapping.py`
-3. `tools/test_randomizer_golden_vectors.py`
-4. `tools/test_randomizer_release_policy.py`
-5. `tools/test_randomizer_pipeline_policy.py`
-6. `tools/test_randomizer_version_consistency.py`
-7. `tools/test_stock_runtime_coverage.py`
-8. `tools/test_inventory_writer_taxonomy.py`
-9. `tools/test_randomizer_qa_telemetry.py`
-10. `tools/test_randomizer_persistence_model.py`
-11. `tools/test_randomizer_source_shadow_model.py`
-12. `tools/test_randomizer_shop_model.py`
-13. `tools/test_randomizer_inventory_capacity_model.py`
-14. `tools/test_randomizer_use_repair_model.py`
+The suite currently contains **18 tests**:
 
-The release-policy contract locks the safety-critical manifest defaults: the mod
-itself is disabled by default, seed defaults to 1, and shops, starting items, key
-items and diagnostic logging all remain OFF. It also protects the explicit empty
-`data_reference_syms_files` input required by the pinned RecompModTool.
+1. save-safety contract;
+2. shared mapper invariants;
+3. deterministic golden seed vectors;
+4. release-safe manifest/default policy;
+5. artifact pipeline policy;
+6. version consistency;
+7. configuration lifecycle;
+8. audited acquisition/caller coverage;
+9. inventory-writer taxonomy;
+10. bounded QA telemetry contract;
+11. persistence model — 5,000 ON -> OFF -> ON sequences;
+12. map/reward source-shadow generation model;
+13. full Table-O fail-closed validation;
+14. pickup/reward fail-closed validation;
+15. main/post-battle grant validation;
+16. Bank-AB shop source model;
+17. inventory-capacity/count model;
+18. `+0x02` use-repair boundary model.
 
-The pipeline-policy contract requires every artifact-producing randomizer workflow
-to execute this same unified suite before compiling or uploading `.nrm`, QA payload
-or integrated artifacts. It also verifies that test-file changes retrigger those
-workflows.
+The fast 18-test gate is green on the current code lineage. Heavy runtime/package/QA-payload workflows are also gated by this same suite before they may publish artifacts.
 
-The version-consistency contract ties `mod.toml`, QA documentation and artifact
-workflow names to the same `0.3.1` version so a partial version bump cannot create
-mislabelled packages.
+## Reproducible QA artifacts
 
-The golden-vector test locks the public seed semantics so accidental changes to
-mixer constants, salts or Sattolo ordering cannot silently make an existing seed
-produce different equipment replacements. For the QA seed `123456`, examples
-include equipment `1 -> 270`, `2 -> 239`, `3 -> 37`, `100 -> 189`,
-`200 -> 223` and `277 -> 245`.
+Integrated and QA-payload manifests include:
 
-The persistence model executes **5,000 deterministic ON -> OFF -> ON sequences**
-with seed changes, mixed equipment/consumable acquisition, native-save round
-trips, count saturation and key-item protection. It proves the intended policy:
-loading never remaps existing ids; disabling or changing seed only affects future
-acquisitions; the modeled native save contains item ids and counts only.
+- source commit/branch;
+- Rev-A reference SHA-1;
+- pinned runtime/N64Recomp commits;
+- `.nrm` SHA-256 and size;
+- dynamically derived host-suite count;
+- `save_policy=no_randomizer_metadata_in_native_save`;
+- `config_lifecycle=restart_required`;
+- golden-vector/release-policy/pipeline-policy/model markers.
 
-The source-shadow model exercises RAM reuse between maps/reward generations,
-including the dangerous case where a new map's vanilla id equals the replacement
-written into the previous map's RAM. Both pickup and drop-table map-generation
-changes must force a fresh mapping while repeated frames on the same source remain
-stable. Reward zeroing and drop-table unload/reload are also generation boundaries.
+The self-contained QA payload carries:
 
-The shop model verifies that the Bank-AB raw stock source is transformed once,
-keeps equipment/consumable list class through bit15, preserves the zero
-terminator, fails closed on invalid/unterminated sources, and maps a freshly
-rebuilt vanilla stock deterministically on the next shop opening.
+- `universal-item-randomizer.nrm`;
+- `BUILD-MANIFEST.txt`;
+- `TESTING.md`;
+- `QA-CHECKLIST.md`;
+- `QA-TELEMETRY.md`;
+- `STATUS.md`;
+- `SEED-VECTORS.md`;
+- `VERIFY-QA.ps1`.
 
-The inventory-capacity model checks both acquisition paths at their fixed-slot
-boundaries: a full list cannot overwrite an occupied record, existing stacks may
-still grow and saturate at 99, new stacks claim the first empty slot, and zero
-id/zero amount operations remain no-ops.
+`VERIFY-QA.ps1` checks required files, version, manifest markers and the `.nrm` SHA-256. CI executes it before uploading the QA payload and the Windows bundle path executes it again before staging the mod.
 
-The used-count boundary model verifies equipment ID 277, consumable ID 40,
-invalid-ID zeroing and saturation of reference counts at 255, and asserts that the
-repair module never writes owned IDs or counts.
+## CI efficiency
 
-The save-safety contract scans every current and future `.c`/`.h` in the mod so a
-new source file cannot silently add seed serialization, save hooks or custom
-randomizer metadata outside the original audited files.
+Package/runtime workflows now rebuild only for code, headers, mod manifest/linker, tests, runtime patches or workflow changes. Documentation-only edits no longer waste a full MIPS/runtime rebuild. The QA-payload workflow still reacts to documentation because those files are part of the deliverable.
 
-## Integrated build proof
+## Golden seed reference
 
-Both the fast mapping workflow and the integrated runtime workflow invoke the
-same unified host suite. The integrated job only continues after every current
-suite test passes, then:
+For QA seed `123456`, locked equipment examples include:
 
-- applies the pinned OB64/N64Recomp/runtime layers;
-- compiles the patched `librecomp` runtime;
-- builds the MIPS mod ELF;
-- builds the matching RecompModTool;
-- packages the `.nrm` against Bank-N-augmented Rev-A references;
-- emits a reproducible `BUILD-MANIFEST.txt` with source commit, pinned
-  runtime/Recomp commits, Rev-A reference SHA-1, NRM SHA-256/size, dynamically
-  derived host-suite count and explicit save/release/pipeline/model markers.
+- 1 -> 270
+- 2 -> 239
+- 3 -> 37
+- 100 -> 189
+- 200 -> 223
+- 277 -> 245
 
-The current 14-test fast gate is green. A fresh full runtime/MIPS/NRM artifact for
-the current Table-O generation fix remains the required artifact before campaign
-QA is treated as the release-candidate proof.
+See `SEED-VECTORS.md` for the release reference.
 
-A separate QA-payload workflow packages the `.nrm`, build manifest,
-`TESTING.md`, `QA-TELEMETRY.md`, `STATUS.md` and `SEED-VECTORS.md` together so
-manual campaign validation uses one traceable bundle rather than loose files.
+## Remaining 1.0 blockers
 
-## Static writer taxonomy
+The remaining weight is real-game validation, not missing central architecture:
 
-Normal owned-item mutations audited so far fall into these categories:
+- verify map-object/Table-O and ground/Table-P UI vs owned item across map transitions;
+- verify battle reward UI vs owned item;
+- verify post-battle counts and used-count rebuild;
+- verify shops OFF are fully vanilla and shops ON keep list/detail/price/purchase synchronized;
+- verify audited starting/setup behaviour and protected coupled loadouts;
+- run vanilla -> randomizer ON -> save -> OFF -> save -> ON using the same native file;
+- change seed only after full restart and verify existing inventory does not move;
+- finish the game, save post-ending, close/reopen ON, close/reopen OFF, save OFF, reopen ON;
+- run enough campaign/regression coverage to expose scripted behaviour not visible in static RE.
 
-| category | routine/path | randomizer policy |
-|---|---|---|
-| acquisition | `func_ovlN_801DC740` | replace / map covered sources |
-| acquisition | `func_80172820` | replace |
-| class transfer | `func_80172C64` | never randomize |
-| class transfer | `func_ovlM_801A4110` | never randomize |
-| used-count rebuild | `func_8016B774` | bookkeeping only |
-| save restore | `func_8016CEC4` and save marshalling | never acquisition |
-| debug/cheat | `func_ovlS_801C214C` | ignore |
-| class-default setup | `func_ovlN_801DD430` | vanilla until atomically mapped |
-| coupled unit consumable setup | Bank-R caller RA `0x80216D98` | vanilla until atomically mapped |
-
-The 40-slot consumable list is written by the same main grant in its bit15-clear
-arm; no separate normal consumable grant routine has been found.
-
-## Remaining release blockers
-
-The main blockers are behavioural QA rather than missing central architecture:
-
-- run the full `TESTING.md` matrix on a real Rev-A recomp build;
-- prove popup/detail/price/purchased item agreement in shops;
-- prove tutorial/starting diagnostics and deterministic results;
-- test map transitions and repeated pickups/drop tables;
-- test post-battle count/use bookkeeping;
-- test save ON -> OFF -> ON with the same file;
-- test finish/post-game -> close -> reopen, including mod disabled afterward;
-- exercise key-item OFF through normal campaign progression;
-- complete a campaign/regression pass to catch any scripted game behaviour not
-  visible from the static writer/caller audit.
-
-Optional future expansion, not a 0.3.1 blocker: safely randomize class-default
-and per-unit starting loadouts by mapping both roster/source references and owned
-inventory to the same replacement in one operation.
+Optional future expansion, not a 0.3.1 blocker: atomically randomize class-default/recruit loadouts by transforming both native references and owned inventory to the same replacement.
