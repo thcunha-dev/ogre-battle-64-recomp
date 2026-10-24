@@ -11,7 +11,7 @@ has evidence from a real Rev-A recomp build.
 - [ ] `source_commit` matches the tested branch artifact.
 - [ ] `.nrm` SHA-256 matches `nrm_sha256` in the manifest.
 - [ ] Rev-A reference SHA-1 is `d26b14bee422a09581ce438d45ba9fec9783fbb8`.
-- [ ] Host suite count in manifest matches `python3 tools/test_universal_randomizer_all.py --count` (currently 21).
+- [ ] Host suite count in manifest matches `python3 tools/test_universal_randomizer_all.py --count` (currently 29).
 - [ ] Manifest contains `use_repair=native_slot_indexed`.
 
 ## Configuration lifecycle
