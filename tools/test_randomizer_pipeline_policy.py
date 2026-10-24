@@ -16,6 +16,8 @@ SUITE = "python3 tools/test_universal_randomizer_all.py"
 ELF_VERIFY = "bash tools/verify_randomizer_elf.sh"
 ELF_TRIGGER = "tools/verify_randomizer_elf.sh"
 ABI_AUDIT_TRIGGER = "tools/audit_randomizer_*_abi_rom.py"
+ROM_VERIFY_TRIGGER = "tools/verify_randomizer_rev_a_rom.py"
+ROM_VERIFY_FILE = "verify_randomizer_rev_a_rom.py"
 
 ABI_AUDIT_FILES = (
     "audit_randomizer_grant_abi_rom.py",
@@ -58,6 +60,7 @@ def main() -> int:
     mapping = (WF / "randomizer-mapping.yml").read_text()
     assert SUITE in mapping
     assert ABI_AUDIT_TRIGGER in mapping, "mapping: ABI auditors not in path trigger"
+    assert ROM_VERIFY_TRIGGER in mapping, "mapping: one-command ROM verifier not in path trigger"
 
     for name in (
         "randomizer-package.yml",
@@ -83,6 +86,10 @@ def main() -> int:
             assert marker in text, f"{name}: ABI/Bank-R artifact marker missing: {marker}"
         assert "seed_vectors=123456_locked" in text, f"{name}: golden-vector marker missing"
 
+    assert ROM_VERIFY_TRIGGER in windows, "windows QA: ROM verifier not in path trigger"
+    assert "rom_verifier=one_command_four_audits" in windows, "windows QA: ROM verifier marker missing"
+    assert f"cp tools/{ROM_VERIFY_FILE} \"$qa/\"" in windows, "QA payload does not ship ROM verifier"
+
     for token in (
         "QA-CHECKLIST.md",
         "VERIFY-QA.ps1",
@@ -101,6 +108,8 @@ def main() -> int:
     assert '$Manifest["central_grant_a1"] -ne "native_consumable_used_flag"' in verifier
     assert '$Manifest["bank_r_coupled_grants"] -ne "two_a1_one_callers_fail_closed"' in verifier
     assert '$Manifest["starting_items_scope"] -ne "forty_literal_a1_zero_no_store_calls"' in verifier
+    assert '$Manifest["rom_verifier"] -ne "one_command_four_audits"' in verifier
+    assert f'"{ROM_VERIFY_FILE}"' in verifier, "VERIFY-QA does not require ROM verifier"
     for audit in ABI_AUDIT_FILES:
         assert f'"{audit}"' in verifier, f"VERIFY-QA does not require {audit}"
 
