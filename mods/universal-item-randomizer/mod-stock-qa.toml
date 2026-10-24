@@ -1,0 +1,62 @@
+[manifest]
+id = "ogre_universal_item_randomizer_stock_qa"
+version = "0.3.1"
+display_name = "Universal Item Randomizer - Stock Runtime QA"
+short_description = "QA-only build for the official v0.8.3 runtime."
+description = """
+QA-only compatibility build for the official Ogre Battle 64 Recomp v0.8.3
+runtime. It intentionally omits the streamed Bank-N replacement for
+func_ovlN_801DC740, because the stock runtime cannot resolve that replacement.
+
+This build is NOT the final universal randomizer. It exists only to unlock real
+in-game validation of the routes that do not require the custom Bank-N registry:
+Table-O/map drops, Table-P/ground pickups, battle reward source rewriting,
+post-battle equipment adds, shop stock, deterministic seed behavior, native-save
+ON/OFF transitions and the transient +0x02 repair. Starting/setup direct grants
+remain vanilla in this QA build.
+"""
+authors = [ "Ogre Battle 64 BR" ]
+game_id = "ogrebattle64"
+minimum_recomp_version = "0.1.0"
+dependencies = [ ]
+native_libraries = [ ]
+enabled_by_default = false
+
+[[manifest.config_options]]
+id = "seed"
+name = "SEED"
+description = "Deterministic randomizer seed. The same seed rebuilds the same mapping."
+type = "Number"
+min = 1
+max = 4294967295
+step = 1
+precision = 0
+default = 1
+
+[[manifest.config_options]]
+id = "shops"
+name = "RANDOMIZE SHOPS"
+description = "Randomize the audited Bank AB shop stock source. Off by default."
+type = "Bool"
+default = false
+
+[[manifest.config_options]]
+id = "key_items"
+name = "KEY ITEMS"
+description = "Randomize audited key-item classes only inside their pool. Keep OFF for normal QA."
+type = "Bool"
+default = false
+
+[[manifest.config_options]]
+id = "log"
+name = "LOG"
+description = "Print concise randomizer diagnostics to the port log."
+type = "Bool"
+default = false
+
+[inputs]
+elf_path = "build/mod-stock-qa.elf"
+mod_filename = "universal-item-randomizer-stock-qa"
+func_reference_syms_file = "../reference/dump-stock-qa.toml"
+data_reference_syms_files = [ ]
+additional_files = [ ]
