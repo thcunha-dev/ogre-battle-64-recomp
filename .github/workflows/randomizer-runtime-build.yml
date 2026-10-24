@@ -163,6 +163,7 @@ jobs:
           config_lifecycle=restart_required
           host_suite=${suite_count}_tests
           elf_symbols=critical_replacements_present
+          use_repair=native_slot_indexed
           seed_vectors=123456_locked
           release_policy=safe_defaults_locked
           pipeline_policy=artifact_gates_locked
@@ -177,6 +178,7 @@ jobs:
           grep -q 'config_lifecycle=restart_required' "$manifest"
           grep -q "host_suite=${suite_count}_tests" "$manifest"
           grep -q 'elf_symbols=critical_replacements_present' "$manifest"
+          grep -q 'use_repair=native_slot_indexed' "$manifest"
           grep -q 'seed_vectors=123456_locked' "$manifest"
           grep -q 'release_policy=safe_defaults_locked' "$manifest"
           grep -q 'pipeline_policy=artifact_gates_locked' "$manifest"
