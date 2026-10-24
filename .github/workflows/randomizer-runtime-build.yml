@@ -158,6 +158,7 @@ jobs:
           nrm_sha256=${nrm_sha}
           nrm_size_bytes=${nrm_size}
           save_policy=no_randomizer_metadata_in_native_save
+          config_lifecycle=restart_required
           host_suite=${suite_count}_tests
           seed_vectors=123456_locked
           release_policy=safe_defaults_locked
@@ -170,6 +171,7 @@ jobs:
           grep -q "source_commit=${GITHUB_SHA}" "$manifest"
           grep -q "nrm_sha256=${nrm_sha}" "$manifest"
           grep -q 'save_policy=no_randomizer_metadata_in_native_save' "$manifest"
+          grep -q 'config_lifecycle=restart_required' "$manifest"
           grep -q "host_suite=${suite_count}_tests" "$manifest"
           grep -q 'seed_vectors=123456_locked' "$manifest"
           grep -q 'release_policy=safe_defaults_locked' "$manifest"
