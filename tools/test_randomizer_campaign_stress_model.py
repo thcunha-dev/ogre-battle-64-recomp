@@ -3,7 +3,7 @@
 
 This deliberately composes behavior that the focused tests cover separately:
 source shadows, deterministic mapping, native-save identity, count saturation,
-ON/OFF transitions, seed changes, and post-ending continuation.  It is not a
+ON/OFF transitions, seed changes, and post-ending continuation. It is not a
 replacement for real Rev-A gameplay QA; it is a regression net for interactions
 between those policies.
 """
@@ -32,6 +32,10 @@ def snapshot(owned: dict[int, int]) -> tuple[tuple[int, int], ...]:
     return tuple(sorted(owned.items()))
 
 
+def fresh_shadows() -> tuple[PickupShadow, RewardShadow, DropShadow]:
+    return PickupShadow(), RewardShadow(), DropShadow()
+
+
 def main() -> int:
     for campaign in range(CAMPAIGNS):
         rng = random.Random(0x0B640000 + campaign)
@@ -41,60 +45,59 @@ def main() -> int:
         map_index = 0
         finished = False
         owned: dict[int, int] = {}
-        pickup = PickupShadow()
-        reward = RewardShadow()
-        drop = DropShadow()
+        pickup, reward, drop = fresh_shadows()
 
-        for event_no in range(EVENTS):
+        for _event_no in range(EVENTS):
             kind = rng.randrange(10)
 
             if kind == 0:
                 # Native-save round-trip: loading must be identity regardless of
-                # whether the mod is currently enabled.
+                # whether the mod is currently enabled. Runtime-only shadows are
+                # not persisted, so reopening starts with fresh transient state.
                 before = snapshot(owned)
-                loaded = dict(before)
-                assert snapshot(loaded) == before
-                owned = loaded
+                owned = dict(before)
+                assert snapshot(owned) == before
+                pickup, reward, drop = fresh_shadows()
                 continue
 
             if kind == 1:
-                enabled = not enabled
+                # Config lifecycle is restart-required. Toggling ON/OFF therefore
+                # also starts a fresh runtime generation, while native inventory
+                # remains byte-for-byte logically identical.
                 before = snapshot(owned)
-                # Toggle never rewrites already-owned vanilla ids/counts.
+                enabled = not enabled
+                pickup, reward, drop = fresh_shadows()
                 assert snapshot(owned) == before
                 continue
 
             if kind == 2:
-                # Configuration changes take effect only after a full restart.
+                # Seed changes also take effect only after a full restart. Existing
+                # owned inventory remains untouched; only future acquisitions use
+                # the new deterministic permutation.
                 before = snapshot(owned)
                 seed = rng.randrange(1, 0xFFFFFFFF)
                 mapping = cycle(seed, POOL, CONSUMABLE_SALT)
+                pickup, reward, drop = fresh_shadows()
                 assert snapshot(owned) == before
                 continue
 
             if kind == 3:
-                # Map transition is a source-generation boundary.
+                # Map transition is a source-generation boundary. Source rewriting
+                # occurs only while the mod is enabled.
                 map_index = (map_index + 1) & 0xFF
                 raw = rng.choice(POOL)
-                out = pickup.rewrite(map_index, [raw])[0]
-                expected = mapping[raw] if enabled else raw
-                # The production source-shadow rewrite runs only when enabled;
-                # model the disabled case by consuming vanilla directly.
-                delivered = out if enabled else raw
                 if enabled:
-                    # Drop/Pickup shadow model has its own fixed test seed, so
-                    # only enforce validity/no-double-write here; mapping exactness
-                    # is locked by the dedicated mapper and shadow tests.
+                    delivered = pickup.rewrite(map_index, [raw])[0]
                     assert delivered in POOL
                 else:
-                    assert delivered == expected
+                    delivered = raw
                 add_owned(owned, delivered)
                 continue
 
             if kind == 4:
                 raw = rng.choice(POOL)
                 if enabled:
-                    # Direct audited grant consumes the one shared mapper.
+                    # Audited direct grants consume the one shared mapper.
                     delivered = mapping[raw]
                     assert delivered != raw
                 else:
@@ -104,15 +107,18 @@ def main() -> int:
 
             if kind == 5:
                 # Reward queue lifecycle: clear slot, then reuse it with a fresh
-                # vanilla reward.  No stale shadow may suppress the new generation.
+                # vanilla reward. No stale shadow may suppress the new generation.
                 raw = rng.choice(POOL)
-                first = reward.rewrite([raw])[0]
-                assert first in POOL
-                reward.rewrite([0])
-                assert not reward.valid[0]
-                again = reward.rewrite([raw])[0]
-                assert again == first
-                delivered = again if enabled else raw
+                if enabled:
+                    first = reward.rewrite([raw])[0]
+                    assert first in POOL
+                    reward.rewrite([0])
+                    assert not reward.valid[0]
+                    again = reward.rewrite([raw])[0]
+                    assert again == first
+                    delivered = again
+                else:
+                    delivered = raw
                 add_owned(owned, delivered)
                 continue
 
@@ -120,14 +126,17 @@ def main() -> int:
                 # Table-O disappearance/reappearance and map changes must clear
                 # stale generations rather than double-map old replacements.
                 raw = rng.choice(POOL)
-                first = drop.rewrite(map_index, True, [raw])[0]
-                assert first in POOL
-                drop.rewrite(map_index, False, [])
-                assert not drop.valid[0]
-                map_index = (map_index + 1) & 0xFF
-                again = drop.rewrite(map_index, True, [raw])[0]
-                assert again == first
-                delivered = again if enabled else raw
+                if enabled:
+                    first = drop.rewrite(map_index, True, [raw])[0]
+                    assert first in POOL
+                    drop.rewrite(map_index, False, [])
+                    assert not drop.valid[0]
+                    map_index = (map_index + 1) & 0xFF
+                    again = drop.rewrite(map_index, True, [raw])[0]
+                    assert again == first
+                    delivered = again
+                else:
+                    delivered = raw
                 add_owned(owned, delivered)
                 continue
 
@@ -140,12 +149,12 @@ def main() -> int:
 
             if kind == 8:
                 # Ending/post-game boundary: save state remains ordinary vanilla
-                # inventory.  Reopening must not trigger a whole-inventory remap.
+                # inventory. Reopening must not trigger a whole-inventory remap.
                 finished = True
                 before = snapshot(owned)
-                reopened = dict(before)
-                assert snapshot(reopened) == before
-                owned = reopened
+                owned = dict(before)
+                pickup, reward, drop = fresh_shadows()
+                assert snapshot(owned) == before
                 continue
 
             # Continue acquiring after ending, including after seed/toggle changes.
