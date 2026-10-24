@@ -12,6 +12,7 @@ TESTS = (
     "tools/test_randomizer_save_safety.py",
     "tools/test_universal_randomizer_mapping.py",
     "tools/test_randomizer_golden_vectors.py",
+    "tools/test_randomizer_release_policy.py",
     "tools/test_stock_runtime_coverage.py",
     "tools/test_inventory_writer_taxonomy.py",
     "tools/test_randomizer_qa_telemetry.py",
