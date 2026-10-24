@@ -6,6 +6,7 @@ has evidence from a real Rev-A recomp build.
 
 ## Build identity
 
+- [ ] Run `VERIFY-QA.ps1` and require `Universal Item Randomizer QA payload: PASS`.
 - [ ] `BUILD-MANIFEST.txt` says `version=0.3.1`.
 - [ ] `source_commit` matches the tested branch artifact.
 - [ ] `.nrm` SHA-256 matches `nrm_sha256` in the manifest.
