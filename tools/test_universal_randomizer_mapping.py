@@ -114,12 +114,20 @@ def assert_shared_mapper_contract(repo: Path) -> None:
     assert "build_cycle_map(s_consumable_map, key_pool" in mapper
     assert "Unknown classes are intentionally omitted" in mapper
 
-    assert "#define CONSUMABLE_ID_MAX        40u" in use_repair
-    assert "s_consumable_refs[CONSUMABLE_ID_MAX + 1u]" in use_repair
-    assert "i <= CONSUMABLE_ID_MAX" in use_repair
-    assert "id <= CONSUMABLE_ID_MAX" in use_repair
-    assert "s_consumable_refs[CONSUMABLE_SLOTS]" not in use_repair
-    assert "id < CONSUMABLE_SLOTS" not in use_repair
+    # Native func_8016B774 rebuilds +0x02 by owned-list SLOT, not item id.
+    # Keep that semantics locked here because an ID-indexed repair can silently
+    # diverge whenever compact inventory slot != definition id.
+    assert "#define CONSUMABLE_SLOTS         40u" in use_repair
+    assert "#define EQUIP_SLOTS              278u" in use_repair
+    assert "s_equip_refs[EQUIP_SLOTS]" in use_repair
+    assert "s_consumable_refs[CONSUMABLE_SLOTS]" in use_repair
+    assert "slot_index < EQUIP_SLOTS" in use_repair
+    assert "slot_index < CONSUMABLE_SLOTS" in use_repair
+    assert "s_equip_refs[i]" in use_repair
+    assert "s_consumable_refs[i]" in use_repair
+    assert "s_equip_refs[id]" not in use_repair
+    assert "s_consumable_refs[id]" not in use_repair
+    assert "CONSUMABLE_ID_MAX" not in use_repair
 
     central = consumers["central"]
     assert "#define MAP_INDEX                0x8018F4A1u" in central
