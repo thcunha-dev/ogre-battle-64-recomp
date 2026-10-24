@@ -14,6 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MOD = ROOT / "mods/universal-item-randomizer"
 WF = ROOT / ".github/workflows/randomizer-stock-runtime-qa.yml"
+OFFICIAL_WINDOWS_SHA256 = "d9c269587b2f2b224bc6203c7ac9c4f42022f6990643cd38a870cb56df243169"
 
 
 def main() -> int:
@@ -62,6 +63,18 @@ def main() -> int:
     ):
         assert marker in workflow, f"stock QA manifest marker missing: {marker}"
 
+    # The ready-to-run Windows bundle must be based byte-for-byte on the
+    # published official v0.8.3 runtime before our .nrm is inserted.
+    assert OFFICIAL_WINDOWS_SHA256 in workflow
+    assert "ogre-battle-64-recomp-windows-x86_64.zip" in workflow
+    assert 'echo "$expected  $official" | sha256sum -c -' in workflow
+    assert "Assemble ready-to-run Windows QA bundle from official v0.8.3" in workflow
+    assert 'mkdir -p "$appdir/mods"' in workflow
+    assert 'universal-item-randomizer-stock-qa.nrm "$appdir/mods/"' in workflow
+    assert "-iname '*.z64'" in workflow and "-iname '*.n64'" in workflow and "-iname '*.v64'" in workflow
+    assert "ogre-battle-64-v0.8.3-stock-runtime-randomizer-qa-windows" in workflow
+    assert f"official_windows_runtime_sha256={OFFICIAL_WINDOWS_SHA256}" in workflow
+
     # Source and policy changes must retrigger the QA artifact.
     for trigger in (
         "mods/universal-item-randomizer/src/**",
@@ -73,7 +86,7 @@ def main() -> int:
         assert trigger in workflow, f"stock QA path trigger missing: {trigger}"
 
     assert "python3 tools/test_universal_randomizer_all.py" in workflow
-    assert "actions/upload-artifact@v4" in workflow
+    assert workflow.count("actions/upload-artifact@v4") >= 2
     assert "universal-item-randomizer-0.3.1-stock-runtime-qa" in workflow
 
     print("stock-runtime QA policy: PASS")
