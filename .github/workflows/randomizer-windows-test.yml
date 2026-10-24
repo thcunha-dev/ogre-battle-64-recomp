@@ -138,6 +138,7 @@ jobs:
           release_policy=safe_defaults_locked
           pipeline_policy=artifact_gates_locked
           persistence_model=5000_on_off_on_sequences
+          postgame_persistence_model=2000_finished_game_on_off_on_sequences
           source_shadow_model=map_reward_generation_checked
           shop_source_model=bit15_terminator_single_pass_checked
           inventory_capacity_model=full_inventory_no_overwrite
@@ -162,6 +163,8 @@ jobs:
           grep -q 'seed_vectors=123456_locked' "$qa/BUILD-MANIFEST.txt"
           grep -q 'release_policy=safe_defaults_locked' "$qa/BUILD-MANIFEST.txt"
           grep -q 'pipeline_policy=artifact_gates_locked' "$qa/BUILD-MANIFEST.txt"
+          grep -q 'persistence_model=5000_on_off_on_sequences' "$qa/BUILD-MANIFEST.txt"
+          grep -q 'postgame_persistence_model=2000_finished_game_on_off_on_sequences' "$qa/BUILD-MANIFEST.txt"
           cat "$qa/BUILD-MANIFEST.txt"
 
       - name: Self-verify QA payload
