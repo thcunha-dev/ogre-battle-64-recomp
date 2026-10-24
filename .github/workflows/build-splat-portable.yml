@@ -1,0 +1,43 @@
+name: Build portable Splat
+
+on:
+  push:
+    paths:
+      - '.github/workflows/build-splat-portable.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install Splat into portable target
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade pip
+          mkdir -p artifact/site
+          python -m pip install --target artifact/site 'splat64[mips]'
+          PYTHONPATH="$PWD/artifact/site" python - <<'PY'
+          import splat
+          print('splat import:', splat.__file__)
+          PY
+          cat > artifact/splat <<'SH'
+          #!/usr/bin/env bash
+          ROOT="$(cd "$(dirname "$0")" && pwd)"
+          export PYTHONPATH="$ROOT/site${PYTHONPATH:+:$PYTHONPATH}"
+          exec python3 -m splat "$@"
+          SH
+          chmod +x artifact/splat
+      - name: Upload portable Splat
+        uses: actions/upload-artifact@v4
+        with:
+          name: ogre-splat-py313-linux
+          path: artifact/
+          if-no-files-found: error
+          retention-days: 7
