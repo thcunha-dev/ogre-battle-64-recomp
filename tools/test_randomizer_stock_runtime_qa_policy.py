@@ -21,6 +21,7 @@ def main() -> int:
     manifest = (MOD / "mod-stock-qa.toml").read_text()
     workflow = WF.read_text()
     readme = (MOD / "STOCK-RUNTIME-QA.md").read_text()
+    checklist = (MOD / "STOCK-QA-CHECKLIST.md").read_text()
 
     # Never share runtime config/state with the final mod.
     assert 'id = "ogre_universal_item_randomizer_stock_qa"' in manifest
@@ -32,6 +33,9 @@ def main() -> int:
     assert 'id = "starting_items"' not in manifest
     assert "Bank-R starting/setup direct grants" in readme
     assert "intentionally does NOT validate" in readme
+    assert "Integrated-build-only tests" in checklist
+    assert "STARTING ITEMS=ON" in checklist
+    assert "Direct Bank-N central replacement itself" in checklist
 
     # Build from the exact same source tree, then alter only the two intended
     # central-grant properties in the temporary copy.
@@ -71,6 +75,8 @@ def main() -> int:
     assert "Assemble ready-to-run Windows QA bundle from official v0.8.3" in workflow
     assert 'mkdir -p "$appdir/mods"' in workflow
     assert 'universal-item-randomizer-stock-qa.nrm "$appdir/mods/"' in workflow
+    assert 'STOCK-QA-CHECKLIST.md "$appdir/STOCK-QA-CHECKLIST.md"' in workflow
+    assert "grep -q 'STOCK-QA-CHECKLIST.md$'" in workflow
     assert "-iname '*.z64'" in workflow and "-iname '*.n64'" in workflow and "-iname '*.v64'" in workflow
     assert "ogre-battle-64-v0.8.3-stock-runtime-randomizer-qa-windows" in workflow
     assert f"official_windows_runtime_sha256={OFFICIAL_WINDOWS_SHA256}" in workflow
@@ -80,6 +86,8 @@ def main() -> int:
         "mods/universal-item-randomizer/src/**",
         "mods/universal-item-randomizer/include/**",
         "mods/universal-item-randomizer/mod-stock-qa.toml",
+        "mods/universal-item-randomizer/STOCK-RUNTIME-QA.md",
+        "mods/universal-item-randomizer/STOCK-QA-CHECKLIST.md",
         "tools/test_randomizer_*.py",
         "tools/test_universal_randomizer_*.py",
     ):
