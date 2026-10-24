@@ -8,6 +8,29 @@ The transient `+0x02` used-count repair mirrors native `func_8016B774` semantics
 
 Battle-reward shadowing is documented and tested as **per-slot**, matching the persisted 20-u16 queue model. Multiple slots have been observed carrying real rewards, so a whole-queue all-zero boundary is not required. The primary slot lifecycle has static Bank-N proof: `0x801E53DC` grants the item and `0x801E53F4` clears `0x801936D8` immediately afterward.
 
+## Traceable green QA candidate
+
+The current QA candidate is pinned to source commit:
+
+`bf7b34afe1315efcd7e985e484512da098948af6`
+
+All principal automated gates for this commit completed successfully:
+
+- Universal Randomizer Mapping run `40069669854`: full 30-test host suite PASS;
+- Package Universal Randomizer run `40069669866`: `.nrm` package PASS;
+- Universal Randomizer Windows Test Bundle run `40069669876`: build + QA payload + self-verification PASS (the optional hosted Windows execution job is intentionally skipped unless its external runtime condition is supplied);
+- Universal Randomizer Stock Runtime QA run `40069669928`: stock QA NRM + ready-to-run official-v0.8.3 Windows bundle PASS;
+- Universal Randomizer Runtime Build run `40069669840`: integrated custom runtime library, MIPS ELF and Bank-N-augmented NRM PASS.
+
+Pinned artifacts from that same source commit:
+
+- integrated randomizer artifact `12550304852`, workflow-archive SHA-256 `8bb97387dcee21d0a934ed38157f19757eedde532197a75e682ae307a9fa5dca`;
+- self-contained QA payload `12550901315`, workflow-archive SHA-256 `c886f5b31c3dba09be1b81aa3633034f5807510c4141367f433824850c4c945c`;
+- stock-runtime QA artifact `12550249882`, workflow-archive SHA-256 `fa8d7518b0443d90c606d95d17e00ec4ca68cee5a5a2b1dd916972638d7dbc69`;
+- ready-to-run official-v0.8.3 Windows stock-runtime QA bundle `12550354529`, workflow-archive SHA-256 `dbe079c04c60067b575aaa9fe5b36ed5d3787199344180120d0a17438122aafe`.
+
+Manual QA should use artifacts from this exact commit (or a newer commit whose complete gate set is green). Do not mix an older runtime/NRM with a newer checklist or manifest.
+
 ## Rev-A central-grant classification
 
 Whole-cart Rev-A analysis accounts for **all 46 calls** to `func_ovlN_801DC740`:
