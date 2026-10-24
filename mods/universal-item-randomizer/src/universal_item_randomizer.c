@@ -372,6 +372,10 @@ void func_ovlN_801DC740(unsigned int item_word, unsigned int ignored) {
     (void)ignored;
     randomizer_init();
 
+    // All audited callers use valid vanilla item words. Reject malformed future
+    // or corrupted direct inputs before mapping/logging/inventory mutation.
+    if (!source_item_word_valid(raw)) return;
+
     if (s_log_enabled && caller_is_starting_grant(caller_ra) && s_setup_log_count < 4u) {
         recomp_log("universal-item-randomizer: Bank-R starting/setup grant recognized");
         s_setup_log_count++;
@@ -383,6 +387,7 @@ void func_ovlN_801DC740(unsigned int item_word, unsigned int ignored) {
 
     randomize_direct = should_randomize_direct_grant(caller_ra);
     delivered = randomize_direct ? uir_map_item_word(raw) : raw;
+    if (!source_item_word_valid(delivered)) return;
     if (randomize_direct && delivered != raw) {
         log_bounded("universal-item-randomizer: starting/setup direct grant mapped",
                     &s_starting_map_log_count);
