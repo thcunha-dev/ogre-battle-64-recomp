@@ -71,6 +71,10 @@ if ($Manifest["starting_items_scope"] -ne "forty_literal_a1_zero_no_store_calls"
     throw "Unexpected or missing STARTING ITEMS scope marker"
 }
 
+if ($Manifest["rom_verifier"] -ne "one_command_four_audits") {
+    throw "Unexpected or missing one-command ROM verifier marker"
+}
+
 Write-Host "Universal Item Randomizer QA payload: PASS"
 Write-Host "Version: $($Manifest['version'])"
 Write-Host "Source commit: $($Manifest['source_commit'])"
@@ -79,5 +83,6 @@ Write-Host "Use repair: $($Manifest['use_repair'])"
 Write-Host "Central grant a1: $($Manifest['central_grant_a1'])"
 Write-Host "Bank-R coupled grants: $($Manifest['bank_r_coupled_grants'])"
 Write-Host "Starting items scope: $($Manifest['starting_items_scope'])"
-Write-Host "Rev-A verifier: python verify_randomizer_rev_a_rom.py <Rev-A.z64>"
+Write-Host "ROM verifier: $($Manifest['rom_verifier'])"
+Write-Host "Rev-A verifier command: python verify_randomizer_rev_a_rom.py <Rev-A.z64>"
 Write-Host "NRM SHA-256: $Actual"
