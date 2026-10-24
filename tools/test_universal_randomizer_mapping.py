@@ -115,8 +115,6 @@ def assert_shared_mapper_contract(repo: Path) -> None:
     assert "Unknown classes are intentionally omitted" in mapper
 
     # Native func_8016B774 rebuilds +0x02 by owned-list SLOT, not item id.
-    # Keep that semantics locked here because an ID-indexed repair can silently
-    # diverge whenever compact inventory slot != definition id.
     assert "#define CONSUMABLE_SLOTS         40u" in use_repair
     assert "#define EQUIP_SLOTS              278u" in use_repair
     assert "s_equip_refs[EQUIP_SLOTS]" in use_repair
@@ -146,19 +144,19 @@ def assert_shared_mapper_contract(repo: Path) -> None:
     assert "map_index != s_pickup_map_index" in central
     assert "reset_pickup_shadow();" in central
 
-    # STARTING ITEMS covers only the two audited safe setup sources. The third
-    # Bank-R caller is fully classified as a coupled per-unit consumable loadout:
-    # the loader writes id 28 into unit+0x0D before grant(28,1), so central-only
-    # mapping would split the unit reference from owned inventory.
+    # STARTING ITEMS is intentionally narrow: only the audited literal block is
+    # opt-in. The two Rev-A callers with a1=1 also write unit loadout references,
+    # so central-only mapping would split those references from owned inventory.
     assert "#define RA_TUTORIAL_SETUP_R      0x80215BF4u" in central
     assert "#define RA_UNIT_LOADOUT_R        0x80216D98u" in central
     assert "#define RA_STARTING_R_LO         0x80217070u" in central
     assert "#define RA_STARTING_R_HI         0x8021724Cu" in central
-    assert "caller_ra == RA_TUTORIAL_SETUP_R" in central
     assert "caller_is_starting_grant" in central
-    assert "caller_is_coupled_unit_loadout" in central
+    assert "return caller_ra >= RA_STARTING_R_LO && caller_ra < RA_STARTING_R_HI;" in central
+    assert "caller_is_coupled_unit_grant" in central
+    assert "caller_ra == RA_TUTORIAL_SETUP_R" in central
     assert "caller_ra == RA_UNIT_LOADOUT_R" in central
-    assert "coupled Bank-R unit loadout left vanilla" in central
+    assert "coupled Bank-R unit/setup grant left vanilla" in central
     for stale in (
         "RA_BANK_R_UNKNOWN",
         "RA_BANK_R_UNKNOWN_A",
@@ -166,12 +164,14 @@ def assert_shared_mapper_contract(repo: Path) -> None:
         "caller_is_unclassified_bank_r",
         "RA_SETUP_R_LO",
         "RA_SETUP_R_HI",
+        "caller_is_coupled_unit_loadout",
     ):
         assert stale not in central, f"stale Bank-R classification remains: {stale}"
 
     direct = central.split("static int should_randomize_direct_grant", 1)[1]
     direct = direct.split("RECOMP_PATCH", 1)[0]
-    assert "caller_is_coupled_unit_loadout" not in direct
+    assert "if (caller_is_coupled_unit_grant(caller_ra)) return 0;" in direct
+    assert direct.index("caller_is_coupled_unit_grant") < direct.index("caller_is_starting_grant")
     assert "return 0;" in direct, "future direct grants are not fail-closed"
 
     post_battle = consumers["post_battle"]
