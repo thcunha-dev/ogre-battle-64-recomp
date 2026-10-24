@@ -11,7 +11,7 @@ has evidence from a real Rev-A recomp build.
 - [ ] `source_commit` matches the tested branch artifact.
 - [ ] `.nrm` SHA-256 matches `nrm_sha256` in the manifest.
 - [ ] Rev-A reference SHA-1 is `d26b14bee422a09581ce438d45ba9fec9783fbb8`.
-- [ ] Host suite count in manifest matches `python3 tools/test_universal_randomizer_all.py --count`.
+- [ ] Host suite count in manifest matches `python3 tools/test_universal_randomizer_all.py --count` (currently 20).
 
 ## Configuration lifecycle
 
@@ -35,6 +35,17 @@ has evidence from a real Rev-A recomp build.
 - [ ] Verify a map-object/Table-O source after a map transition.
 - [ ] Verify a ground/Table-P source after a map transition.
 - [ ] Repeated frames do not visibly change a mapped source.
+- [ ] Table-P behaves normally with maps containing the largest practical pickup list.
+- [ ] No Table-P test ever treats more than the physical 16 u16 IDs at `0x801F1004..0x801F1023` as item storage; `0x801F1024` is already adjacent metadata.
+
+## Battle reward queue
+
+- [ ] Exercise repeated item-reward battles with `LOG = ON`.
+- [ ] Treat the 20-word reward queue beginning at `0x801936D8` per-slot; do not require a whole-queue all-zero state.
+- [ ] Confirm displayed battle reward and delivered inventory item remain identical while multiple pending reward slots are present.
+- [ ] When observing memory, confirm a consumed/reused physical slot passes through zero or changes away from its previous mod-written value before being reused as a fresh vanilla reward.
+- [ ] Primary slot behavior is consistent with the proven Bank-N path: grant at `0x801E53DC`, native clear of `0x801936D8` at `0x801E53F4`.
+- [ ] If one physical slot is observed being reused without a zero/change boundary, keep PR draft and reverse engineer that slot's lifecycle before 1.0.
 
 ## Inventory integrity
 
@@ -42,6 +53,7 @@ has evidence from a real Rev-A recomp build.
 - [ ] No count exceeds 99.
 - [ ] No false/stale used-count (`+0x02`) appears after new equipment.
 - [ ] Consumable ID 40 behaves normally when encountered.
+- [ ] Equipment ID 277 behaves normally when encountered.
 - [ ] Full inventory does not overwrite another occupied slot.
 
 ## Starting/setup
@@ -98,5 +110,5 @@ has evidence from a real Rev-A recomp build.
 ## Release decision
 
 - [ ] All mandatory boxes above have passed on one traceable QA artifact.
-- [ ] No unresolved save/post-game issue remains.
+- [ ] No unresolved save/post-game/reward-slot lifecycle issue remains.
 - [ ] PR can leave draft only after the real-game evidence above exists.
