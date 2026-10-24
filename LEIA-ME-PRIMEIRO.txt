@@ -1,0 +1,32 @@
+OGRE BATTLE 64 PT-BR — v1.1 COMPLETE
+====================================
+
+Esta e a release completa da traducao PT-BR para o projeto ogre-battle-64-recomp.
+
+A v1.1 COMPLETE inclui:
+- 4569 dialogos;
+- UI, ajuda, sistema, tutorial e localidades;
+- descricoes, glossario e lore;
+- MEMORIES_INDEX;
+- PEOPLE_PROFILES;
+- RECOLLECTIONS;
+- HISTORY_LORE.
+
+Os quatro bancos narrativos finais foram extraidos e validados usando uma ROM USA Rev 1
+autorizada pelo usuario, traduzidos em 3325/3325 slots, recomprimidos dentro do tamanho
+retail e integrados ao runtime por guards exatos.
+
+IMPORTANTE:
+- A ROM original NAO esta incluida neste pacote.
+- Itens, equipamentos, magias, classes e outros nomes/jargoes seguem a variante
+  ORIGINAL NAMES definida para este projeto.
+- minimum_recomp_version permanece 0.1.0.
+
+Arquivos principais:
+- build/mod.elf                     binario compilado do mod
+- src/ptbr_runtime.c                runtime PT-BR
+- src/ptbr_v71_story_complete.inc  quatro bancos narrativos finais
+- story_complete/                   CSVs e relatorio dos quatro bancos
+- FINAL_AUDIT_V1_1_COMPLETE.json   auditoria automatizada
+- FINAL_VALIDATION_V1_1_COMPLETE.txt
+- FINAL_RELEASE_STATUS_V1_1_COMPLETE.txt

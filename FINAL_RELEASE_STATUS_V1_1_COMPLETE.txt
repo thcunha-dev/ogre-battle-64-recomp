@@ -1,0 +1,60 @@
+OGRE BATTLE 64 PT-BR — v1.1 COMPLETE
+====================================
+
+STATUS: COMPLETE
+
+Esta release fecha o conteúdo textual integrado do projeto PT-BR.
+
+ESCOPO FINAL
+- 4569/4569 diálogos físicos traduzidos e integrados.
+- 348/348 assets serifu cobertos.
+- UI, sistema, ajuda, tutorial, localidades, descrições, glossário e lore previamente integrados preservados.
+- Quatro grandes bancos narrativos finais agora traduzidos e integrados:
+  * MEMORIES_INDEX: 200/200
+  * PEOPLE_PROFILES: 1201/1201
+  * RECOLLECTIONS: 1415/1415
+  * HISTORY_LORE: 509/509
+- Total dos quatro bancos finais: 3325/3325 slots.
+
+ROM DE REFERENCIA
+- Ogre Battle 64 - Person of Lordly Caliber (USA) (Rev 1)
+- SHA-256: 3bfbaf0af968795102f6d136713665e347c22723b4ca75bd5494fdc97df5919e
+- A ROM NAO esta incluida neste pacote.
+
+VALIDACAO DOS QUATRO BANCOS
+- Header/payload/raw size Rev 1 validados.
+- 3325/3325 slots preenchidos.
+- 0 slots pendentes.
+- 0 overflow por slot.
+- 0 non-ASCII novo.
+- Round-trip de compressao/descompressao: PASS em 4/4.
+- Todos os payloads PT cabem no espaco retail.
+- Include final v71 gerado e ligado ao hook LZ.
+
+FOLGA DE COMPRESSAO VS RETAIL
+- MEMORIES_INDEX: +117 bytes
+- PEOPLE_PROFILES: +598 bytes
+- RECOLLECTIONS: +1118 bytes
+- HISTORY_LORE: +780 bytes
+
+BUILD FINAL
+- ELF SHA-256: 58d1af82dd3dfc5a3e273a593ecd4293ead4af8e91c8df41decf1a5df6682081
+- OBJ SHA-256: c211b41d612ddca895c42e7c6463541917411a3ba67f3ab67f303cef70a6581e
+- Build A/B: byte a byte identica.
+- .data = 0
+- .bss = 0
+- .sbss = 0/ausente
+- Relocations: 11873
+  R_MIPS_32=11512
+  R_MIPS_26=125
+  R_MIPS_HI16=117
+  R_MIPS_LO16=119
+- Relocations proibidas: 0
+- heap malloc/calloc/realloc/free: 0
+- referencias $gp: 0
+
+NOTA DE QA
+A traducao e a integracao binaria estao concluídas e estruturalmente validadas.
+Um percurso manual completo em jogo continua sendo recomendado como QA visual final
+(quebras de linha, caixas e contexto em tela), mas nao ha mais banco textual conhecido
+pendente de traducao nesta release.

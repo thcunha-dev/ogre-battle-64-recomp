@@ -1,0 +1,19 @@
+[manifest]
+id = "ogre_ptbr_dialogue_scene_poc"
+version = "1.1.0"
+display_name = "Ogre Battle 64 PT-BR v1.1 COMPLETE"
+description = "Traducao PT-BR completa do conteudo integrado: 4569 dialogos, UI, ajuda, sistema, localidades, glossario e os quatro grandes bancos narrativos (Memories, People Profiles, Recollections e History/Lore), validados contra a ROM USA Rev 1 autorizada."
+short_description = "v1.1 COMPLETE: traducao PT-BR completa, incluindo os quatro bancos narrativos finais."
+authors = [ "Thiago Cunha / projeto PT-BR" ]
+game_id = "ogrebattle64"
+minimum_recomp_version = "0.1.0"
+dependencies = [ ]
+native_libraries = [ ]
+enabled_by_default = false
+
+[inputs]
+elf_path = "build/mod.elf"
+mod_filename = "ogre_ptbr_v1_1_complete"
+func_reference_syms_file = "reference/dump.toml"
+data_reference_syms_files = [ ]
+additional_files = [ ]

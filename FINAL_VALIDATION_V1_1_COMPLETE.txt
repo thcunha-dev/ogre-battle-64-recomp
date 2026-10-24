@@ -1,0 +1,38 @@
+VALIDACAO FINAL — OGRE BATTLE 64 PT-BR v1.1 COMPLETE
+====================================================
+
+[PASS] 4569/4569 arrays PT
+[PASS] 4569/4569 arrays EN de referencia
+[PASS] 348/348 assets
+[PASS] 0 divergencias de control codes no nucleo de dialogo
+[PASS] 0 pt_len mismatch
+[PASS] 0 overflow de dialogo
+[PASS] 30/30 includes historicos comparados sem alteracao
+
+QUATRO BANCOS FINAIS
+[PASS] MEMORIES_INDEX 200/200
+[PASS] PEOPLE_PROFILES 1201/1201
+[PASS] RECOLLECTIONS 1415/1415
+[PASS] HISTORY_LORE 509/509
+[PASS] TOTAL 3325/3325
+[PASS] pending = 0
+[PASS] overflow = 0
+[PASS] non-ASCII = 0
+[PASS] retail guards = hashes exatos da ROM Rev 1
+[PASS] payloads PT do include = hashes exatos dos payloads finais
+[PASS] round-trip LZ = 4/4
+[PASS] fit-retail = 4/4
+
+BINARIO
+[PASS] build A/B objeto identico
+[PASS] build A/B ELF identico
+[PASS] ELF final = build A
+[PASS] .data = 0
+[PASS] .bss = 0
+[PASS] .sbss = 0/ausente
+[PASS] relocations proibidas = 0
+[PASS] heap = 0
+[PASS] $gp = 0
+[PASS] hooks principais preservados
+
+Auditoria completa: FINAL_AUDIT_V1_1_COMPLETE.json

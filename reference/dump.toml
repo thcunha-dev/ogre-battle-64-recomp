@@ -1,0 +1,15 @@
+# Minimal Ogre Battle 64 USA Rev A function reference for PT-BR asset-load test.
+# Main mapping: ROM 0x001060 -> VRAM 0x80070C60.
+[[section]]
+name = ".main"
+rom = 0x00001060
+vram = 0x80070C60
+size = 0x0003E150
+
+functions = [
+    { name = "func_80070F30", vram = 0x80070F30, size = 0x1AC },
+    { name = "func_800712C4", vram = 0x800712C4, size = 0x164 },
+    { name = "func_80072944", vram = 0x80072944, size = 0x38 },
+    { name = "func_80079950", vram = 0x80079950, size = 0x1AC },
+    { name = "func_8007A110", vram = 0x8007A110, size = 0x6D0 },
+]
