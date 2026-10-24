@@ -2,7 +2,7 @@
 
 Status: **feature-complete for the currently safe acquisition model; real campaign QA pending**.
 
-The current host suite contains **18 tests** and is the single source of truth via `python3 tools/test_universal_randomizer_all.py`. Heavy artifact jobs are gated by that suite. The latest hardening adds map-generation invalidation for Table-O, full-source validation for Table-O/Table-P/reward queue, invalid-ID rejection in both grant replacements, dynamic manifest suite counts, restart-required config lifecycle, a self-verifying QA payload and more selective CI rebuild triggers.
+The current host suite contains **18 tests** and is the single source of truth via `python3 tools/test_universal_randomizer_all.py`. Heavy artifact jobs are gated by that suite. Latest hardening includes Table-O map-generation invalidation, full-source validation for Table-O/Table-P/reward queue, invalid-ID rejection in both grant replacements, dynamic manifest suite counts, restart-required config lifecycle and a self-verifying QA payload.
 
 Native save remains untouched by randomizer metadata. Existing inventory is never re-randomized on load. Shops, starting items and key-item randomization remain OFF by default. Coupled unit loadout ID 28 and class-default equipment remain vanilla until they can be transformed atomically with native references.
 
