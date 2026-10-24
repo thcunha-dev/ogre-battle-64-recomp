@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MAPPER = (ROOT / "mods/universal-item-randomizer/src/randomizer_map.c").read_text()
 REPAIR = (ROOT / "mods/universal-item-randomizer/src/use_repair.c").read_text()
+CENTRAL = (ROOT / "mods/universal-item-randomizer/src/universal_item_randomizer.c").read_text()
 
 CLASS_TABLE = 0x80187C62
 CLASS_STRIDE = 0x48
@@ -18,6 +19,14 @@ EQUIP_MAX = 277
 CONSUMABLE_TABLE = 0x8018E6EC
 CONSUMABLE_STRIDE = 0x0C
 CONSUMABLE_MAX = 40
+
+CONSUMABLE_LIST = 0x80193AE0
+CONSUMABLE_SLOTS = 40
+ROSTER_CHARS = 0x80193BE0
+EQUIP_LIST = 0x80196B20
+EQUIP_SLOTS = 278
+ROSTER_UNITS = 0x80197210
+OWNED_STRIDE = 4
 
 
 def main() -> int:
@@ -36,8 +45,19 @@ def main() -> int:
         "#define ROSTER_CLASS_TABLE       0x80187C62u",
         "#define ROSTER_CLASS_STRIDE      0x48u",
         "#define ROSTER_CLASS_COUNT       255u",
+        "#define ROSTER_CHARS             0x80193BE0u",
+        "#define ROSTER_UNITS             0x80197210u",
     ):
-        assert token in REPAIR, f"class layout drift: {token}"
+        assert token in REPAIR, f"class/roster layout drift: {token}"
+
+    for token in (
+        "#define EQUIP_LIST               0x80196B20u",
+        "#define EQUIP_SLOTS              278u",
+        "#define CONSUMABLE_LIST          0x80193AE0u",
+        "#define CONSUMABLE_SLOTS         40u",
+        "#define LIST_STRIDE              4u",
+    ):
+        assert token in CENTRAL, f"owned-list layout drift: {token}"
 
     # Class ids 0..254 occupy complete records. The next hypothetical class
     # record would begin only 0x12 bytes before the equipment table and would
@@ -61,6 +81,23 @@ def main() -> int:
     consumable_40 = CONSUMABLE_TABLE + CONSUMABLE_MAX * CONSUMABLE_STRIDE
     assert consumable_40 == 0x8018E8CC
     assert consumable_40 + CONSUMABLE_STRIDE == 0x8018E8D8
+
+    # Owned consumable inventory occupies exactly 40 four-byte records and ends
+    # 0x60 bytes before the character roster. A 41st record would still fit the
+    # gap physically, but it is not part of the native inventory contract; lock
+    # the slot count and exact end so no code starts treating padding as storage.
+    consumable_owned_end = CONSUMABLE_LIST + CONSUMABLE_SLOTS * OWNED_STRIDE
+    assert consumable_owned_end == 0x80193B80
+    assert ROSTER_CHARS - consumable_owned_end == 0x60
+    assert CONSUMABLE_LIST + (CONSUMABLE_SLOTS - 1) * OWNED_STRIDE == 0x80193B7C
+
+    # Equipment inventory likewise occupies exactly 278 records. Keep the exact
+    # end and the gap before the unit roster locked; native padding is not a free
+    # expansion area for the randomizer.
+    equip_owned_end = EQUIP_LIST + EQUIP_SLOTS * OWNED_STRIDE
+    assert equip_owned_end == 0x80196F78
+    assert ROSTER_UNITS - equip_owned_end == 0x298
+    assert EQUIP_LIST + (EQUIP_SLOTS - 1) * OWNED_STRIDE == 0x80196F74
 
     print("universal randomizer Rev-A RAM table layout: PASS")
     return 0
