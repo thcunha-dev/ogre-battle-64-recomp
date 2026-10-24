@@ -116,8 +116,57 @@ jobs:
           test -s /tmp/mod_syms.bin
           ls -lh "$nrm" /tmp/mod_binary.bin /tmp/mod_syms.bin
 
+      - name: Write reproducible package manifest
+        run: |
+          set -eux
+          nrm=build/mods/universal-item-randomizer.nrm
+          manifest=build/mods/BUILD-MANIFEST.txt
+          nrm_sha=$(sha256sum "$nrm" | awk '{print $1}')
+          nrm_size=$(stat -c '%s' "$nrm")
+          suite_count=$(python3 tools/test_universal_randomizer_all.py --count)
+          cat >"$manifest" <<EOF
+          Universal Item Randomizer Package Build
+          version=0.3.1
+          source_commit=${GITHUB_SHA}
+          source_branch=${GITHUB_REF_NAME}
+          rev_a_reference_sha1=d26b14bee422a09581ce438d45ba9fec9783fbb8
+          n64recomp_commit=81213c1831fab2521a6a5459c67b63437d67e253
+          nrm_sha256=${nrm_sha}
+          nrm_size_bytes=${nrm_size}
+          save_policy=no_randomizer_metadata_in_native_save
+          config_lifecycle=restart_required
+          host_suite=${suite_count}_tests
+          elf_symbols=critical_replacements_present
+          use_repair=native_slot_indexed
+          central_grant_a1=native_consumable_used_flag
+          bank_r_coupled_grants=two_a1_one_callers_fail_closed
+          starting_items_scope=forty_literal_a1_zero_no_store_calls
+          seed_vectors=123456_locked
+          release_policy=safe_defaults_locked
+          pipeline_policy=artifact_gates_locked
+          persistence_model=5000_on_off_on_sequences
+          postgame_persistence_model=2000_finished_game_on_off_on_sequences
+          campaign_stress_model=1000_campaigns_x_600_events
+          source_shadow_model=map_reward_generation_checked
+          shop_source_model=bit15_terminator_single_pass_checked
+          inventory_capacity_model=full_inventory_no_overwrite
+          EOF
+          grep -q "source_commit=${GITHUB_SHA}" "$manifest"
+          grep -q "nrm_sha256=${nrm_sha}" "$manifest"
+          grep -q "host_suite=${suite_count}_tests" "$manifest"
+          grep -q 'persistence_model=5000_on_off_on_sequences' "$manifest"
+          grep -q 'postgame_persistence_model=2000_finished_game_on_off_on_sequences' "$manifest"
+          grep -q 'campaign_stress_model=1000_campaigns_x_600_events' "$manifest"
+          grep -q 'use_repair=native_slot_indexed' "$manifest"
+          grep -q 'central_grant_a1=native_consumable_used_flag' "$manifest"
+          grep -q 'bank_r_coupled_grants=two_a1_one_callers_fail_closed' "$manifest"
+          grep -q 'starting_items_scope=forty_literal_a1_zero_no_store_calls' "$manifest"
+          cat "$manifest"
+
       - uses: actions/upload-artifact@v4
         with:
           name: universal-item-randomizer-0.3.1-nrm
-          path: build/mods/universal-item-randomizer.nrm
+          path: |
+            build/mods/universal-item-randomizer.nrm
+            build/mods/BUILD-MANIFEST.txt
           if-no-files-found: error
