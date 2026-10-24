@@ -26,8 +26,10 @@ Rev-A game run. Do not promote the mod to 1.0 solely because the build is green.
   uses the shared mapper; count saturates at 99 before narrowing.
 - Display-sensitive map/drop/pickup/reward sources are transformed before UI and
   final grant, avoiding popup/inventory mismatches and double mapping.
-- Pickup source shadow is keyed by map index so RAM reuse across maps cannot
-  suppress a legitimate new mapping by coincidence.
+- Both Table-O/map-object and Table-P/ground-pickup source shadows are keyed by
+  `MAP_INDEX`. RAM reuse across maps therefore cannot suppress a legitimate new
+  mapping even when a new vanilla id exactly equals the replacement written on
+  the previous map.
 - Town shop stock is mapped at the Bank-AB source when `RANDOMIZE SHOPS` is ON;
   shops are vanilla by default.
 - `+0x02` used counts are rebuilt from roster references without touching item
@@ -48,18 +50,37 @@ Rev-A game run. Do not promote the mod to 1.0 solely because the build is green.
 ## Host verification suite
 
 `python3 tools/test_universal_randomizer_all.py` is the single source of truth for
-all host-side verification. It currently runs **10 tests**:
+all host-side verification. The suite count is exposed through `--count` so build
+manifests derive the number automatically instead of hard-coding it. It currently
+runs **13 tests**:
 
 1. `tools/test_randomizer_save_safety.py`
 2. `tools/test_universal_randomizer_mapping.py`
 3. `tools/test_randomizer_golden_vectors.py`
-4. `tools/test_stock_runtime_coverage.py`
-5. `tools/test_inventory_writer_taxonomy.py`
-6. `tools/test_randomizer_qa_telemetry.py`
-7. `tools/test_randomizer_persistence_model.py`
-8. `tools/test_randomizer_source_shadow_model.py`
-9. `tools/test_randomizer_shop_model.py`
-10. `tools/test_randomizer_inventory_capacity_model.py`
+4. `tools/test_randomizer_release_policy.py`
+5. `tools/test_randomizer_pipeline_policy.py`
+6. `tools/test_randomizer_version_consistency.py`
+7. `tools/test_stock_runtime_coverage.py`
+8. `tools/test_inventory_writer_taxonomy.py`
+9. `tools/test_randomizer_qa_telemetry.py`
+10. `tools/test_randomizer_persistence_model.py`
+11. `tools/test_randomizer_source_shadow_model.py`
+12. `tools/test_randomizer_shop_model.py`
+13. `tools/test_randomizer_inventory_capacity_model.py`
+
+The release-policy contract locks the safety-critical manifest defaults: the mod
+itself is disabled by default, seed defaults to 1, and shops, starting items, key
+items and diagnostic logging all remain OFF. It also protects the explicit empty
+`data_reference_syms_files` input required by the pinned RecompModTool.
+
+The pipeline-policy contract requires every artifact-producing randomizer workflow
+to execute this same unified suite before compiling or uploading `.nrm`, QA payload
+or integrated artifacts. It also verifies that test-file changes retrigger those
+workflows.
+
+The version-consistency contract ties `mod.toml`, QA documentation and artifact
+workflow names to the same `0.3.1` version so a partial version bump cannot create
+mislabelled packages.
 
 The golden-vector test locks the public seed semantics so accidental changes to
 mixer constants, salts or Sattolo ordering cannot silently make an existing seed
@@ -75,8 +96,9 @@ acquisitions; the modeled native save contains item ids and counts only.
 
 The source-shadow model exercises RAM reuse between maps/reward generations,
 including the dangerous case where a new map's vanilla id equals the replacement
-written into the previous map's RAM. Map-generation changes must force a fresh
-mapping while repeated frames on the same source remain stable.
+written into the previous map's RAM. Both pickup and drop-table map-generation
+changes must force a fresh mapping while repeated frames on the same source remain
+stable. Reward zeroing and drop-table unload/reload are also generation boundaries.
 
 The shop model verifies that the Bank-AB raw stock source is transformed once,
 keeps equipment/consumable list class through bit15, preserves the zero
@@ -95,8 +117,8 @@ randomizer metadata outside the original audited files.
 ## Integrated build proof
 
 Both the fast mapping workflow and the integrated runtime workflow invoke the
-same unified host suite. The integrated job only continues after all ten tests
-pass, then:
+same unified host suite. The integrated job only continues after every current
+suite test passes, then:
 
 - applies the pinned OB64/N64Recomp/runtime layers;
 - compiles the patched `librecomp` runtime;
@@ -104,17 +126,16 @@ pass, then:
 - builds the matching RecompModTool;
 - packages the `.nrm` against Bank-N-augmented Rev-A references;
 - emits a reproducible `BUILD-MANIFEST.txt` with source commit, pinned
-  runtime/Recomp commits, Rev-A reference SHA-1, NRM SHA-256/size and the
-  explicit native-save policy plus persistence/source-shadow/shop/capacity model
-  markers.
+  runtime/Recomp commits, Rev-A reference SHA-1, NRM SHA-256/size, dynamically
+  derived host-suite count and explicit save/release/pipeline/model markers.
 
-The last fully green integrated proof before adding golden vectors was run
-`40024229735`; the next integrated run must additionally pass the tenth golden-
-vector test before its artifact is accepted for QA.
+The last fully green integrated proof before the current Table-O generation fix
+was run `40024229735`. The current head must pass the expanded 13-test suite plus
+full runtime/MIPS/NRM build before its artifact is accepted for campaign QA.
 
-A separate QA-payload workflow also packages the `.nrm`, build manifest,
-`TESTING.md`, `QA-TELEMETRY.md` and this status file together so manual campaign
-validation uses one traceable bundle rather than loose files.
+A separate QA-payload workflow packages the `.nrm`, build manifest,
+`TESTING.md`, `QA-TELEMETRY.md`, `STATUS.md` and `SEED-VECTORS.md` together so
+manual campaign validation uses one traceable bundle rather than loose files.
 
 ## Static writer taxonomy
 
@@ -142,7 +163,7 @@ The main blockers are behavioural QA rather than missing central architecture:
 - run the full `TESTING.md` matrix on a real Rev-A recomp build;
 - prove popup/detail/price/purchased item agreement in shops;
 - prove tutorial/starting diagnostics and deterministic results;
-- test map transitions and repeated pickups;
+- test map transitions and repeated pickups/drop tables;
 - test post-battle count/use bookkeeping;
 - test save ON -> OFF -> ON with the same file;
 - test finish/post-game -> close -> reopen, including mod disabled afterward;
