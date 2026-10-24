@@ -171,6 +171,7 @@ jobs:
           host_suite=${suite_count}_tests
           persistence_model=5000_on_off_on_sequences
           postgame_persistence_model=2000_finished_game_on_off_on_sequences
+          campaign_stress_model=1000_campaigns_x_600_events
           official_windows_runtime_sha256=d9c269587b2f2b224bc6203c7ac9c4f42022f6990643cd38a870cb56df243169
           head_sha=${GITHUB_SHA}
           EOF
@@ -179,6 +180,7 @@ jobs:
           grep -q "host_suite=${suite_count}_tests" "$qa/BUILD-MANIFEST.txt"
           grep -q 'persistence_model=5000_on_off_on_sequences' "$qa/BUILD-MANIFEST.txt"
           grep -q 'postgame_persistence_model=2000_finished_game_on_off_on_sequences' "$qa/BUILD-MANIFEST.txt"
+          grep -q 'campaign_stress_model=1000_campaigns_x_600_events' "$qa/BUILD-MANIFEST.txt"
           sha256sum "$qa"/*
 
       - name: Assemble ready-to-run Windows QA bundle from official v0.8.3
