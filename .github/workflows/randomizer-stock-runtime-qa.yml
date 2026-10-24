@@ -33,7 +33,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc-mips-linux-gnu cmake ninja-build unzip
+          sudo apt-get install -y -qq gcc-mips-linux-gnu cmake ninja-build unzip zip curl
 
       - name: Build pinned RecompModTool
         run: |
@@ -165,14 +165,55 @@ jobs:
           shop_source_rewrite=available_default_off
           native_save_metadata=none
           use_repair=native_slot_indexed
+          official_windows_runtime_sha256=d9c269587b2f2b224bc6203c7ac9c4f42022f6990643cd38a870cb56df243169
           head_sha=${GITHUB_SHA}
           EOF
           ! grep -q 'central_bank_n_patch=enabled' "$qa/BUILD-MANIFEST.txt"
           grep -q 'central_bank_n_patch=disabled' "$qa/BUILD-MANIFEST.txt"
           sha256sum "$qa"/*
 
+      - name: Assemble ready-to-run Windows QA bundle from official v0.8.3
+        run: |
+          set -eux
+          url=https://github.com/lfarroco/ogre-battle-64-recomp/releases/download/v0.8.3/ogre-battle-64-recomp-windows-x86_64.zip
+          expected=d9c269587b2f2b224bc6203c7ac9c4f42022f6990643cd38a870cb56df243169
+          official=/tmp/ogre-battle-64-recomp-v0.8.3-windows.zip
+          root=build/windows-stock-runtime-qa
+          out=build/ogre-battle-64-v0.8.3-stock-runtime-randomizer-qa-windows.zip
+
+          curl -fL --retry 3 --retry-delay 2 "$url" -o "$official"
+          echo "$expected  $official" | sha256sum -c -
+
+          rm -rf "$root" "$out"
+          mkdir -p "$root"
+          unzip -q "$official" -d "$root"
+          exe=$(find "$root" -type f -iname '*.exe' -print -quit)
+          test -n "$exe"
+          appdir=$(dirname "$exe")
+
+          mkdir -p "$appdir/mods"
+          cp build/mods/universal-item-randomizer-stock-qa.nrm "$appdir/mods/"
+          cp mods/universal-item-randomizer/STOCK-RUNTIME-QA.md "$appdir/STOCK-RUNTIME-QA.md"
+          cp build/stock-runtime-qa/BUILD-MANIFEST.txt "$appdir/STOCK-RUNTIME-QA-MANIFEST.txt"
+
+          test -s "$appdir/mods/universal-item-randomizer-stock-qa.nrm"
+          test -z "$(find "$root" -type f \( -iname '*.z64' -o -iname '*.n64' -o -iname '*.v64' \) -print -quit)"
+
+          (cd "$root" && zip -qr "$GITHUB_WORKSPACE/$out" .)
+          test -s "$out"
+          unzip -t "$out"
+          unzip -Z1 "$out" | tee /tmp/windows-stock-qa-files.txt
+          grep -q 'mods/universal-item-randomizer-stock-qa.nrm$' /tmp/windows-stock-qa-files.txt
+          sha256sum "$official" "$out" build/mods/universal-item-randomizer-stock-qa.nrm
+
       - uses: actions/upload-artifact@v4
         with:
           name: universal-item-randomizer-0.3.1-stock-runtime-qa
           path: build/stock-runtime-qa
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ogre-battle-64-v0.8.3-stock-runtime-randomizer-qa-windows
+          path: build/ogre-battle-64-v0.8.3-stock-runtime-randomizer-qa-windows.zip
           if-no-files-found: error
