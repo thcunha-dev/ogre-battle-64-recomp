@@ -1,10 +1,29 @@
 # Universal Item Randomizer 0.3.1 — QA release checklist
 
 Use this as the short execution sheet. `TESTING.md` remains the detailed source
-of truth for each procedure. Do not mark 1.0 ready until every required box below
-has evidence from a real Rev-A recomp build.
+of truth for each procedure. Do not mark 1.0 ready until every required manual
+box below has evidence from a real Rev-A recomp build.
 
-## Build identity
+## Automated preflight — already PASS for candidate `bf7b34a`
+
+These are CI-backed facts for source commit
+`bf7b34afe1315efcd7e985e484512da098948af6`; they are not manual gameplay claims.
+
+- [x] Full host suite: 30/30 PASS.
+- [x] Persistence model: 5,000 ON -> OFF -> ON sequences PASS.
+- [x] Post-game persistence model: 2,000 finished-game sequences PASS.
+- [x] Campaign stress: 1,000 campaigns x 600 events = 600,000 events PASS.
+- [x] Package `.nrm` pipeline PASS.
+- [x] Self-contained QA payload build + `VERIFY-QA.ps1` self-verification PASS.
+- [x] Stock-runtime QA NRM packaging PASS.
+- [x] Official-v0.8.3 ready-to-run Windows stock-runtime QA bundle assembly PASS.
+- [x] Integrated custom runtime/library + MIPS ELF + Bank-N-augmented NRM build PASS.
+- [x] All four principal artifacts are pinned in `STATUS.md` with workflow artifact IDs and archive SHA-256 values.
+
+A newer source commit may supersede this candidate only after its own relevant gates
+are green. Never mix an older runtime/NRM with a newer manifest/checklist.
+
+## Build identity — verify on the exact package you execute
 
 - [ ] Run `VERIFY-QA.ps1` and require `Universal Item Randomizer QA payload: PASS`.
 - [ ] `BUILD-MANIFEST.txt` says `version=0.3.1`.
@@ -116,6 +135,6 @@ has evidence from a real Rev-A recomp build.
 
 ## Release decision
 
-- [ ] All mandatory boxes above have passed on one traceable QA artifact.
+- [ ] All mandatory manual boxes above have passed on one traceable QA artifact.
 - [ ] No unresolved save/post-game/reward-slot/use-count lifecycle issue remains.
 - [ ] PR can leave draft only after the real-game evidence above exists.
