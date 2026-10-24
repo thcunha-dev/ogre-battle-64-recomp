@@ -36,6 +36,18 @@ def main() -> int:
     assert mod.EXPECTED_CALL_OFFSETS[-1] == 0x1976D4
     assert len(set(mod.EXPECTED_CALL_OFFSETS)) == 46
 
+    # Full-inventory tail: the original's only extra call is a spill-only stub,
+    # followed immediately by the grant epilogue. The replacement may return
+    # directly without dropping any persistent gameplay side effect.
+    assert mod.GRANT_FULL_TAIL_ROM == 0x131050
+    assert mod.GRANT_FULL_TAIL_WORDS == (
+        0x3C04801F, 0x2484E8E8, 0x0C024D50, 0x01002821, 0x8FBF0010
+    )
+    assert mod.FULL_HELPER_ROM == 0x23940
+    assert mod.FULL_HELPER_WORDS == (
+        0xAFA40000, 0xAFA50004, 0xAFA60008, 0x03E00008, 0xAFA7000C
+    )
+
     # Exercise decoder semantics used by the optional real-ROM scan.
     reads, writes, kind = mod.decode_rw(0x00421021)  # addu v0,v0,v0
     assert 2 in reads and 2 in writes and kind == "normal"
@@ -60,7 +72,7 @@ def main() -> int:
     safe, reason = mod.v0_safe_after_call(bytes(rom), off)
     assert not safe and "reads v0" in reason
 
-    print("central grant ABI contract: PASS (46 Rev-A callers, void return locked)")
+    print("central grant ABI contract: PASS (46 callers; full-inventory spill-only)")
     return 0
 
 
