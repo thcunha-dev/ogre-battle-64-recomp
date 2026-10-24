@@ -11,6 +11,7 @@ on:
       - 'mods/universal-item-randomizer/mod.toml'
       - 'mods/universal-item-randomizer/mod.ld'
       - 'tools/ensure_randomizer_mod_syms.py'
+      - 'tools/verify_randomizer_elf.sh'
       - 'tools/test_randomizer_*.py'
       - 'tools/test_universal_randomizer_*.py'
       - 'tools/test_stock_runtime_coverage.py'
@@ -42,7 +43,7 @@ jobs:
           cmake -S /tmp/N64Recomp -B /tmp/N64Recomp/build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build /tmp/N64Recomp/build --target RecompModTool
 
-      - name: Build MIPS mod ELF
+      - name: Build and inspect MIPS mod ELF
         run: |
           set -eux
           mod=mods/universal-item-randomizer
@@ -61,7 +62,7 @@ jobs:
           mips-linux-gnu-ld -nostdlib -T "$mod/mod.ld" \
             --unresolved-symbols=ignore-all --emit-relocs -e 0 \
             -o "$mod/build/mod.elf" $objs
-          test -s "$mod/build/mod.elf"
+          bash tools/verify_randomizer_elf.sh "$mod/build/mod.elf"
 
       - name: Write normal Rev-A references and augment Bank N
         run: |
