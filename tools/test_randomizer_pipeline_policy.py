@@ -15,6 +15,7 @@ WF = ROOT / ".github/workflows"
 SUITE = "python3 tools/test_universal_randomizer_all.py"
 ELF_VERIFY = "bash tools/verify_randomizer_elf.sh"
 ELF_TRIGGER = "tools/verify_randomizer_elf.sh"
+ABI_AUDIT_TRIGGER = "tools/audit_randomizer_*_abi_rom.py"
 
 
 def assert_ordered(path: Path, required_after: tuple[str, ...]) -> None:
@@ -28,7 +29,6 @@ def assert_ordered(path: Path, required_after: tuple[str, ...]) -> None:
 
 
 def main() -> int:
-    # Every artifact-producing randomizer workflow is gated by the same suite.
     assert_ordered(
         WF / "randomizer-package.yml",
         (ELF_VERIFY, "RecompModTool", "actions/upload-artifact@v4"),
@@ -42,12 +42,10 @@ def main() -> int:
         ("Compile and package 0.3.1", ELF_VERIFY, "Assemble self-contained QA payload", "actions/upload-artifact@v4"),
     )
 
-    # The fast verification workflow must also execute the exact same suite.
     mapping = (WF / "randomizer-mapping.yml").read_text()
     assert SUITE in mapping
+    assert ABI_AUDIT_TRIGGER in mapping, "mapping: ABI auditors not in path trigger"
 
-    # Artifact workflows must rerun when any randomizer host test or the shared
-    # binary contract changes.
     for name in (
         "randomizer-package.yml",
         "randomizer-runtime-build.yml",
@@ -56,13 +54,13 @@ def main() -> int:
         text = (WF / name).read_text()
         assert "tools/test_randomizer_*.py" in text, f"{name}: randomizer tests not in path trigger"
         assert "tools/test_universal_randomizer_*.py" in text, f"{name}: universal tests not in path trigger"
+        assert ABI_AUDIT_TRIGGER in text, f"{name}: ABI auditors not in path trigger"
         assert ELF_TRIGGER in text, f"{name}: ELF verifier not in path trigger"
         assert ELF_VERIFY in text, f"{name}: shared ELF verifier not executed"
 
     runtime = (WF / "randomizer-runtime-build.yml").read_text()
     windows = (WF / "randomizer-windows-test.yml").read_text()
 
-    # Traceability markers must be emitted by both QA manifests.
     for name, text in (("runtime", runtime), ("windows", windows)):
         assert "config_lifecycle=restart_required" in text, f"{name}: lifecycle marker missing"
         assert "host_suite=${suite_count}_tests" in text, f"{name}: suite count not dynamic"
@@ -70,8 +68,6 @@ def main() -> int:
         assert "use_repair=native_slot_indexed" in text, f"{name}: native slot-indexed use repair marker missing"
         assert "seed_vectors=123456_locked" in text, f"{name}: golden-vector marker missing"
 
-    # The self-contained QA artifact must carry its executable integrity check and
-    # the short acceptance checklist, and must execute the verifier before upload.
     for token in (
         "QA-CHECKLIST.md",
         "VERIFY-QA.ps1",
