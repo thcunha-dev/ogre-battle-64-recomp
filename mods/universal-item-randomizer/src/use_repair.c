@@ -6,6 +6,11 @@
 // (id/count), so a newly occupied record can inherit stale +0x02 data from an
 // old empty slot. This repair changes only that transient byte; it never changes
 // item ids, counts, seed state or the native save representation.
+//
+// Important: the native rebuild counts references by OWNED-LIST SLOT INDEX,
+// not by item-definition id. Character/unit loadout fields point at records in
+// the 278/40-slot owned lists. The reference arrays below therefore mirror the
+// native `slti <278` / `slti <40` bounds and are indexed by slot.
 
 #include "modding.h"
 
@@ -13,7 +18,6 @@
 #define EQUIP_SLOTS              278u
 #define CONSUMABLE_LIST          0x80193AE0u
 #define CONSUMABLE_SLOTS         40u
-#define CONSUMABLE_ID_MAX        40u
 #define LIST_STRIDE              4u
 #define LIST_USE                 2u
 
@@ -37,9 +41,7 @@
 #define ROSTER_CLASS_KEY         0x17u
 
 static unsigned short s_equip_refs[EQUIP_SLOTS];
-// Consumable ids are 1..40 while the owned list has 40 records. This table is
-// indexed by item id, not by owned-list slot, so it needs entries 0..40.
-static unsigned short s_consumable_refs[CONSUMABLE_ID_MAX + 1u];
+static unsigned short s_consumable_refs[CONSUMABLE_SLOTS];
 static unsigned short s_equip_shadow[EQUIP_SLOTS];
 static unsigned short s_consumable_shadow[CONSUMABLE_SLOTS];
 static unsigned char s_shadow_ready;
@@ -56,15 +58,16 @@ static void wr8(unsigned int addr, unsigned char value) {
     *(volatile unsigned char*)addr = value;
 }
 
-static unsigned int class_equipment_id(unsigned int class_index,
-                                       unsigned int cls,
-                                       unsigned int slot) {
+static unsigned int class_equipment_slot(unsigned int class_index,
+                                         unsigned int cls,
+                                         unsigned int slot) {
     unsigned int table;
     unsigned int entry;
 
     // The class table has 255 complete 0x48-byte entries before the equipment
-    // table begins at 0x8018C42C. Class byte 0xFF would start at 0x8018C41A and
-    // overlap the equipment table, so treat it as invalid/fail-closed.
+    // definition table begins at 0x8018C42C. Class byte 0xFF would start at
+    // 0x8018C41A and overlap that next table, so reject it. Returning zero is
+    // also the native "no reference" sentinel and add_ref() ignores it.
     if (cls >= ROSTER_CLASS_COUNT) return 0u;
 
     table = ROSTER_CLASS_TABLE + class_index * ROSTER_CLASS_STRIDE;
@@ -76,13 +79,19 @@ static unsigned int class_equipment_id(unsigned int class_index,
     return rd16(entry + slot * 2u) & 0xFFFFu;
 }
 
-static void add_ref(unsigned int list, unsigned int id) {
-    if (id == 0u) return;
+static void add_ref(unsigned int list, unsigned int slot_index) {
+    // Zero is the roster's "no reference" sentinel. The game's rebuild then
+    // bounds the referenced owned-list slot with slti <278 or slti <40.
+    if (slot_index == 0u) return;
     if (list == 0u) {
-        if (id < EQUIP_SLOTS && s_equip_refs[id] != 0xFFFFu) s_equip_refs[id]++;
+        if (slot_index < EQUIP_SLOTS && s_equip_refs[slot_index] != 0xFFFFu) {
+            s_equip_refs[slot_index]++;
+        }
     }
     else {
-        if (id <= CONSUMABLE_ID_MAX && s_consumable_refs[id] != 0xFFFFu) s_consumable_refs[id]++;
+        if (slot_index < CONSUMABLE_SLOTS && s_consumable_refs[slot_index] != 0xFFFFu) {
+            s_consumable_refs[slot_index]++;
+        }
     }
 }
 
@@ -112,8 +121,9 @@ static void build_refs(void) {
     unsigned int i;
 
     for (i = 0u; i < EQUIP_SLOTS; i++) s_equip_refs[i] = 0u;
-    for (i = 0u; i <= CONSUMABLE_ID_MAX; i++) s_consumable_refs[i] = 0u;
+    for (i = 0u; i < CONSUMABLE_SLOTS; i++) s_consumable_refs[i] = 0u;
 
+    // Unit loadout bytes are owned-consumable LIST SLOT references, not item ids.
     for (i = 0u; i < ROSTER_UNIT_COUNT; i++) {
         unsigned int base = ROSTER_UNITS + i * ROSTER_UNIT_STRIDE;
         unsigned int j;
@@ -123,6 +133,8 @@ static void build_refs(void) {
         }
     }
 
+    // Character stored equipment and class-derived equipment are likewise
+    // owned-equipment LIST SLOT references. This mirrors func_8016B774.
     for (i = 0u; i < ROSTER_CHAR_COUNT; i++) {
         unsigned int base = ROSTER_CHARS + i * ROSTER_CHAR_STRIDE;
         unsigned int cls;
@@ -133,7 +145,7 @@ static void build_refs(void) {
             add_ref(0u, rd16(base + ROSTER_CHAR_IDS + j * 2u));
         }
         for (j = 0u; j < 4u; j++) {
-            add_ref(0u, class_equipment_id(j, cls, j));
+            add_ref(0u, class_equipment_slot(j, cls, j));
         }
     }
 }
@@ -146,19 +158,18 @@ static void full_repair_and_snapshot(void) {
     unsigned int i;
     build_refs();
 
+    // Native func_8016B774 rebuilds the +0x02 column by owned-list SLOT. It can
+    // legitimately leave a non-zero use byte on an empty record if the roster
+    // still points at that slot; do not force empty ids to zero here.
     for (i = 0u; i < EQUIP_SLOTS; i++) {
         unsigned int record = EQUIP_LIST + i * LIST_STRIDE;
-        unsigned int id = rd16(record);
-        s_equip_shadow[i] = (unsigned short)id;
-        wr8(record + LIST_USE,
-            (unsigned char)((id != 0u && id < EQUIP_SLOTS) ? clamp_use(s_equip_refs[id]) : 0u));
+        s_equip_shadow[i] = rd16(record);
+        wr8(record + LIST_USE, clamp_use(s_equip_refs[i]));
     }
     for (i = 0u; i < CONSUMABLE_SLOTS; i++) {
         unsigned int record = CONSUMABLE_LIST + i * LIST_STRIDE;
-        unsigned int id = rd16(record);
-        s_consumable_shadow[i] = (unsigned short)id;
-        wr8(record + LIST_USE,
-            (unsigned char)((id != 0u && id <= CONSUMABLE_ID_MAX) ? clamp_use(s_consumable_refs[id]) : 0u));
+        s_consumable_shadow[i] = rd16(record);
+        wr8(record + LIST_USE, clamp_use(s_consumable_refs[i]));
     }
     s_shadow_ready = 1u;
 }
