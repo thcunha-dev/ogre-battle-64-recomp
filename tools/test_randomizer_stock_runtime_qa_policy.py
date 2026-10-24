@@ -29,8 +29,8 @@ def main() -> int:
 
     # Direct Bank-N starting/setup grants cannot be tested on the stock runtime.
     assert 'id = "starting_items"' not in manifest
-    assert "Starting/setup direct grants" in readme
-    assert "does NOT validate" in readme
+    assert "Bank-R starting/setup direct grants" in readme
+    assert "intentionally does NOT validate" in readme
 
     # Build from the exact same source tree, then alter only the two intended
     # central-grant properties in the temporary copy.
