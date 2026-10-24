@@ -12,6 +12,7 @@ on:
       - 'mods/universal-item-randomizer/mod.ld'
       - 'tools/ensure_randomizer_mod_syms.py'
       - 'tools/verify_randomizer_elf.sh'
+      - 'tools/audit_randomizer_*_abi_rom.py'
       - 'tools/test_randomizer_*.py'
       - 'tools/test_universal_randomizer_*.py'
       - 'tools/test_stock_runtime_coverage.py'
