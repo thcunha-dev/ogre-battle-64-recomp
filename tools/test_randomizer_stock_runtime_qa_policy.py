@@ -68,6 +68,7 @@ def main() -> int:
         "host_suite=${suite_count}_tests",
         "persistence_model=5000_on_off_on_sequences",
         "postgame_persistence_model=2000_finished_game_on_off_on_sequences",
+        "campaign_stress_model=1000_campaigns_x_600_events",
     ):
         assert marker in workflow, f"stock QA manifest marker missing: {marker}"
 
@@ -75,6 +76,7 @@ def main() -> int:
     assert "grep -q \"host_suite=${suite_count}_tests\"" in workflow
     assert "grep -q 'persistence_model=5000_on_off_on_sequences'" in workflow
     assert "grep -q 'postgame_persistence_model=2000_finished_game_on_off_on_sequences'" in workflow
+    assert "grep -q 'campaign_stress_model=1000_campaigns_x_600_events'" in workflow
 
     # The ready-to-run Windows bundle must be based byte-for-byte on the
     # published official v0.8.3 runtime before our .nrm is inserted.
