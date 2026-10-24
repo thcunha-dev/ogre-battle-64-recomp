@@ -18,6 +18,7 @@ RECOMP_IMPORT("*", void recomp_log(const char* message));
 #define CONSUMABLE_LIST          0x80193AE0u
 #define CONSUMABLE_SLOTS         40u
 #define LIST_STRIDE              4u
+#define LIST_USE                 2u
 #define LIST_COUNT               3u
 #define COUNT_MAX                99u
 
@@ -315,9 +316,15 @@ static void rewrite_reward_queue(void) {
 }
 
 // Original func_ovlN_801DC740 list semantics: increment an existing stack
-// (maximum 99), otherwise claim the first empty record and set count=1. The
-// original writes id/+0x03 only; +0x02 is intentionally left untouched.
-static void grant_vanilla(unsigned int base, unsigned int slots, unsigned int id) {
+// (maximum 99), otherwise claim the first empty record and set count=1. For
+// consumables only, a non-zero low byte of a1 means the same grant is already
+// referenced/in-use: the native routine increments +0x02 together with count,
+// clamps use <= count, and initializes +0x02 to 1 for a new record. Equipment
+// ignores a1. The frame repair remains a safety net for stale empty-slot +0x02.
+static void grant_vanilla(unsigned int base,
+                          unsigned int slots,
+                          unsigned int id,
+                          unsigned int used_flag) {
     unsigned int empty = slots;
     unsigned int i;
 
@@ -327,7 +334,14 @@ static void grant_vanilla(unsigned int base, unsigned int slots, unsigned int id
         unsigned int slot_id = rd16(record);
         if (slot_id == id) {
             unsigned int count = rd8(record + LIST_COUNT);
-            if (count < COUNT_MAX) wr8(record + LIST_COUNT, (unsigned char)(count + 1u));
+            unsigned int next_count = count < COUNT_MAX ? count + 1u : COUNT_MAX;
+            wr8(record + LIST_COUNT, (unsigned char)next_count);
+
+            if (used_flag != 0u) {
+                unsigned int use = (rd8(record + LIST_USE) + 1u) & 0xFFu;
+                if (use > next_count) use = next_count;
+                wr8(record + LIST_USE, (unsigned char)use);
+            }
             return;
         }
         if (slot_id == 0u && empty == slots) empty = i;
@@ -336,6 +350,7 @@ static void grant_vanilla(unsigned int base, unsigned int slots, unsigned int id
         unsigned int record = base + empty * LIST_STRIDE;
         wr16(record, (unsigned short)id);
         wr8(record + LIST_COUNT, 1u);
+        if (used_flag != 0u) wr8(record + LIST_USE, 1u);
     }
 }
 
@@ -365,14 +380,13 @@ static int should_randomize_direct_grant(unsigned int caller_ra) {
 }
 
 RECOMP_PATCH
-void func_ovlN_801DC740(unsigned int item_word, unsigned int ignored) {
+void func_ovlN_801DC740(unsigned int item_word, unsigned int used_flag) {
     unsigned int caller_ra = (unsigned int)__builtin_return_address(0);
     unsigned short raw = (unsigned short)item_word;
     unsigned short delivered;
     unsigned int id;
     int randomize_direct;
 
-    (void)ignored;
     randomizer_init();
 
     // All audited callers use valid vanilla item words. Reject malformed future
@@ -398,10 +412,10 @@ void func_ovlN_801DC740(unsigned int item_word, unsigned int ignored) {
     id = delivered & 0x7FFFu;
 
     if ((delivered & 0x8000u) != 0u) {
-        grant_vanilla(EQUIP_LIST, EQUIP_SLOTS, id);
+        grant_vanilla(EQUIP_LIST, EQUIP_SLOTS, id, 0u);
     }
     else {
-        grant_vanilla(CONSUMABLE_LIST, CONSUMABLE_SLOTS, id);
+        grant_vanilla(CONSUMABLE_LIST, CONSUMABLE_SLOTS, id, used_flag & 0xFFu);
     }
 }
 
