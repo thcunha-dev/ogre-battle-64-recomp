@@ -21,6 +21,7 @@ TESTS = (
     "tools/test_inventory_writer_taxonomy.py",
     "tools/test_randomizer_qa_telemetry.py",
     "tools/test_randomizer_persistence_model.py",
+    "tools/test_randomizer_postgame_save_model.py",
     "tools/test_randomizer_source_shadow_model.py",
     "tools/test_randomizer_drop_table_validation.py",
     "tools/test_randomizer_pickup_reward_validation.py",
