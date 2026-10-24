@@ -9,7 +9,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "mods/universal-item-randomizer/src/universal_item_randomizer.c"
 EQUIP_MAX = 277
 CONSUMABLE_MAX = 40
-PICKUP_MAX = 64
+PICKUP_IDS = 0x801F1004
+PICKUP_NEXT_ARRAY = 0x801F1024
+PICKUP_MAX = 16
 REWARD_SLOTS = 20
 
 
@@ -24,6 +26,12 @@ def valid_word(raw: int) -> bool:
 
 def main() -> int:
     text = SOURCE.read_text()
+
+    assert "#define PICKUP_IDS               0x801F1004u" in text
+    assert "#define PICKUP_MAX               16u" in text
+    # The id array has exactly 0x20 bytes before the first adjacent metadata
+    # array. That is 16 u16 ids; count 17 must never be treated as readable.
+    assert PICKUP_IDS + PICKUP_MAX * 2 == PICKUP_NEXT_ARRAY
 
     pickup_check = text.split("static int pickup_list_readable", 1)[1]
     pickup_check = pickup_check.split("static void rewrite_pickup_list", 1)[0]
@@ -53,6 +61,7 @@ def main() -> int:
     assert all(valid_word(x) for x in pickup)
     pickup_bad = pickup + [CONSUMABLE_MAX + 1]
     assert not all(valid_word(x) for x in pickup_bad)
+    assert PICKUP_MAX + 1 > PICKUP_MAX  # a count of 17 is fail-closed by source contract
 
     # Reward source: a bad final word must reject the complete generation rather
     # than allowing earlier valid rewards to be partially rewritten.
