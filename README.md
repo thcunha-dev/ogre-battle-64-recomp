@@ -1,143 +1,45 @@
-# Ogre Battle 64: Person of Lordly Caliber (PC port project)
+# Ogre Battle 64 PT-BR — v1.1 COMPLETE
 
-Static recompilation of the N64 game *Ogre Battle 64: Person of Lordly Caliber*
-(USA, Rev A) to a native PC executable, using the [N64Recomp] toolchain.
+Projeto de tradução completa para PT-BR de **Ogre Battle 64: Person of Lordly Caliber**, destinado ao projeto `ogre-battle-64-recomp`.
 
-**This repository contains no copyrighted game data.** You must supply your own
-ROM dump (see below).
+## Estado
 
-## System Requirements
+Release do projeto: **v1.1 COMPLETE**.
 
-A 64-bit PC and a GPU the renderer supports:
+Cobertura declarada no pacote de engenharia:
 
-* **GPU** — Direct3D 12.0 (Shader Model 6.0) or Vulkan 1.2 on Windows, Vulkan
-  1.2 on Linux, Metal on macOS. The oldest GPUs those cover are roughly GeForce
-  GT 630, Radeon HD 7750 (2012) and Intel HD 510 (Skylake).
-* **CPU** — x86-64 with SSE4.1 (Intel Core 2 Penryn, AMD Bulldozer or newer).
-  The macOS build needs Apple Silicon.
-* **OS** — Windows 10 or 11 (64-bit); macOS 11 or newer on Apple Silicon; a
-  glibc Linux with a Vulkan 1.2 driver.
-* **RAM** — 2 GB. The emulated N64 machine commits 512 MB.
-* **Disk** — about 150 MB for the app, plus the ROM.
-* **Game data** — your own Ogre Battle 64 (USA, Rev A) cartridge dump, 40 MB in
-  `.z64`, `.n64` or `.v64`. No game data is included.
+- 4.569 diálogos;
+- interface, ajuda, sistema, tutorial e localidades;
+- descrições, glossário e lore;
+- `MEMORIES_INDEX`;
+- `PEOPLE_PROFILES`;
+- `RECOLLECTIONS`;
+- `HISTORY_LORE`.
 
-A keyboard is enough to play; a gamepad with XInput (Windows) or SDL controller
-support is optional. An audio device is optional too: with none, the game runs
-silently. On Windows no Visual C++ redistributable is required — the package
-carries the runtime its shader compiler needs.
+Os nomes de itens, equipamentos, magias, classes e outros jargões permanecem na variante **ORIGINAL NAMES** definida durante o projeto.
 
-If the game crashes as it starts, update the graphics driver first. On an older
-GPU, `OGRE_CONSOLE=1` opens a console with the boot log and `OGRE_GRAPHICS_API`
-pins the backend (`vulkan` or `d3d12`).
+## ROM de referência
 
-## AI Disclaimer
+A engenharia e validação foram realizadas contra **Ogre Battle 64 USA Rev 1**. O pacote original registra SHA-256:
 
-This project is mostly an experiment of checking "How far can DeepSeek go?". So far,
-the results are quite impressive!
+`3bfbaf0af968795102f6d136713665e347c22723b4ca75bd5494fdc97df5919e`
 
-## Status
+**Nenhuma ROM é distribuída neste repositório.** Use somente uma cópia obtida legalmente.
 
-See [PLAN.md](PLAN.md) for the full plan, current status, and technical findings.
+## Estrutura
 
-## Directory layout
+- `src/` — runtime e includes da tradução;
+- `tools/` — scripts de extração, tradução, auditoria, reflow e fechamento;
+- `story_complete/` — dados e relatórios dos quatro bancos narrativos finais;
+- `reference/` — referências de símbolos para empacotamento;
+- arquivos `DIALOGUE_*`, `LZ_*`, `UI_*`, `VALIDACAO_*`, `AUDITORIA_*` — memória e QA do desenvolvimento;
+- `mod.toml` / `mod.ld` — configuração do mod;
+- `LEIA-ME-PRIMEIRO.txt` — instruções originais da release.
 
-```
-app/                   the port's CMake project (the executable)
-assets/                your ROM (gitignored; big-endian .z64 expected)
-asm/                   splat-generated disassembly
-config/                every config the build reads
-config/config.yaml     splat config (segments, vram mapping)
-config/config.toml     N64Recomp config
-config/banks/          per-unit splat + N64Recomp configs (config-bank<U>.{yaml,toml})
-config/symbols/        symbol_addrs*.txt, config/symbols/reloc_addrs.txt, config/symbols/extra_syms.txt,
-                       config/symbols/relocatable_sections.txt, the generated undefined_*.txt
-config/rsp-*.toml      RSPRecomp configs (njpeg, audio)
-debug/                 headless-browser probes for the wasm build (see debug/README.md)
-patches/               our upstream patches (N64Recomp, N64ModernRuntime, RT64)
-Makefile               assemble + link + recompile
-tools/rt64-plume-sdl.patch
-                       our RT64 plume patch — SDL >= 2.0.22 guard (apply to the
-                       tools/RT64 submodule on systems with older SDL2, e.g. Ubuntu 22.04)
-PLAN.md                the project plan
-```
+## Build
 
-splat, N64Recomp and RSPRecomp resolve the paths inside a config relative to
-that config's directory, which is why the configs carry `../` entry points and
-why the bank configs set `base_path: ../..`.
+O pacote original foi compilado com Clang/LLD para MIPS e empacotado via RecompModTool. Artefatos gerados (`build/`, `.elf`, `.o`, executáveis e ROMs) não fazem parte do código-fonte versionado nesta branch.
 
-## Getting started
+## Observação sobre esta importação
 
-See **Reproduce** in [PLAN.md](PLAN.md). Summary:
-
-```sh
-# tools (macOS)
-brew install mips-linux-gnu-binutils cmake
-python3 -m venv tools/venv && tools/venv/bin/pip install 'splat64[mips]'
-git clone --recurse-submodules https://github.com/N64Recomp/N64Recomp.git tools/N64Recomp
-git -C tools/N64Recomp apply ../../patches/n64recomp-ob64.patch
-cmake -S tools/N64Recomp -B tools/N64Recomp/build -DCMAKE_BUILD_TYPE=Release
-cmake --build tools/N64Recomp/build --target N64RecompCLI -j4
-
-# ROM: put your .z64 dump in assets/, then regenerate the recompiled code
-# (see docs/guides/app-build.md -> "Regenerating the recompiled code")
-make regenerate
-```
-
-The ROM must be the USA Rev A dump (40 MB, `.n64` 16-bit byte-swapped or already
-converted `.z64`). `tools/convert_rom.py` converts `.n64` → `.z64`.
-
-**A fresh clone cannot build the app until `make regenerate` has run once**: the
-recompiled C (`RecompiledFuncs/`, `Bank*Funcs/`, `RspFuncs/`,
-`app/src/bank_funcs.inc`) is generated from your own ROM and is deliberately not
-committed. `make regenerate` runs splat, the MIPS link, the 34 bank units, the
-main recompilation and the RSP microcode in the one order that works.
-
-### Build and run the app
-
-```sh
-cmake -S app -B build-app -DCMAKE_BUILD_TYPE=Release
-cmake --build build-app -j
-./build-app/ogrebattle64
-```
-
-On launch the app shows the start screen — `OGRE BATTLE 64: RECOMP` with a tab
-bar (**START GAME**, **MODS**, **CONTROLS**, **SETTINGS**, **DEBUG**). The START
-GAME tab carries the ROM row, which reads `[ ] No ROM` until a ROM is loaded and
-is the selected row while there is none: press `SPACE` to pick one, drag the ROM
-onto the window, or put the ROM next to the executable. `ESC` opens the same panel
-over the running game, at the same position. The ROM is validated by hash and
-stored, so later launches go straight into the game. The battery save lands in
-`saves/` **beside the executable**.
-
-### A playable build
-
-```sh
-make dist        # -> dist/ogre-battle-64-recomp/   (one self-contained executable)
-make dist-zip    # -> dist/ogre-battle-64-recomp-<platform>.zip
-```
-
-The package is a single file: SDL2 is linked statically (`make dist` fetches and
-builds a pinned real SDL2 once, because Homebrew's `sdl2` is the SDL3-based
-compat shim and has no static library). No game data is included, so the player
-supplies their own ROM on the start screen. See `docs/guides/app-build.md` →
-"Distribution".
-
-The renderer (`tools/RT64`) is a git submodule pinned to an upstream commit and
-needs its own one-time patch on systems with SDL < 2.0.22 (e.g. Ubuntu 22.04
-ships SDL 2.0.20, but `SDL_GetWindowSizeInPixels` requires 2.0.22+):
-
-```sh
-git submodule update --init --recursive
-git -C tools/RT64/src/contrib/plume apply ../../../../rt64-plume-sdl.patch
-```
-
-Re-apply after any `git submodule update` inside `tools/RT64`, which resets the
-submodule and discards the patch.
-
-## Legal
-
-Ogre Battle 64 © Quest / Nintendo. This project is for preservation and
-interoperability research. Never distribute the ROM or its extracted assets.
-
-[N64Recomp]: https://github.com/N64Recomp/N64Recomp
+Esta branch foi criada a partir do pacote `Ogre_Battle_64_PTBR_v1.1_COMPLETE`, preservando os fontes, ferramentas, CSVs, auditorias e relatórios úteis. Artefatos de build repetíveis foram deliberadamente excluídos do Git.

@@ -1,3 +1,0 @@
-[submodule "tools/RT64"]
-	path = tools/RT64
-	url = https://github.com/rt64/rt64.git
