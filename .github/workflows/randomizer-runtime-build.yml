@@ -165,6 +165,9 @@ jobs:
           host_suite=${suite_count}_tests
           elf_symbols=critical_replacements_present
           use_repair=native_slot_indexed
+          central_grant_a1=native_consumable_used_flag
+          bank_r_coupled_grants=two_a1_one_callers_fail_closed
+          starting_items_scope=forty_literal_a1_zero_no_store_calls
           seed_vectors=123456_locked
           release_policy=safe_defaults_locked
           pipeline_policy=artifact_gates_locked
@@ -180,6 +183,9 @@ jobs:
           grep -q "host_suite=${suite_count}_tests" "$manifest"
           grep -q 'elf_symbols=critical_replacements_present' "$manifest"
           grep -q 'use_repair=native_slot_indexed' "$manifest"
+          grep -q 'central_grant_a1=native_consumable_used_flag' "$manifest"
+          grep -q 'bank_r_coupled_grants=two_a1_one_callers_fail_closed' "$manifest"
+          grep -q 'starting_items_scope=forty_literal_a1_zero_no_store_calls' "$manifest"
           grep -q 'seed_vectors=123456_locked' "$manifest"
           grep -q 'release_policy=safe_defaults_locked' "$manifest"
           grep -q 'pipeline_policy=artifact_gates_locked' "$manifest"
