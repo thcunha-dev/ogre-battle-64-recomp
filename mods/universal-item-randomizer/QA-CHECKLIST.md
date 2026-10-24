@@ -11,7 +11,10 @@ has evidence from a real Rev-A recomp build.
 - [ ] `source_commit` matches the tested branch artifact.
 - [ ] `.nrm` SHA-256 matches `nrm_sha256` in the manifest.
 - [ ] Rev-A reference SHA-1 is `d26b14bee422a09581ce438d45ba9fec9783fbb8`.
-- [ ] Host suite count in manifest matches `python3 tools/test_universal_randomizer_all.py --count` (currently 29).
+- [ ] Host suite count in manifest matches `python3 tools/test_universal_randomizer_all.py --count` (currently 30).
+- [ ] Manifest contains `persistence_model=5000_on_off_on_sequences`.
+- [ ] Manifest contains `postgame_persistence_model=2000_finished_game_on_off_on_sequences`.
+- [ ] Manifest contains `campaign_stress_model=1000_campaigns_x_600_events`.
 - [ ] Manifest contains `use_repair=native_slot_indexed`.
 
 ## Configuration lifecycle
