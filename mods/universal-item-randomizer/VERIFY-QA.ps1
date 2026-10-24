@@ -12,6 +12,7 @@ $Required = @(
     "QA-TELEMETRY.md",
     "STATUS.md",
     "SEED-VECTORS.md",
+    "verify_randomizer_rev_a_rom.py",
     "audit_randomizer_grant_abi_rom.py",
     "audit_randomizer_post_battle_abi_rom.py",
     "audit_randomizer_coupled_a1_abi_rom.py",
@@ -78,4 +79,5 @@ Write-Host "Use repair: $($Manifest['use_repair'])"
 Write-Host "Central grant a1: $($Manifest['central_grant_a1'])"
 Write-Host "Bank-R coupled grants: $($Manifest['bank_r_coupled_grants'])"
 Write-Host "Starting items scope: $($Manifest['starting_items_scope'])"
+Write-Host "Rev-A verifier: python verify_randomizer_rev_a_rom.py <Rev-A.z64>"
 Write-Host "NRM SHA-256: $Actual"
