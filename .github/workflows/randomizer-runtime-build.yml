@@ -1,0 +1,208 @@
+name: Universal Randomizer Runtime Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - randomizer/universal-grant
+    paths:
+      - 'mods/universal-item-randomizer/src/**'
+      - 'mods/universal-item-randomizer/include/**'
+      - 'mods/universal-item-randomizer/mod.toml'
+      - 'mods/universal-item-randomizer/mod.ld'
+      - 'tools/ensure_randomizer_mod_syms.py'
+      - 'tools/verify_randomizer_elf.sh'
+      - 'tools/audit_randomizer_*_abi_rom.py'
+      - 'tools/test_randomizer_*.py'
+      - 'tools/test_universal_randomizer_*.py'
+      - 'tools/test_stock_runtime_coverage.py'
+      - 'tools/test_inventory_writer_taxonomy.py'
+      - 'patches/n64modernruntime-ob64.patch'
+      - 'patches/n64modernruntime-n64recomp.patch'
+      - 'patches/n64modernruntime-randomizer.patch'
+      - '.github/workflows/randomizer-runtime-build.yml'
+
+jobs:
+  integrated-runtime-mod:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cmake ninja-build build-essential gcc-mips-linux-gnu
+
+      - name: Full host-side randomizer verification suite
+        run: python3 tools/test_universal_randomizer_all.py
+
+      - name: Clone pinned runtime and apply project layers
+        run: |
+          set -eux
+          RUNTIME_COMMIT=589bbf018a3e6d3646ddf7de1e7919f1b7e99bb1
+          N64RECOMP_COMMIT=81213c1831fab2521a6a5459c67b63437d67e253
+          git clone --recurse-submodules https://github.com/N64Recomp/N64ModernRuntime.git /tmp/N64ModernRuntime
+          git -C /tmp/N64ModernRuntime checkout "$RUNTIME_COMMIT"
+          git -C /tmp/N64ModernRuntime submodule update --init --recursive
+          test "$(git -C /tmp/N64ModernRuntime/N64Recomp rev-parse HEAD)" = "$N64RECOMP_COMMIT"
+
+          git -C /tmp/N64ModernRuntime/N64Recomp apply \
+            "$GITHUB_WORKSPACE/patches/n64modernruntime-n64recomp.patch"
+          git -C /tmp/N64ModernRuntime apply \
+            "$GITHUB_WORKSPACE/patches/n64modernruntime-ob64.patch"
+          git -C /tmp/N64ModernRuntime apply \
+            "$GITHUB_WORKSPACE/patches/n64modernruntime-randomizer.patch"
+
+          git -C /tmp/N64ModernRuntime/N64Recomp diff --check
+          git -C /tmp/N64ModernRuntime diff --check -- \
+            librecomp/include/librecomp/overlays.hpp \
+            librecomp/src/overlays.cpp
+          grep -q 'cop0_regs\[32\]' /tmp/N64ModernRuntime/N64Recomp/include/recomp.h
+
+      - name: Configure runtime
+        run: |
+          cmake -S /tmp/N64ModernRuntime -B /tmp/N64ModernRuntime/build \
+            -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Compile patched overlays translation unit
+        run: |
+          set -eux
+          ninja -C /tmp/N64ModernRuntime/build \
+            librecomp/CMakeFiles/librecomp.dir/src/overlays.cpp.o
+          test -s /tmp/N64ModernRuntime/build/librecomp/CMakeFiles/librecomp.dir/src/overlays.cpp.o
+
+      - name: Build complete librecomp runtime library
+        run: |
+          set -eux
+          ninja -C /tmp/N64ModernRuntime/build librecomp
+          test -s /tmp/N64ModernRuntime/build/librecomp/liblibrecomp.a
+          ls -lh /tmp/N64ModernRuntime/build/librecomp/liblibrecomp.a
+          nm -C /tmp/N64ModernRuntime/build/librecomp/liblibrecomp.a | \
+            grep -E 'register_function_bank_symbols|registered_function_banks'
+
+      - name: Build and inspect universal mod MIPS ELF
+        run: |
+          set -eux
+          mod=mods/universal-item-randomizer
+          mkdir -p "$mod/build"
+          objs=""
+          for src in "$mod"/src/*.c; do
+            base=$(basename "${src%.c}")
+            obj="$mod/build/$base.o"
+            mips-linux-gnu-gcc \
+              -mips2 -march=mips2 -mno-check-zero-division -mabi=32 -O2 -G0 \
+              -mno-abicalls -mno-odd-spreg -fno-builtin -ffreestanding -nostdinc \
+              -fno-pic -fno-pie -Wall -Wextra -Wno-unused-parameter \
+              -I "$mod/include" -c "$src" -o "$obj"
+            objs="$objs $obj"
+          done
+          mips-linux-gnu-ld -nostdlib -T "$mod/mod.ld" \
+            --unresolved-symbols=ignore-all --emit-relocs -e 0 \
+            -o "$mod/build/mod.elf" $objs
+          bash tools/verify_randomizer_elf.sh "$mod/build/mod.elf"
+
+      - name: Build matching RecompModTool
+        run: |
+          set -eux
+          cmake -S /tmp/N64ModernRuntime/N64Recomp \
+            -B /tmp/N64ModernRuntime/N64Recomp/build-modtool \
+            -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/N64ModernRuntime/N64Recomp/build-modtool --target RecompModTool
+          test -x /tmp/N64ModernRuntime/N64Recomp/build-modtool/RecompModTool
+
+      - name: Package NRM against Bank-N augmented Rev-A references
+        run: |
+          set -eux
+          mkdir -p mods/reference build/mods
+          cat >mods/reference/dump.toml <<'EOF'
+          [[section]]
+          name = ".main"
+          rom = 0x00001060
+          vram = 0x80070C60
+          size = 0x3E150
+          functions = [
+            { name = "func_80072944", vram = 0x80072944, size = 0x38 },
+          ]
+
+          [[section]]
+          name = ".streamedB"
+          rom = 0x00040E80
+          vram = 0x8016AF80
+          size = 0x265B0
+          functions = [
+            { name = "func_80172820", vram = 0x80172820, size = 0x100 },
+          ]
+          EOF
+          python3 tools/ensure_randomizer_mod_syms.py mods/reference/dump.toml
+          grep -q 'name = "func_ovlN_801DC740"' mods/reference/dump.toml
+          /tmp/N64ModernRuntime/N64Recomp/build-modtool/RecompModTool \
+            mods/universal-item-randomizer/mod.toml build/mods
+          test -s build/mods/universal-item-randomizer.nrm
+          grep -q 'version = "0.3.1"' mods/universal-item-randomizer/mod.toml
+          sha256sum build/mods/universal-item-randomizer.nrm
+          ls -lh build/mods/universal-item-randomizer.nrm
+
+      - name: Write reproducible QA build manifest
+        run: |
+          set -eux
+          nrm=build/mods/universal-item-randomizer.nrm
+          manifest=build/mods/BUILD-MANIFEST.txt
+          nrm_sha=$(sha256sum "$nrm" | awk '{print $1}')
+          nrm_size=$(stat -c '%s' "$nrm")
+          suite_count=$(python3 tools/test_universal_randomizer_all.py --count)
+          cat >"$manifest" <<EOF
+          Universal Item Randomizer QA Build
+          version=0.3.1
+          source_commit=${GITHUB_SHA}
+          source_branch=${GITHUB_REF_NAME}
+          rev_a_reference_sha1=d26b14bee422a09581ce438d45ba9fec9783fbb8
+          n64modernruntime_commit=589bbf018a3e6d3646ddf7de1e7919f1b7e99bb1
+          n64recomp_commit=81213c1831fab2521a6a5459c67b63437d67e253
+          nrm_sha256=${nrm_sha}
+          nrm_size_bytes=${nrm_size}
+          save_policy=no_randomizer_metadata_in_native_save
+          config_lifecycle=restart_required
+          host_suite=${suite_count}_tests
+          elf_symbols=critical_replacements_present
+          use_repair=native_slot_indexed
+          central_grant_a1=native_consumable_used_flag
+          bank_r_coupled_grants=two_a1_one_callers_fail_closed
+          starting_items_scope=forty_literal_a1_zero_no_store_calls
+          seed_vectors=123456_locked
+          release_policy=safe_defaults_locked
+          pipeline_policy=artifact_gates_locked
+          persistence_model=5000_on_off_on_sequences
+          postgame_persistence_model=2000_finished_game_on_off_on_sequences
+          campaign_stress_model=1000_campaigns_x_600_events
+          source_shadow_model=map_reward_generation_checked
+          shop_source_model=bit15_terminator_single_pass_checked
+          inventory_capacity_model=full_inventory_no_overwrite
+          EOF
+          grep -q "source_commit=${GITHUB_SHA}" "$manifest"
+          grep -q "nrm_sha256=${nrm_sha}" "$manifest"
+          grep -q 'save_policy=no_randomizer_metadata_in_native_save' "$manifest"
+          grep -q 'config_lifecycle=restart_required' "$manifest"
+          grep -q "host_suite=${suite_count}_tests" "$manifest"
+          grep -q 'elf_symbols=critical_replacements_present' "$manifest"
+          grep -q 'use_repair=native_slot_indexed' "$manifest"
+          grep -q 'central_grant_a1=native_consumable_used_flag' "$manifest"
+          grep -q 'bank_r_coupled_grants=two_a1_one_callers_fail_closed' "$manifest"
+          grep -q 'starting_items_scope=forty_literal_a1_zero_no_store_calls' "$manifest"
+          grep -q 'seed_vectors=123456_locked' "$manifest"
+          grep -q 'release_policy=safe_defaults_locked' "$manifest"
+          grep -q 'pipeline_policy=artifact_gates_locked' "$manifest"
+          grep -q 'persistence_model=5000_on_off_on_sequences' "$manifest"
+          grep -q 'postgame_persistence_model=2000_finished_game_on_off_on_sequences' "$manifest"
+          grep -q 'campaign_stress_model=1000_campaigns_x_600_events' "$manifest"
+          grep -q 'source_shadow_model=map_reward_generation_checked' "$manifest"
+          grep -q 'shop_source_model=bit15_terminator_single_pass_checked' "$manifest"
+          grep -q 'inventory_capacity_model=full_inventory_no_overwrite' "$manifest"
+          cat "$manifest"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: universal-item-randomizer-0.3.1-integrated
+          path: |
+            build/mods/universal-item-randomizer.nrm
+            build/mods/BUILD-MANIFEST.txt
+          if-no-files-found: error

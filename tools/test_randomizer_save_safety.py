@@ -1,0 +1,171 @@
+#!/usr/bin/env python3
+"""Static save-safety contract for Universal Item Randomizer."""
+
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+MOD = ROOT / "mods/universal-item-randomizer"
+SRC = MOD / "src"
+INCLUDE = MOD / "include"
+
+
+def body(text: str, signature: str, next_marker: str | None = None) -> str:
+    assert signature in text, f"missing {signature}"
+    tail = text.split(signature, 1)[1]
+    if next_marker and next_marker in tail:
+        tail = tail.split(next_marker, 1)[0]
+    return tail
+
+
+def strip_c_comments(text: str) -> str:
+    out: list[str] = []
+    i = 0
+    block = False
+    while i < len(text):
+        if block:
+            end = text.find("*/", i)
+            if end < 0:
+                break
+            i = end + 2
+            block = False
+            continue
+        if text.startswith("/*", i):
+            block = True
+            i += 2
+            continue
+        if text.startswith("//", i):
+            end = text.find("\n", i)
+            if end < 0:
+                break
+            out.append("\n")
+            i = end + 1
+            continue
+        out.append(text[i])
+        i += 1
+    return "".join(out)
+
+
+def read_all_mod_code() -> tuple[list[Path], str]:
+    files = sorted(SRC.glob("*.c")) + sorted(INCLUDE.glob("*.h"))
+    assert files, "no randomizer source files found"
+    required = {
+        "universal_item_randomizer.c",
+        "randomizer_map.c",
+        "shop_stock.c",
+        "post_battle_add.c",
+        "use_repair.c",
+    }
+    present = {p.name for p in files}
+    missing = required - present
+    assert not missing, f"expected core randomizer sources missing: {sorted(missing)}"
+    return files, "\n".join(p.read_text() for p in files)
+
+
+def main() -> int:
+    central = (SRC / "universal_item_randomizer.c").read_text()
+    mapper = (SRC / "randomizer_map.c").read_text()
+    shop = (SRC / "shop_stock.c").read_text()
+    post = (SRC / "post_battle_add.c").read_text()
+    repair = (SRC / "use_repair.c").read_text()
+    code_files, all_text = read_all_mod_code()
+
+    # No source/header in the mod may patch or hook the known save/load path.
+    for forbidden in (
+        "func_800749C0",
+        "RECOMP_HOOK(\"func_800749C0\")",
+        "RECOMP_PATCH\nvoid func_800749C0",
+    ):
+        assert forbidden not in all_text, f"save/load path referenced: {forbidden}"
+
+    assert "recomp_get_config_u32" in mapper
+    for forbidden in ("wr8(", "wr16(", "wr32(", "MEM_W", "MEM_H", "MEM_B"):
+        assert forbidden not in mapper, f"mapper writes game memory via {forbidden}"
+
+    tick = body(central, "void universal_item_randomizer_tick(void)")
+    for required in (
+        "randomizer_init();",
+        "rewrite_drop_table();",
+        "rewrite_pickup_list();",
+        "rewrite_reward_queue();",
+    ):
+        assert required in tick, f"frame hook lost {required}"
+    for forbidden in ("EQUIP_LIST", "CONSUMABLE_LIST", "grant_vanilla("):
+        assert forbidden not in tick, f"frame hook mutates owned inventory: {forbidden}"
+
+    direct = body(central, "static int should_randomize_direct_grant", "RECOMP_PATCH")
+    assert "caller_is_starting_grant" in direct
+    assert "s_starting_items_enabled" in direct
+    assert "if (caller_is_coupled_unit_grant(caller_ra)) return 0;" in direct
+    assert direct.rstrip().endswith("return 0;\n}"), "unknown/future direct grant is not fail-closed"
+    assert "#define RA_TUTORIAL_SETUP_R      0x80215BF4u" in central
+    assert "#define RA_UNIT_LOADOUT_R        0x80216D98u" in central
+    assert "#define RA_STARTING_R_LO         0x80217070u" in central
+    assert "#define RA_STARTING_R_HI         0x8021724Cu" in central
+    assert "caller_ra == RA_TUTORIAL_SETUP_R" in central
+    assert "caller_ra == RA_UNIT_LOADOUT_R" in central
+    assert "caller_is_coupled_unit_grant" in central
+    assert "coupled Bank-R unit/setup grant left vanilla" in central
+
+    starting = body(central, "static int caller_is_starting_grant", "static int caller_is_coupled_unit_grant")
+    assert "RA_TUTORIAL_SETUP_R" not in starting
+    assert "RA_UNIT_LOADOUT_R" not in starting
+    assert "RA_STARTING_R_LO" in starting and "RA_STARTING_R_HI" in starting
+
+    for stale in (
+        "RA_BANK_R_UNKNOWN", "caller_is_unclassified_bank_r", "RA_SETUP_R_LO", "RA_SETUP_R_HI",
+        "caller_is_coupled_unit_loadout",
+    ):
+        assert stale not in central, f"stale broad/unknown classification remains: {stale}"
+    assert 'recomp_get_config_u32("shops")' not in central
+
+    assert 'recomp_get_config_u32("shops")' in shop
+    assert "SHOP_STOCK_PTR" in shop
+    for forbidden in ("0x80196B20u", "0x80193AE0u", "grant_vanilla"):
+        assert forbidden not in shop, f"shop path touches owned inventory: {forbidden}"
+
+    assert "RECOMP_PATCH\nvoid func_80172820" in post
+    assert "uir_map_equipment_id(original_id)" in post
+    assert "universal_item_randomizer_force_use_repair();" in post
+
+    assert "#define LIST_USE                 2u" in repair
+    assert "void universal_item_randomizer_force_use_repair(void)" in repair
+    assert "full_repair_and_snapshot();" in repair
+    assert "wr8(record + LIST_USE" in repair
+
+    repair_code = strip_c_comments(repair)
+    for forbidden in (
+        "wr16(", "wr32(", "LIST_COUNT", "uir_map_", "recomp_get_config_u32",
+        '"seed"', "s_seed", "save_seed", "saved_seed",
+    ):
+        assert forbidden not in repair_code, f"transient repair can affect saved state: {forbidden}"
+
+    # Persistence ban applies to every current and future .c/.h in this mod.
+    lowered = strip_c_comments(all_text).lower()
+    for forbidden in (
+        "save_seed",
+        "saved_seed",
+        "serialize_randomizer",
+        "randomizer_save",
+        "save_metadata",
+        "persist_seed",
+        "persistent_seed",
+        "seed_in_save",
+    ):
+        assert forbidden not in lowered, f"randomizer persistence introduced: {forbidden}"
+
+    # The randomizer config is external state; no source may define a custom save blob API.
+    for forbidden in (
+        "fopen(",
+        "fwrite(",
+        "fprintf(",
+        "serialize(",
+        "deserialize(",
+    ):
+        assert forbidden not in lowered, f"unexpected persistence/file API introduced: {forbidden}"
+
+    print(f"universal randomizer save-safety contract: PASS ({len(code_files)} code files scanned)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

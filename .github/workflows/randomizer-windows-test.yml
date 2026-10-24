@@ -1,0 +1,311 @@
+name: Universal Randomizer Windows Test Bundle
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - randomizer/universal-grant
+    paths:
+      - 'mods/universal-item-randomizer/**'
+      - 'tools/verify_randomizer_elf.sh'
+      - 'tools/verify_randomizer_rev_a_rom.py'
+      - 'tools/audit_randomizer_*_abi_rom.py'
+      - 'tools/test_randomizer_*.py'
+      - 'tools/test_universal_randomizer_*.py'
+      - 'tools/test_stock_runtime_coverage.py'
+      - 'tools/test_inventory_writer_taxonomy.py'
+      - 'patches/n64modernruntime-randomizer.patch'
+      - 'patches/n64modernruntime-ob64.patch'
+      - 'patches/n64modernruntime-n64recomp.patch'
+      - 'tools/release-build.sh'
+      - 'tools/ensure_randomizer_mod_syms.py'
+      - '.github/workflows/randomizer-windows-test.yml'
+
+concurrency:
+  group: universal-randomizer-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mod:
+    name: Build randomizer NRM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Full host-side randomizer verification suite
+        run: python3 tools/test_universal_randomizer_all.py
+
+      - name: Install mod build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-mips-linux-gnu cmake ninja-build
+
+      - name: Build pinned RecompModTool
+        run: |
+          set -eux
+          N64RECOMP_COMMIT=81213c1831fab2521a6a5459c67b63437d67e253
+          git clone https://github.com/N64Recomp/N64Recomp.git /tmp/N64Recomp
+          git -C /tmp/N64Recomp checkout "$N64RECOMP_COMMIT"
+          git -C /tmp/N64Recomp submodule update --init --recursive
+          cmake -S /tmp/N64Recomp -B /tmp/N64Recomp/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/N64Recomp/build --target RecompModTool
+
+      - name: Compile and package 0.3.1
+        run: |
+          set -eux
+          mod=mods/universal-item-randomizer
+          mkdir -p "$mod/build" build/mods mods/reference
+          objs=""
+          for src in "$mod"/src/*.c; do
+            base=$(basename "${src%.c}")
+            obj="$mod/build/$base.o"
+            mips-linux-gnu-gcc \
+              -mips2 -march=mips2 -mno-check-zero-division -mabi=32 -O2 -G0 \
+              -mno-abicalls -mno-odd-spreg -fno-builtin -ffreestanding -nostdinc \
+              -fno-pic -fno-pie -Wall -Wextra -Wno-unused-parameter \
+              -I "$mod/include" -c "$src" -o "$obj"
+            objs="$objs $obj"
+          done
+          mips-linux-gnu-ld -nostdlib -T "$mod/mod.ld" \
+            --unresolved-symbols=ignore-all --emit-relocs -e 0 \
+            -o "$mod/build/mod.elf" $objs
+          bash tools/verify_randomizer_elf.sh "$mod/build/mod.elf"
+
+          cat >mods/reference/dump.toml <<'EOF'
+          [[section]]
+          name = ".main"
+          rom = 0x00001060
+          vram = 0x80070C60
+          size = 0x3E150
+          functions = [
+            { name = "func_80072944", vram = 0x80072944, size = 0x38 },
+          ]
+
+          [[section]]
+          name = ".streamedB"
+          rom = 0x00040E80
+          vram = 0x8016AF80
+          size = 0x265B0
+          functions = [
+            { name = "func_80172820", vram = 0x80172820, size = 0x100 },
+          ]
+          EOF
+          python3 tools/ensure_randomizer_mod_syms.py mods/reference/dump.toml
+          grep -q 'version = "0.3.1"' "$mod/mod.toml"
+          /tmp/N64Recomp/build/RecompModTool "$mod/mod.toml" build/mods
+          test -s build/mods/universal-item-randomizer.nrm
+          sha256sum build/mods/universal-item-randomizer.nrm
+
+      - name: Assemble self-contained QA payload
+        run: |
+          set -eux
+          qa=build/qa/universal-item-randomizer-0.3.1
+          mkdir -p "$qa"
+          cp build/mods/universal-item-randomizer.nrm "$qa/"
+          cp mods/universal-item-randomizer/TESTING.md "$qa/"
+          cp mods/universal-item-randomizer/QA-CHECKLIST.md "$qa/"
+          cp mods/universal-item-randomizer/QA-TELEMETRY.md "$qa/"
+          cp mods/universal-item-randomizer/STATUS.md "$qa/"
+          cp mods/universal-item-randomizer/SEED-VECTORS.md "$qa/"
+          cp mods/universal-item-randomizer/VERIFY-QA.ps1 "$qa/"
+          cp tools/verify_randomizer_rev_a_rom.py "$qa/"
+          cp tools/audit_randomizer_grant_abi_rom.py "$qa/"
+          cp tools/audit_randomizer_post_battle_abi_rom.py "$qa/"
+          cp tools/audit_randomizer_coupled_a1_abi_rom.py "$qa/"
+          cp tools/audit_randomizer_starting_block_abi_rom.py "$qa/"
+          nrm_sha=$(sha256sum "$qa/universal-item-randomizer.nrm" | awk '{print $1}')
+          nrm_size=$(stat -c '%s' "$qa/universal-item-randomizer.nrm")
+          suite_count=$(python3 tools/test_universal_randomizer_all.py --count)
+          cat >"$qa/BUILD-MANIFEST.txt" <<EOF
+          Universal Item Randomizer QA Build
+          version=0.3.1
+          source_commit=${GITHUB_SHA}
+          source_branch=${GITHUB_REF_NAME}
+          rev_a_reference_sha1=d26b14bee422a09581ce438d45ba9fec9783fbb8
+          n64recomp_commit=81213c1831fab2521a6a5459c67b63437d67e253
+          nrm_sha256=${nrm_sha}
+          nrm_size_bytes=${nrm_size}
+          save_policy=no_randomizer_metadata_in_native_save
+          config_lifecycle=restart_required
+          host_suite=${suite_count}_tests
+          elf_symbols=critical_replacements_present
+          use_repair=native_slot_indexed
+          central_grant_a1=native_consumable_used_flag
+          bank_r_coupled_grants=two_a1_one_callers_fail_closed
+          starting_items_scope=forty_literal_a1_zero_no_store_calls
+          rom_verifier=one_command_four_audits
+          seed_vectors=123456_locked
+          release_policy=safe_defaults_locked
+          pipeline_policy=artifact_gates_locked
+          persistence_model=5000_on_off_on_sequences
+          postgame_persistence_model=2000_finished_game_on_off_on_sequences
+          campaign_stress_model=1000_campaigns_x_600_events
+          source_shadow_model=map_reward_generation_checked
+          shop_source_model=bit15_terminator_single_pass_checked
+          inventory_capacity_model=full_inventory_no_overwrite
+          EOF
+          for f in \
+            TESTING.md QA-CHECKLIST.md QA-TELEMETRY.md STATUS.md SEED-VECTORS.md VERIFY-QA.ps1 \
+            verify_randomizer_rev_a_rom.py \
+            audit_randomizer_grant_abi_rom.py audit_randomizer_post_battle_abi_rom.py \
+            audit_randomizer_coupled_a1_abi_rom.py audit_randomizer_starting_block_abi_rom.py; do
+            test -s "$qa/$f"
+          done
+          grep -q "source_commit=${GITHUB_SHA}" "$qa/BUILD-MANIFEST.txt"
+          grep -q "nrm_sha256=${nrm_sha}" "$qa/BUILD-MANIFEST.txt"
+          grep -q 'config_lifecycle=restart_required' "$qa/BUILD-MANIFEST.txt"
+          grep -q "host_suite=${suite_count}_tests" "$qa/BUILD-MANIFEST.txt"
+          grep -q 'elf_symbols=critical_replacements_present' "$qa/BUILD-MANIFEST.txt"
+          grep -q 'use_repair=native_slot_indexed' "$qa/BUILD-MANIFEST.txt"
+          grep -q 'central_grant_a1=native_consumable_used_flag' "$qa/BUILD-MANIFEST.txt"
+          grep -q 'bank_r_coupled_grants=two_a1_one_callers_fail_closed' "$qa/BUILD-MANIFEST.txt"
+          grep -q 'starting_items_scope=forty_literal_a1_zero_no_store_calls' "$qa/BUILD-MANIFEST.txt"
+          grep -q 'rom_verifier=one_command_four_audits' "$qa/BUILD-MANIFEST.txt"
+          grep -q 'seed_vectors=123456_locked' "$qa/BUILD-MANIFEST.txt"
+          grep -q 'release_policy=safe_defaults_locked' "$qa/BUILD-MANIFEST.txt"
+          grep -q 'pipeline_policy=artifact_gates_locked' "$qa/BUILD-MANIFEST.txt"
+          grep -q 'persistence_model=5000_on_off_on_sequences' "$qa/BUILD-MANIFEST.txt"
+          grep -q 'postgame_persistence_model=2000_finished_game_on_off_on_sequences' "$qa/BUILD-MANIFEST.txt"
+          grep -q 'campaign_stress_model=1000_campaigns_x_600_events' "$qa/BUILD-MANIFEST.txt"
+          cat "$qa/BUILD-MANIFEST.txt"
+
+      - name: Self-verify QA payload
+        shell: pwsh
+        run: ./build/qa/universal-item-randomizer-0.3.1/VERIFY-QA.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: universal-item-randomizer-0.3.1-qa-payload
+          path: build/qa/universal-item-randomizer-0.3.1
+          if-no-files-found: error
+
+  windows:
+    name: Build Windows test bundle
+    needs: mod
+    if: ${{ vars.OGRE_DATA_REPO != '' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ${{ vars.OGRE_DATA_REPO != '' && 'windows-2022' || fromJSON('["self-hosted","Windows","X64"]') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Check hosted data configuration
+        if: vars.OGRE_DATA_REPO != ''
+        shell: bash
+        env:
+          TOKEN: ${{ secrets.OGRE_DATA_TOKEN }}
+        run: |
+          set -e
+          if [ -z "$TOKEN" ]; then
+            echo "::error::OGRE_DATA_TOKEN is missing."
+            exit 1
+          fi
+
+      - name: Fetch generated game code bundle
+        if: vars.OGRE_DATA_REPO != ''
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.OGRE_DATA_REPO }}
+          token: ${{ secrets.OGRE_DATA_TOKEN }}
+          path: ogre-data
+
+      - name: Unpack generated game code
+        if: vars.OGRE_DATA_REPO != ''
+        shell: bash
+        run: |
+          set -eux
+          tar xzf ogre-data/files.tar.gz -C .
+          find . -name '._*' -delete
+          find . -name '.DS_Store' -delete
+          test -d RecompiledFuncs
+          test -f app/src/bank_funcs.inc
+          test -d RspFuncs
+          banks=$( (ls -d Bank*Funcs 2>/dev/null || true) | wc -l | tr -d ' ')
+          test "$banks" -gt 0
+          mkdir -p build/mods
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: universal-item-randomizer-0.3.1-qa-payload
+          path: build/qa
+
+      - name: Verify QA payload
+        shell: pwsh
+        run: ./build/qa/VERIFY-QA.ps1
+
+      - name: Verify and stage fresh randomizer from QA payload
+        shell: bash
+        run: |
+          set -eux
+          mkdir -p build/mods
+          test -s build/qa/universal-item-randomizer.nrm
+          test -s build/qa/BUILD-MANIFEST.txt
+          expected=$(grep '^nrm_sha256=' build/qa/BUILD-MANIFEST.txt | cut -d= -f2)
+          actual=$(sha256sum build/qa/universal-item-randomizer.nrm | awk '{print $1}')
+          test "$expected" = "$actual"
+          cp build/qa/universal-item-randomizer.nrm build/mods/
+          sha256sum build/mods/universal-item-randomizer.nrm
+
+      - name: Prepare patched runtime
+        shell: bash
+        run: |
+          set -eux
+          N64MODERNRUNTIME_COMMIT=589bbf018a3e6d3646ddf7de1e7919f1b7e99bb1
+          if [ ! -d tools/N64ModernRuntime ]; then
+            git clone https://github.com/N64Recomp/N64ModernRuntime.git tools/N64ModernRuntime
+            git -C tools/N64ModernRuntime checkout "$N64MODERNRUNTIME_COMMIT"
+            git -C tools/N64ModernRuntime submodule update --init --recursive
+            ( cd tools/N64ModernRuntime && git apply ../../patches/n64modernruntime-ob64.patch )
+            ( cd tools/N64ModernRuntime/N64Recomp && git apply ../../../patches/n64modernruntime-n64recomp.patch )
+          fi
+          git -C tools/N64ModernRuntime apply --check ../../patches/n64modernruntime-randomizer.patch || \
+            git -C tools/N64ModernRuntime apply --reverse --check ../../patches/n64modernruntime-randomizer.patch
+
+      - name: Patch RT64 trees on hosted runner
+        if: vars.OGRE_DATA_REPO != ''
+        shell: bash
+        run: |
+          set -e
+          apply_patch() {
+            if ( cd "$1" && git apply --reverse --check --ignore-whitespace "$2" ) >/dev/null 2>&1; then
+              echo "==> already applied: $2"
+            else
+              ( cd "$1" && git apply --ignore-whitespace "$2" )
+            fi
+          }
+          apply_patch tools/RT64 ../../patches/rt64-ob64.patch
+          apply_patch tools/RT64/src/contrib/plume ../../../../../patches/rt64-plume-ob64.patch
+          apply_patch tools/RT64/src/contrib/plume ../../../../../tools/rt64-plume-sdl.patch
+
+      - name: Install Windows build dependencies
+        if: vars.OGRE_DATA_REPO != ''
+        shell: bash
+        run: choco install make ninja -y --no-progress
+
+      - name: Build Windows package
+        shell: bash
+        env:
+          DIST_OS: windows
+          CMAKE_ARGS: -G Ninja -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl
+        run: tools/release-build.sh
+
+      - name: Smoke packaged executable
+        shell: bash
+        run: tools/smoke-dist.sh dist/ogre-battle-64-recomp windows
+
+      - name: Verify randomizer is inside package
+        shell: bash
+        run: |
+          set -eux
+          test -s dist/ogre-battle-64-recomp/mods/universal-item-randomizer.nrm
+          cmp build/mods/universal-item-randomizer.nrm \
+              dist/ogre-battle-64-recomp/mods/universal-item-randomizer.nrm
+          test -s dist/ogre-battle-64-recomp-windows.zip
+          sha256sum dist/ogre-battle-64-recomp-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ogre-battle-64-randomizer-0.3.1-windows-test
+          path: dist/ogre-battle-64-recomp-windows.zip
+          if-no-files-found: error

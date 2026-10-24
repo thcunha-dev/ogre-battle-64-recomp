@@ -1,0 +1,25 @@
+name: Universal Randomizer Mapping
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - randomizer/universal-grant
+    paths:
+      - 'mods/universal-item-randomizer/src/**'
+      - 'mods/universal-item-randomizer/include/**'
+      - 'tools/verify_randomizer_rev_a_rom.py'
+      - 'tools/audit_randomizer_*_abi_rom.py'
+      - 'tools/test_randomizer_*.py'
+      - 'tools/test_universal_randomizer_*.py'
+      - 'tools/test_stock_runtime_coverage.py'
+      - 'tools/test_inventory_writer_taxonomy.py'
+      - '.github/workflows/randomizer-mapping.yml'
+
+jobs:
+  mapping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Full host-side randomizer suite
+        run: python3 tools/test_universal_randomizer_all.py

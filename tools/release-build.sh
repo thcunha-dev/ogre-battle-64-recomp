@@ -90,11 +90,35 @@ if [ -f tools/rt64-plume-sdl.patch ] && [ -d tools/RT64/src/contrib/plume ]; the
 fi
 
 # --- the patches must describe the trees ------------------------------------
-# A GitHub-hosted runner builds these trees by APPLYING the patches, so its trees
-# match the patches by construction and this check passes there. A developer
-# builds from trees that carry uncommitted work, and a patch that has drifted
-# from them ships old code with a green build: the hosted v0.5.0 and v0.5.1
-# releases carried neither the presented-frame capture fix nor the D3D12
+# A GitHub-hosted runner builds these trees by APPLYING the canonical project
+# patches, so its trees match them by construction. The universal randomizer has
+# one intentionally layered runtime patch that touches two files already present
+# in n64modernruntime-ob64.patch. patchcheck.py compares each canonical patch to
+# the complete worktree diff and deliberately does not model overlapping layered
+# patches, so audit the canonical tree first, then compose the randomizer layer.
+randomizer_runtime_patch="$root/patches/n64modernruntime-randomizer.patch"
+randomizer_runtime_was_applied=0
+if [ -f "$randomizer_runtime_patch" ]; then
+    if ( cd tools/N64ModernRuntime && git apply --reverse --check "$randomizer_runtime_patch" ) >/dev/null 2>&1; then
+        echo "==> temporarily removing universal-randomizer runtime layer for patch audit"
+        ( cd tools/N64ModernRuntime && git apply --reverse "$randomizer_runtime_patch" )
+        randomizer_runtime_was_applied=1
+    fi
+fi
+
+# Always restore the layered patch if this script exits after the audit step.
+restore_randomizer_runtime() {
+    if [ "$randomizer_runtime_was_applied" = 1 ] && [ -f "$randomizer_runtime_patch" ]; then
+        if ! ( cd tools/N64ModernRuntime && git apply --reverse --check "$randomizer_runtime_patch" ) >/dev/null 2>&1; then
+            ( cd tools/N64ModernRuntime && git apply "$randomizer_runtime_patch" ) || true
+        fi
+    fi
+}
+trap restore_randomizer_runtime EXIT
+
+# A developer builds from trees that carry uncommitted work, and a patch that
+# has drifted from them ships old code with a green build: the hosted v0.5.0 and
+# v0.5.1 releases carried neither the presented-frame capture fix nor the D3D12
 # null-texture guard, because both live in the RT64 trees and the patch files
 # were stale (session 116). Fail before packaging instead.
 echo "==> checking that the tracked patches describe the vendored trees"
@@ -110,6 +134,22 @@ See docs/guides/app-build.md -> "Third-party patches".
 EOF
     exit 1
 fi
+
+# Compose the universal-randomizer runtime lookup only after the canonical patch
+# audit has passed. This is idempotent for hosted and developer trees.
+if [ -f "$randomizer_runtime_patch" ]; then
+    if ( cd tools/N64ModernRuntime && git apply --reverse --check "$randomizer_runtime_patch" ) >/dev/null 2>&1; then
+        echo "==> universal-randomizer runtime layer already applied"
+    else
+        echo "==> applying universal-randomizer runtime layer"
+        ( cd tools/N64ModernRuntime && git apply --check "$randomizer_runtime_patch" )
+        ( cd tools/N64ModernRuntime && git apply "$randomizer_runtime_patch" )
+    fi
+fi
+# The desired post-audit state is patched, so the EXIT trap no longer needs to
+# restore a layer removed above.
+randomizer_runtime_was_applied=0
+trap - EXIT
 
 # --- build ------------------------------------------------------------------
 echo "==> packaging for $DIST_OS (static SDL2: ${DIST_STATIC_SDL:-1})"

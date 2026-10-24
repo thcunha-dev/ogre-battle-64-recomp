@@ -1,0 +1,123 @@
+name: Package Universal Randomizer
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - randomizer/universal-grant
+    paths:
+      - 'mods/universal-item-randomizer/src/**'
+      - 'mods/universal-item-randomizer/include/**'
+      - 'mods/universal-item-randomizer/mod.toml'
+      - 'mods/universal-item-randomizer/mod.ld'
+      - 'tools/ensure_randomizer_mod_syms.py'
+      - 'tools/verify_randomizer_elf.sh'
+      - 'tools/audit_randomizer_*_abi_rom.py'
+      - 'tools/test_randomizer_*.py'
+      - 'tools/test_universal_randomizer_*.py'
+      - 'tools/test_stock_runtime_coverage.py'
+      - 'tools/test_inventory_writer_taxonomy.py'
+      - '.github/workflows/randomizer-package.yml'
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Full host-side randomizer verification suite
+        run: python3 tools/test_universal_randomizer_all.py
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-mips-linux-gnu cmake ninja-build unzip
+
+      - name: Build pinned RecompModTool
+        run: |
+          set -eux
+          N64RECOMP_COMMIT=81213c1831fab2521a6a5459c67b63437d67e253
+          git clone https://github.com/N64Recomp/N64Recomp.git /tmp/N64Recomp
+          git -C /tmp/N64Recomp checkout "$N64RECOMP_COMMIT"
+          git -C /tmp/N64Recomp submodule update --init --recursive
+          test "$(git -C /tmp/N64Recomp rev-parse HEAD)" = "$N64RECOMP_COMMIT"
+          cmake -S /tmp/N64Recomp -B /tmp/N64Recomp/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/N64Recomp/build --target RecompModTool
+
+      - name: Build and inspect MIPS mod ELF
+        run: |
+          set -eux
+          mod=mods/universal-item-randomizer
+          mkdir -p "$mod/build" build/mods mods/reference
+          objs=""
+          for src in "$mod"/src/*.c; do
+            base=$(basename "${src%.c}")
+            obj="$mod/build/$base.o"
+            mips-linux-gnu-gcc \
+              -mips2 -march=mips2 -mno-check-zero-division -mabi=32 -O2 -G0 \
+              -mno-abicalls -mno-odd-spreg -fno-builtin -ffreestanding -nostdinc \
+              -fno-pic -fno-pie -Wall -Wextra -Wno-unused-parameter \
+              -I "$mod/include" -c "$src" -o "$obj"
+            objs="$objs $obj"
+          done
+          mips-linux-gnu-ld -nostdlib -T "$mod/mod.ld" \
+            --unresolved-symbols=ignore-all --emit-relocs -e 0 \
+            -o "$mod/build/mod.elf" $objs
+          bash tools/verify_randomizer_elf.sh "$mod/build/mod.elf"
+
+      - name: Write normal Rev-A references and augment Bank N
+        run: |
+          set -eux
+          cat >mods/reference/dump.toml <<'EOF'
+          [[section]]
+          name = ".main"
+          rom = 0x00001060
+          vram = 0x80070C60
+          size = 0x3E150
+          functions = [
+            { name = "func_80072944", vram = 0x80072944, size = 0x38 },
+          ]
+
+          [[section]]
+          name = ".streamedB"
+          rom = 0x00040E80
+          vram = 0x8016AF80
+          size = 0x265B0
+          functions = [
+            { name = "func_80172820", vram = 0x80172820, size = 0x100 },
+          ]
+          EOF
+          ! grep -q 'func_ovlN_801DC740' mods/reference/dump.toml
+          python3 tools/ensure_randomizer_mod_syms.py mods/reference/dump.toml
+          grep -q 'name = "func_ovlN_801DC740"' mods/reference/dump.toml
+          test "$(grep -c 'name = "func_ovlN_801DC740"' mods/reference/dump.toml)" = 1
+
+      - name: Package and inspect NRM 0.3.1
+        run: |
+          set -eux
+          tool=/tmp/N64Recomp/build/RecompModTool
+          nrm=build/mods/universal-item-randomizer.nrm
+          grep -q 'version = "0.3.1"' mods/universal-item-randomizer/mod.toml
+          "$tool" mods/universal-item-randomizer/mod.toml build/mods
+          test -s "$nrm"
+          sha256sum "$nrm"
+          file "$nrm"
+          unzip -t "$nrm"
+          unzip -Z1 "$nrm" | tee /tmp/nrm-files.txt
+          grep -qx 'mod.json' /tmp/nrm-files.txt
+          grep -qx 'mod_binary.bin' /tmp/nrm-files.txt
+          grep -qx 'mod_syms.bin' /tmp/nrm-files.txt
+          unzip -p "$nrm" mod.json > /tmp/mod.json
+          unzip -p "$nrm" mod_binary.bin > /tmp/mod_binary.bin
+          unzip -p "$nrm" mod_syms.bin > /tmp/mod_syms.bin
+          grep -q 'ogre_universal_item_randomizer' /tmp/mod.json
+          grep -q '0.3.1' /tmp/mod.json
+          test -s /tmp/mod_binary.bin
+          test -s /tmp/mod_syms.bin
+          ls -lh "$nrm" /tmp/mod_binary.bin /tmp/mod_syms.bin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: universal-item-randomizer-0.3.1-nrm
+          path: build/mods/universal-item-randomizer.nrm
+          if-no-files-found: error
