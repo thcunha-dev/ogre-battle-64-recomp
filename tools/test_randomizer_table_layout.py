@@ -28,6 +28,10 @@ EQUIP_SLOTS = 278
 ROSTER_UNITS = 0x80197210
 OWNED_STRIDE = 4
 
+PICKUP_IDS = 0x801F1004
+PICKUP_SLOTS = 16
+PICKUP_NEXT_ARRAY = 0x801F1024
+
 
 def main() -> int:
     # Source constants must remain aligned with the audited Rev-A layout.
@@ -56,8 +60,10 @@ def main() -> int:
         "#define CONSUMABLE_LIST          0x80193AE0u",
         "#define CONSUMABLE_SLOTS         40u",
         "#define LIST_STRIDE              4u",
+        "#define PICKUP_IDS               0x801F1004u",
+        "#define PICKUP_MAX               16u",
     ):
-        assert token in CENTRAL, f"owned-list layout drift: {token}"
+        assert token in CENTRAL, f"owned/source layout drift: {token}"
 
     # Class ids 0..254 occupy complete records. The next hypothetical class
     # record would begin only 0x12 bytes before the equipment table and would
@@ -98,6 +104,13 @@ def main() -> int:
     assert equip_owned_end == 0x80196F78
     assert ROSTER_UNITS - equip_owned_end == 0x298
     assert EQUIP_LIST + (EQUIP_SLOTS - 1) * OWNED_STRIDE == 0x80196F74
+
+    # The per-map pickup-id array has no padding to borrow: its 16 u16 records
+    # end exactly at the first adjacent metadata-byte array. A count of 17+ must
+    # therefore fail closed before any id read/write can reach 0x801F1024.
+    pickup_end = PICKUP_IDS + PICKUP_SLOTS * 2
+    assert pickup_end == PICKUP_NEXT_ARRAY
+    assert PICKUP_IDS + (PICKUP_SLOTS - 1) * 2 == 0x801F1022
 
     print("universal randomizer Rev-A RAM table layout: PASS")
     return 0
