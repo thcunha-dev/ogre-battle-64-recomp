@@ -47,12 +47,26 @@ Rev-A game run. Do not promote the mod to 1.0 solely because the build is green.
   acquisition contexts without persisting state or reintroducing inventory-delta
   detection. See `QA-TELEMETRY.md`.
 
+## Configuration lifecycle
+
+0.3.1 intentionally snapshots randomizer configuration once per game process.
+`seed`, `key_items`, `starting_items`, `shops` and diagnostic logging are **not
+hot-reload settings**. After changing one of them, close the game completely and
+reopen it; the new value becomes active on the **next launch / next process**.
+Existing inventory remains untouched because configuration is external and only
+future acquisitions use the newly constructed mapping.
+
+This process-lifetime snapshot is deliberate for 0.3.1: it prevents a running
+map/shop source from changing mapping policy halfway through a source generation.
+Live hot-reload can be considered later only with explicit generation invalidation
+for every mapped source.
+
 ## Host verification suite
 
 `python3 tools/test_universal_randomizer_all.py` is the single source of truth for
 all host-side verification. The suite count is exposed through `--count` so build
 manifests derive the number automatically instead of hard-coding it. It currently
-runs **13 tests**:
+runs **14 tests**:
 
 1. `tools/test_randomizer_save_safety.py`
 2. `tools/test_universal_randomizer_mapping.py`
@@ -67,6 +81,7 @@ runs **13 tests**:
 11. `tools/test_randomizer_source_shadow_model.py`
 12. `tools/test_randomizer_shop_model.py`
 13. `tools/test_randomizer_inventory_capacity_model.py`
+14. `tools/test_randomizer_use_repair_model.py`
 
 The release-policy contract locks the safety-critical manifest defaults: the mod
 itself is disabled by default, seed defaults to 1, and shops, starting items, key
@@ -110,6 +125,10 @@ boundaries: a full list cannot overwrite an occupied record, existing stacks may
 still grow and saturate at 99, new stacks claim the first empty slot, and zero
 id/zero amount operations remain no-ops.
 
+The used-count boundary model verifies equipment ID 277, consumable ID 40,
+invalid-ID zeroing and saturation of reference counts at 255, and asserts that the
+repair module never writes owned IDs or counts.
+
 The save-safety contract scans every current and future `.c`/`.h` in the mod so a
 new source file cannot silently add seed serialization, save hooks or custom
 randomizer metadata outside the original audited files.
@@ -129,9 +148,9 @@ suite test passes, then:
   runtime/Recomp commits, Rev-A reference SHA-1, NRM SHA-256/size, dynamically
   derived host-suite count and explicit save/release/pipeline/model markers.
 
-The last fully green integrated proof before the current Table-O generation fix
-was run `40024229735`. The current head must pass the expanded 13-test suite plus
-full runtime/MIPS/NRM build before its artifact is accepted for campaign QA.
+The current 14-test fast gate is green. A fresh full runtime/MIPS/NRM artifact for
+the current Table-O generation fix remains the required artifact before campaign
+QA is treated as the release-candidate proof.
 
 A separate QA-payload workflow packages the `.nrm`, build manifest,
 `TESTING.md`, `QA-TELEMETRY.md`, `STATUS.md` and `SEED-VECTORS.md` together so
