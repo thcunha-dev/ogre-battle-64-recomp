@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import random
 
-from test_randomizer_source_shadow_model import DropShadow, PickupShadow, RewardShadow
+from test_randomizer_source_shadow_model import DropShadow, PickupShadow, RewardShadow, mapped
 from test_universal_randomizer_mapping import CONSUMABLE_SALT, cycle
 
 POOL = list(range(1, 41))
@@ -106,16 +106,20 @@ def main() -> int:
                 continue
 
             if kind == 5:
-                # Reward queue lifecycle: clear slot, then reuse it with a fresh
-                # vanilla reward. No stale shadow may suppress the new generation.
+                # Reward slot reuse is valid only across a generation boundary.
+                # Establish the native zero boundary first, then prove that an
+                # identical vanilla reward is freshly rewritten after a second
+                # zero instead of being mistaken for the previous mod-written id.
                 raw = rng.choice(POOL)
                 if enabled:
+                    reward.rewrite([0])
+                    assert not reward.valid[0]
                     first = reward.rewrite([raw])[0]
-                    assert first in POOL
+                    assert first == mapped(raw)
                     reward.rewrite([0])
                     assert not reward.valid[0]
                     again = reward.rewrite([raw])[0]
-                    assert again == first
+                    assert again == mapped(raw)
                     delivered = again
                 else:
                     delivered = raw
@@ -123,17 +127,20 @@ def main() -> int:
                 continue
 
             if kind == 6:
-                # Table-O disappearance/reappearance and map changes must clear
-                # stale generations rather than double-map old replacements.
+                # Table-O unload/reload is an explicit generation boundary. Prove
+                # an identical raw id is freshly rewritten after unload and a map
+                # transition instead of matching an older transient shadow.
                 raw = rng.choice(POOL)
                 if enabled:
+                    drop.rewrite(map_index, False, [])
+                    assert not drop.valid[0]
                     first = drop.rewrite(map_index, True, [raw])[0]
-                    assert first in POOL
+                    assert first == mapped(raw)
                     drop.rewrite(map_index, False, [])
                     assert not drop.valid[0]
                     map_index = (map_index + 1) & 0xFF
                     again = drop.rewrite(map_index, True, [raw])[0]
-                    assert again == first
+                    assert again == mapped(raw)
                     delivered = again
                 else:
                     delivered = raw
