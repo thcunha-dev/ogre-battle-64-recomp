@@ -11,7 +11,8 @@ has evidence from a real Rev-A recomp build.
 - [ ] `source_commit` matches the tested branch artifact.
 - [ ] `.nrm` SHA-256 matches `nrm_sha256` in the manifest.
 - [ ] Rev-A reference SHA-1 is `d26b14bee422a09581ce438d45ba9fec9783fbb8`.
-- [ ] Host suite count in manifest matches `python3 tools/test_universal_randomizer_all.py --count` (currently 20).
+- [ ] Host suite count in manifest matches `python3 tools/test_universal_randomizer_all.py --count` (currently 21).
+- [ ] Manifest contains `use_repair=native_slot_indexed`.
 
 ## Configuration lifecycle
 
@@ -47,12 +48,15 @@ has evidence from a real Rev-A recomp build.
 - [ ] Primary slot behavior is consistent with the proven Bank-N path: grant at `0x801E53DC`, native clear of `0x801936D8` at `0x801E53F4`.
 - [ ] If one physical slot is observed being reused without a zero/change boundary, keep PR draft and reverse engineer that slot's lifecycle before 1.0.
 
-## Inventory integrity
+## Inventory integrity / native `+0x02`
 
 - [ ] No unrelated item ID changes after any acquisition.
 - [ ] No count exceeds 99.
 - [ ] No false/stale used-count (`+0x02`) appears after new equipment.
-- [ ] Consumable ID 40 behaves normally when encountered.
+- [ ] Find at least one owned equipment whose **definition ID differs from its owned-list slot index**; equip/reference it and verify `+0x02` changes on that slot, not on the record whose slot number happens to equal the item ID.
+- [ ] Repeat the same slot-vs-ID check for a consumable when practical; roster values are slot refs `<40`, not consumable definition IDs.
+- [ ] During load/map setup, no `+0x02` rebuild is observed while only character or only unit roster is populated; first fully populated frame rebuilds correctly.
+- [ ] Consumable ID 40 behaves normally when encountered; ID 40 may live in a valid slot `<40`, but roster reference value 40 itself is out of native slot range.
 - [ ] Equipment ID 277 behaves normally when encountered.
 - [ ] Full inventory does not overwrite another occupied slot.
 
@@ -110,5 +114,5 @@ has evidence from a real Rev-A recomp build.
 ## Release decision
 
 - [ ] All mandatory boxes above have passed on one traceable QA artifact.
-- [ ] No unresolved save/post-game/reward-slot lifecycle issue remains.
+- [ ] No unresolved save/post-game/reward-slot/use-count lifecycle issue remains.
 - [ ] PR can leave draft only after the real-game evidence above exists.
