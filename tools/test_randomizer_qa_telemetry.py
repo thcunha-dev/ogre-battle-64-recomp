@@ -19,9 +19,10 @@ required_messages = (
     "universal-item-randomizer: map/drop source mapped",
     "universal-item-randomizer: ground pickup source mapped",
     "universal-item-randomizer: battle reward source mapped",
+    "universal-item-randomizer: Bank-R starting/setup grant recognized",
     "universal-item-randomizer: starting/setup direct grant mapped",
     "universal-item-randomizer: post-battle equipment add mapped",
-    "universal-item-randomizer: coupled Bank-R unit loadout left vanilla",
+    "universal-item-randomizer: coupled Bank-R unit/setup grant left vanilla",
 )
 
 for message in required_messages:
@@ -31,6 +32,19 @@ assert "static void log_bounded(" in main
 assert "*counter >= 4u" in main, "QA route logging must remain bounded"
 assert "universal_item_randomizer_log_post_battle" in main
 assert "universal_item_randomizer_log_post_battle();" in post
+
+# Starting-item telemetry must distinguish the opt-in literal a1=0 block from
+# the two coupled a1=1 unit/setup callers, which are always preserved vanilla.
+starting = main.split("static int caller_is_starting_grant", 1)[1]
+starting = starting.split("static int caller_is_coupled_unit_grant", 1)[0]
+assert "RA_STARTING_R_LO" in starting and "RA_STARTING_R_HI" in starting
+assert "RA_TUTORIAL_SETUP_R" not in starting
+assert "RA_UNIT_LOADOUT_R" not in starting
+
+coupled = main.split("static int caller_is_coupled_unit_grant", 1)[1]
+coupled = coupled.split("static int should_randomize_direct_grant", 1)[0]
+assert "RA_TUTORIAL_SETUP_R" in coupled
+assert "RA_UNIT_LOADOUT_R" in coupled
 
 # Diagnostics may identify a route, but must never become a save/load detector or
 # inventory-delta watcher. The randomizer's save-safety contract depends on
@@ -51,4 +65,4 @@ for forbidden in ("sprintf(", "snprintf(", "printf("):
     assert forbidden not in main
     assert forbidden not in post
 
-print("randomizer QA telemetry contract: OK")
+print("randomizer QA telemetry contract: OK (safe starter vs coupled setup separated)")
