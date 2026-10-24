@@ -63,6 +63,10 @@ if ($Manifest["postgame_persistence_model"] -ne "2000_finished_game_on_off_on_se
     throw "Unexpected or missing post-game persistence model marker"
 }
 
+if ($Manifest["campaign_stress_model"] -ne "1000_campaigns_x_600_events") {
+    throw "Unexpected or missing campaign stress model marker"
+}
+
 if ($Manifest["use_repair"] -ne "native_slot_indexed") {
     throw "Unexpected or missing native slot-indexed use-repair marker"
 }
@@ -89,6 +93,7 @@ Write-Host "Source commit: $($Manifest['source_commit'])"
 Write-Host "Host suite: $($Manifest['host_suite'])"
 Write-Host "Persistence model: $($Manifest['persistence_model'])"
 Write-Host "Post-game persistence model: $($Manifest['postgame_persistence_model'])"
+Write-Host "Campaign stress model: $($Manifest['campaign_stress_model'])"
 Write-Host "Use repair: $($Manifest['use_repair'])"
 Write-Host "Central grant a1: $($Manifest['central_grant_a1'])"
 Write-Host "Bank-R coupled grants: $($Manifest['bank_r_coupled_grants'])"
