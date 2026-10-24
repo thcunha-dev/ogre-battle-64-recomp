@@ -54,7 +54,8 @@ def main() -> int:
     assert "func_ovlN_801DC740" not in stock_ref_block
     assert ".bankN_record7" not in stock_ref_block
 
-    # The artifact must advertise its reduced scope in machine-readable form.
+    # The artifact must advertise its reduced scope and the same host-side save
+    # guarantees as the release candidate in machine-readable form.
     for marker in (
         "variant=stock_runtime_qa",
         "target_runtime=official_v0.8.3",
@@ -64,8 +65,16 @@ def main() -> int:
         "source_rewrites=table_o_table_p_reward",
         "native_save_metadata=none",
         "use_repair=native_slot_indexed",
+        "host_suite=${suite_count}_tests",
+        "persistence_model=5000_on_off_on_sequences",
+        "postgame_persistence_model=2000_finished_game_on_off_on_sequences",
     ):
         assert marker in workflow, f"stock QA manifest marker missing: {marker}"
+
+    assert "suite_count=$(python3 tools/test_universal_randomizer_all.py --count)" in workflow
+    assert "grep -q \"host_suite=${suite_count}_tests\"" in workflow
+    assert "grep -q 'persistence_model=5000_on_off_on_sequences'" in workflow
+    assert "grep -q 'postgame_persistence_model=2000_finished_game_on_off_on_sequences'" in workflow
 
     # The ready-to-run Windows bundle must be based byte-for-byte on the
     # published official v0.8.3 runtime before our .nrm is inserted.
@@ -77,6 +86,7 @@ def main() -> int:
     assert 'universal-item-randomizer-stock-qa.nrm "$appdir/mods/"' in workflow
     assert 'STOCK-QA-CHECKLIST.md "$appdir/STOCK-QA-CHECKLIST.md"' in workflow
     assert "grep -q 'STOCK-QA-CHECKLIST.md$'" in workflow
+    assert "grep -q 'STOCK-RUNTIME-QA-MANIFEST.txt$'" in workflow
     assert "-iname '*.z64'" in workflow and "-iname '*.n64'" in workflow and "-iname '*.v64'" in workflow
     assert "ogre-battle-64-v0.8.3-stock-runtime-randomizer-qa-windows" in workflow
     assert f"official_windows_runtime_sha256={OFFICIAL_WINDOWS_SHA256}" in workflow
