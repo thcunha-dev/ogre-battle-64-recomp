@@ -2,9 +2,9 @@
 
 Status: **feature-complete for the currently safe acquisition model; real campaign QA pending**.
 
-Current host verification: **28 tests** through `python3 tools/test_universal_randomizer_all.py`. Latest hardening includes map-generation invalidation for Table-O, full-generation fail-closed validation for Table-O/Table-P/reward queue, invalid-ID rejection in both grant replacements, deterministic golden seed vectors, release/pipeline/version/config contracts, 5,000 modeled ON -> OFF -> ON save sequences, shared MIPS ELF verification, Rev-A RAM table-layout contracts, class-id `0xFF` fail-closed handling, the Table-P physical-capacity fix from an unsafe assumed 64 ids to the real **16 u16 slots** at `0x801F1004..0x801F1023`, partial-roster readiness testing and an explicit policy contract for the stock-runtime QA bridge.
+Current host verification: **29 tests** through `python3 tools/test_universal_randomizer_all.py`. Latest hardening includes map-generation invalidation for Table-O, full-generation fail-closed validation for Table-O/Table-P/reward queue, invalid-ID rejection in both grant replacements, deterministic golden seed vectors, release/pipeline/version/config contracts, 5,000 modeled ON -> OFF -> ON save sequences, **2,000 dedicated completed-game/post-ending ON -> OFF -> ON sequences**, shared MIPS ELF verification, Rev-A RAM table-layout contracts, class-id `0xFF` fail-closed handling, the Table-P physical-capacity fix from an unsafe assumed 64 ids to the real **16 u16 slots** at `0x801F1004..0x801F1023`, partial-roster readiness testing and an explicit policy contract for the stock-runtime QA bridge.
 
-The transient `+0x02` used-count repair mirrors native `func_8016B774` semantics: roster fields are **owned-list slot references**, not item-definition IDs. Equipment uses slot `<278`, consumables use slot `<40`, and the rebuilt byte is written by owned-list slot. Partial load/map setup is fail-closed: the repair requires both character and unit rosters to be populated, clears its shadow-ready state while either side is missing, then forces a complete rebuild on the first fully ready frame. The QA manifest marks this as `use_repair=native_slot_indexed` and artifact policy rejectss builds that lose the marker.
+The transient `+0x02` used-count repair mirrors native `func_8016B774` semantics: roster fields are **owned-list slot references**, not item-definition IDs. Equipment uses slot `<278`, consumables use slot `<40`, and the rebuilt byte is written by owned-list slot. Partial load/map setup is fail-closed: the repair requires both character and unit rosters to be populated, clears its shadow-ready state while either side is missing, then forces a complete rebuild on the first fully ready frame. The QA manifest marks this as `use_repair=native_slot_indexed` and artifact policy rejects builds that lose the marker.
 
 Battle-reward shadowing is documented and tested as **per-slot**, matching the persisted 20-u16 queue model. Multiple slots have been observed carrying real rewards, so a whole-queue all-zero boundary is not required. The primary slot lifecycle has static Bank-N proof: `0x801E53DC` grants the item and `0x801E53F4` clears `0x801936D8` immediately afterward.
 
@@ -26,7 +26,7 @@ Both `RECOMP_PATCH` replacements are intentionally declared `void`. This is prov
 - `func_80172820`: whole-cart scan finds exactly **one caller**, at ROM `0x002A4ED8` / VRAM `0x802356F8`; its delay slot is `andi a1,a1,0xff`, and the first instruction after return is `addiu v0,s1,1`, so the original return value is discarded immediately;
 - the central grant's full-inventory tail call is also proven harmless to omit: Rev-A calls `0x80093540`, a five-instruction helper that only spills `a0..a3` into the caller stack frame and returns, with no persistent/UI/global side effect.
 
-Reusable ROM auditors cover central-return ABI, post-battle-return ABI, the two coupled `a1=1` callers and the safe 40-call starter block. Host contracts lock those Rev-A facts into the 28-test suite.
+Reusable ROM auditors cover central-return ABI, post-battle-return ABI, the two coupled `a1=1` callers and the safe 40-call starter block. Host contracts lock those Rev-A facts into the 29-test suite.
 
 ## Stock-runtime QA bridge
 
@@ -43,6 +43,8 @@ This bridge can validate Table-O, Table-P, battle-reward source rewrites, post-b
 ## Remaining 1.0 blocker
 
 Real Rev-A gameplay/save/post-game QA remains mandatory before leaving draft: UI vs delivered item, Table-O/Table-P map transitions, battle-reward per-slot reuse, **slot-indexed `+0x02` bookkeeping where item ID differs from owned-list slot**, post-battle bookkeeping, shop consistency, full-inventory behavior, ON -> OFF -> ON native-save transitions, seed changes after full restart and ending/post-game reopen tests.
+
+The dedicated post-game host model now locks the required persistence policy across 2,000 deterministic completed-game-style sequences, but it deliberately does **not** replace the real ending/post-game acceptance pass on Rev-A.
 
 After that stock-runtime pass, the integrated custom-runtime build still needs targeted QA for the Bank-N central replacement, `STARTING ITEMS` safe-block behavior and proof that both coupled `a1=1` unit/setup grants stay vanilla/aligned.
 
