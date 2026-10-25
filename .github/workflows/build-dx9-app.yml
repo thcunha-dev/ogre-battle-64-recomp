@@ -38,6 +38,12 @@ jobs:
           mkdir -p tools/llvm-mingw
           tar -xJf /tmp/llvm-mingw.tar.xz -C tools/llvm-mingw --strip-components=1
           tools/llvm-mingw/bin/x86_64-w64-mingw32-clang++ --version | head -1
+          # N64ModernRuntime spells the Win32 umbrella header as <Windows.h>.
+          # Windows is case-insensitive; the Linux cross runner is not and
+          # llvm-mingw ships windows.h. This shim reproduces Windows lookup
+          # semantics without modifying the runtime or the actual DX9 source.
+          mkdir -p /tmp/win-case-shim
+          printf '#pragma once\n#include <windows.h>\n' > /tmp/win-case-shim/Windows.h
 
       - name: Prepare patched N64ModernRuntime headers
         shell: bash
@@ -58,6 +64,7 @@ jobs:
           CXX="$PWD/tools/llvm-mingw/bin/x86_64-w64-mingw32-clang++"
           COMMON=(
             -std=c++20 -O2 -DOGRE_USE_DX9=1 -DNOMINMAX
+            -I/tmp/win-case-shim
             -I"$PWD/app/src"
             -I"$PWD/tools/N64ModernRuntime/N64Recomp/include"
             -I"$PWD/tools/N64ModernRuntime/ultramodern/include"
