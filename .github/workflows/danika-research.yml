@@ -14,6 +14,7 @@ on:
       - 'tools/scan_danika_renderer_accessors.py'
       - 'tools/scan_danika_battle_object_class_reads.py'
       - 'tools/scan_danika_weapon_compat.py'
+      - 'tools/trace_danika_renderer_caller.py'
       - 'mods/playable-knight-of-danika/**'
       - '.github/workflows/danika-research.yml'
   workflow_dispatch:
@@ -57,6 +58,9 @@ jobs:
       - name: Scan Dragoon weapon compatibility candidates
         run: python3 tools/scan_danika_weapon_compat.py
 
+      - name: Trace unique renderer caller
+        run: python3 tools/trace_danika_renderer_caller.py
+
       - name: Upload reverse-engineering reports
         uses: actions/upload-artifact@v4
         with:
@@ -70,5 +74,6 @@ jobs:
             danika-renderer-accessor-report.txt
             danika-battle-object-class-report.txt
             danika-weapon-compat-report.txt
+            danika-renderer-caller-trace.txt
           if-no-files-found: error
           retention-days: 14
