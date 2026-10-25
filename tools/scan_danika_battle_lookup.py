@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 """Repository-wide reverse-engineering probe for Knight of Danika battle lookup.
 
-This is intentionally an evidence collector, not a patch.  It scans the checked-out
+This is an evidence collector, not a graphics patch. It scans the checked-out
 recomp/disassembly for direct references and common MIPS address-materialization
-patterns involving the class table anchors used by the Danika restoration.
-
-The report is deterministic and is suitable for CI artifacts.  A zero-hit result is
-still useful evidence: it means the table is probably reached indirectly (GP/data
-pointer/overlay relocation) and tells us to move the next pass to pointer/data-flow
-analysis instead of guessing a graphics pointer.
+patterns involving the class-table anchors used by the Danika restoration, then
+prints bounded function context for executable references.
 """
 
 from __future__ import annotations
@@ -31,6 +27,8 @@ ANCHORS = {
 TEXT_ROOTS = ("asm", "config", "include", "mods", "patches")
 TEXT_SUFFIXES = {".s", ".S", ".c", ".h", ".toml", ".json", ".yaml", ".yml", ".txt", ".md"}
 MAX_CONTEXT = 5
+FUNCTION_CONTEXT_BEFORE = 35
+FUNCTION_CONTEXT_AFTER = 55
 
 
 @dataclass(frozen=True)
@@ -54,19 +52,12 @@ def iter_text_files(root: Path) -> Iterable[Path]:
 
 def address_spellings(addr: int) -> set[str]:
     return {
-        f"0x{addr:08x}",
-        f"0x{addr:08X}",
-        f"{addr:08x}",
-        f"{addr:08X}",
-        f"D_{addr:08X}",
-        f"D_{addr:08x}",
+        f"0x{addr:08x}", f"0x{addr:08X}", f"{addr:08x}", f"{addr:08X}",
+        f"D_{addr:08X}", f"D_{addr:08x}",
     }
 
 
 def mips_halves(addr: int) -> tuple[set[int], int]:
-    # Both common materializations are accepted:
-    #   lui r, addr>>16 ; ori r,r,lo
-    #   lui r, (addr+0x8000)>>16 ; addiu r,r,signed_lo
     hi_ori = (addr >> 16) & 0xFFFF
     hi_addiu = ((addr + 0x8000) >> 16) & 0xFFFF
     return {hi_ori, hi_addiu}, addr & 0xFFFF
@@ -76,10 +67,7 @@ def parse_imm(line: str) -> list[int]:
     vals: list[int] = []
     for token in re.findall(r"(?<![\w])(?:0x[0-9A-Fa-f]+|\$[0-9A-Fa-f]+|[-+]?\d+)(?![\w])", line):
         try:
-            if token.startswith("$"):
-                vals.append(int(token[1:], 16) & 0xFFFF)
-            else:
-                vals.append(int(token, 0) & 0xFFFF)
+            vals.append((int(token[1:], 16) if token.startswith("$") else int(token, 0)) & 0xFFFF)
         except ValueError:
             pass
     return vals
@@ -94,40 +82,64 @@ def scan_file(root: Path, path: Path) -> list[Hit]:
     rel = path.relative_to(root).as_posix()
     hits: list[Hit] = []
 
-    # Exact textual/address-label references.
     for idx, line in enumerate(lines):
         low = line.lower()
         for name, addr in ANCHORS.items():
             if any(spelling.lower() in low for spelling in address_spellings(addr)):
                 hits.append(Hit("direct", name, rel, idx + 1, line.strip()))
 
-    # Common MIPS split-address materialization within a short instruction window.
     for name, addr in ANCHORS.items():
         his, lo = mips_halves(addr)
         for idx, line in enumerate(lines):
-            lowered = line.lower()
-            if "lui" not in lowered:
-                continue
-            imms = parse_imm(line)
-            if not any(imm in his for imm in imms):
+            if "lui" not in line.lower() or not any(imm in his for imm in parse_imm(line)):
                 continue
             for j in range(idx + 1, min(len(lines), idx + 1 + MAX_CONTEXT)):
                 next_low = lines[j].lower()
-                if not any(op in next_low for op in ("addiu", "addi", "ori", "daddiu")):
-                    continue
-                if lo in parse_imm(lines[j]):
-                    text = f"{line.strip()}  ||  {lines[j].strip()}"
-                    hits.append(Hit("mips-hi-lo", name, rel, idx + 1, text))
+                if any(op in next_low for op in ("addiu", "addi", "ori", "daddiu")) and lo in parse_imm(lines[j]):
+                    hits.append(Hit("mips-hi-lo", name, rel, idx + 1,
+                                    f"{line.strip()}  ||  {lines[j].strip()}"))
 
-    # Independent stride evidence.  This does not claim a table reference; it is
-    # included only to prioritize functions that may perform class_id * 0x48.
+    # Keep this conservative: require an actual immediate operand 0x48/$48/72,
+    # not merely an instruction address ending in 48.
+    stride_pat = re.compile(r"(?i)(?:,|\s)(?:0x48|\$48|72)(?:\s|$)")
     for idx, line in enumerate(lines):
-        if re.search(r"(?i)(?:0x|\$)?0*48\b", line) and any(
-            op in line.lower() for op in ("mult", "mul", "add", "sll", "li", "ori", "addiu")
-        ):
+        if stride_pat.search(line) and any(op in line.lower() for op in ("mult", "mul", "add", "sll", "li", "ori", "addiu")):
             hits.append(Hit("stride-0x48", "class_stride", rel, idx + 1, line.strip()))
 
     return hits
+
+
+def nearest_function(lines: list[str], one_based_line: int) -> tuple[int, str]:
+    idx = max(0, one_based_line - 1)
+    for j in range(idx, max(-1, idx - 600), -1):
+        m = re.match(r"\s*(?:glabel|dlabel|nonmatching)\s+([A-Za-z0-9_.$]+)", lines[j])
+        if m:
+            return j, m.group(1)
+    return max(0, idx - FUNCTION_CONTEXT_BEFORE), "<unknown>"
+
+
+def executable_contexts(root: Path, direct: list[Hit]) -> list[str]:
+    blocks: list[str] = []
+    seen: set[tuple[str, str]] = set()
+    for hit in direct:
+        if not hit.path.startswith("asm/") or "/data/" in hit.path:
+            continue
+        path = root / hit.path
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        fn_start, fn_name = nearest_function(lines, hit.line)
+        key = (hit.path, fn_name)
+        if key in seen:
+            continue
+        seen.add(key)
+        hit_idx = hit.line - 1
+        start = max(fn_start, hit_idx - FUNCTION_CONTEXT_BEFORE)
+        end = min(len(lines), hit_idx + FUNCTION_CONTEXT_AFTER + 1)
+        blocks.append(f"### {hit.path}:{hit.line} function={fn_name}")
+        for i in range(start, end):
+            marker = ">>>" if i == hit_idx else "   "
+            blocks.append(f"{marker} {i + 1:6d}: {lines[i]}")
+        blocks.append("")
+    return blocks
 
 
 def main() -> int:
@@ -146,21 +158,21 @@ def main() -> int:
     hilo = [h for h in hits if h.kind == "mips-hi-lo"]
     stride = [h for h in hits if h.kind == "stride-0x48"]
 
-    out: list[str] = []
-    out.append("Knight of Danika battle-lookup reverse-engineering probe")
-    out.append("========================================================")
-    out.append(f"files_scanned={len(files)}")
-    out.append(f"direct_anchor_hits={len(direct)}")
-    out.append(f"mips_hi_lo_hits={len(hilo)}")
-    out.append(f"stride_0x48_hits={len(stride)}")
-    out.append("")
+    out: list[str] = [
+        "Knight of Danika battle-lookup reverse-engineering probe",
+        "========================================================",
+        f"files_scanned={len(files)}",
+        f"direct_anchor_hits={len(direct)}",
+        f"mips_hi_lo_hits={len(hilo)}",
+        f"stride_0x48_hits={len(stride)}",
+        "",
+    ]
     for name, addr in ANCHORS.items():
         out.append(f"{name}=0x{addr:08X}")
     out.append("")
 
     def section(title: str, rows: list[Hit], cap: int = 250) -> None:
-        out.append(title)
-        out.append("-" * len(title))
+        out.extend((title, "-" * len(title)))
         if not rows:
             out.append("(none)")
         else:
@@ -174,17 +186,14 @@ def main() -> int:
     section("MIPS split-address candidates", hilo)
     section("0x48 stride candidates (triage only)", stride)
 
+    contexts = executable_contexts(root, direct)
+    out.extend(("Executable direct-reference contexts", "------------------------------------"))
+    out.extend(contexts or ["(none)", ""])
+
     if not direct and not hilo:
-        out.append(
-            "INTERPRETATION: no direct/split address materialization found. "
-            "Prioritize GP-relative pointers, data tables, relocation tables, and "
-            "overlay-side asset selectors in the next pass; do not guess a sprite pointer."
-        )
+        out.append("INTERPRETATION: no direct/split address materialization found; prioritize GP-relative pointers, relocation/data tables, and overlay asset selectors. Do not guess a sprite pointer.")
     else:
-        out.append(
-            "INTERPRETATION: inspect direct/split-address candidates first and prove "
-            "class-id + battle-side data flow before patching any graphics resource."
-        )
+        out.append("INTERPRETATION: inspect executable contexts first and prove class-id + battle-side data flow before patching graphics resources.")
 
     text = "\n".join(out) + "\n"
     args.output.write_text(text, encoding="utf-8")
