@@ -13,36 +13,38 @@ experiment. Those are deliberately out of scope.
 
 - Windows native build.
 - Direct3D 9 device creation through `Direct3DCreate9`.
-- Conservative D3D9 formats (`A8R8G8B8`, 16-bit guest RGBA5551 decode).
+- Conservative D3D9 formats (`A8R8G8B8`, D16 when depth lands, 16-bit guest
+  RGBA5551 decode).
 - No MSAA requirement.
-- Point sampling by default for the N64 framebuffer.
-- No D3D11/D3D12/DXGI requirement in the DX9 route.
-- RDP programmable path should fit Shader Model 3.0; avoid heavyweight runtime
-  shader compilers and expensive per-draw allocations.
+- Point sampling by default; bilinear only when the N64 RDP state requests it.
+- No D3D11/D3D12/DXGI/Vulkan requirement in the DX9 route.
+- General RDP programmable path fits Shader Model 3.0.
+- Pixel shader is compiled by `fxc` at build/CI time; do not add a runtime
+  D3DX/D3DCompiler dependency.
 - Primary real-hardware target: NVIDIA GeForce 410M-class hardware.
 
 ## Architecture
 
 Do **not** write another N64 graphics interpreter from scratch.
 
-`app/src/web_renderer.cpp` already contains the project's validated independent
-implementation of the game-facing graphics semantics:
+`app/src/web_renderer.cpp` is the validated independent implementation of the
+game-facing graphics semantics and remains the behavioural reference for:
 
 - F3DEX2 display-list execution;
 - S2DEX2 object/sprite commands;
 - RDP OtherMode and combiner decoding;
 - blender decoding;
-- RGBA/IA/I/CI texture decode and TLUT handling;
-- guest colour-image/framebuffer tracking;
+- RGBA/IA/I/CI/YUV texture decode and TLUT handling;
+- guest colour-image/framebuffer tracking and readback;
 - VI framebuffer sizing/presentation;
 - N64ModernRuntime RDRAM byte-order handling.
 
 The DX9 renderer therefore has two layers:
 
-1. **Shared N64/RDP semantics** — progressively extracted/reused from the WebGL
-   renderer without changing their behaviour.
+1. **N64/RDP semantics** — API-independent helpers ported from the validated
+   WebGL/RT64 behaviour.
 2. **D3D9 device/output** — textures, render targets, vertex submission,
-   scissor/blend state, Shader Model 3.0 combiner shader and presentation.
+   scissor/blend/depth state, Shader Model 3.0 combiner shader and presentation.
 
 The important rule is to port the GPU-facing half, not rediscover F3DEX2/RDP
 behaviour through trial and error.
@@ -51,56 +53,76 @@ behaviour through trial and error.
 
 Branch: `dx9-lowend-410m`.
 
-Stage 1 is implemented in `app/src/dx9_renderer.inl` and is selected by the
-no-RT64 Windows source when `OGRE_USE_DX9=1` is defined. It:
+The active renderer entry is `app/src/dx9_renderer.inl`; a standalone Windows
+translation unit now also exists at `app/src/dx9_renderer.cpp`. The milestone
+implementation currently reaches Stage 5 and includes:
 
-- creates a plain Direct3D 9 HAL device;
-- falls back from hardware to software vertex processing when necessary;
-- logs VS/PS caps and maximum texture size;
-- handles lost/reset devices and client-window resizes;
-- derives 320x240 / 640x480 scanout dimensions from the real VI registers using
-  the same rule as the WebGL renderer / RT64;
-- decodes 16-bit RGBA5551 and 32-bit RGBA framebuffer pixels from the runtime's
-  byte-reversed RDRAM representation;
-- uploads scanout into one reusable dynamic D3D9 texture;
-- presents using the fixed-function pipeline with point filtering;
-- keeps the existing graphics-workload analyzer active.
+- Direct3D 9 HAL device creation with software vertex-processing fallback;
+- device-loss/window-resize handling;
+- VI sizing and presentation for normal and 640-wide modes;
+- guest colour-image render targets;
+- GPU framebuffer presentation and GPU -> RDRAM writeback;
+- FILLRECT, TEXRECT and TEXRECTFLIP;
+- bounded reusable texture uploads;
+- RGBA16/32, IA, I, CI/TLUT and YUV texture decoding;
+- one general `ps_3_0` RDP combiner/blender shader driven by constants;
+- F3DEX2 matrix, viewport, VTX, G_TEXTURE, TRI1, TRI2 and QUAD execution;
+- S2DEX2 object matrix/sub-matrix, OBJ_RECTANGLE, OBJ_RECTANGLE_R and OBJ_SPRITE;
+- copy-cycle fixed-function paths that do not require the pixel shader;
+- workload counters and bounded diagnostics.
 
-This stage intentionally does **not** fake RDP drawing. Display lists are
-observed/analyzed but the guest VI framebuffer is the only image presented.
-The next stage attaches the existing WebGL F3DEX2/S2DEX2/RDP executor to D3D9.
+The F3DEX2 matrix path matches the validated WebGL semantics, including the
+microcode's inverted stored PUSH bit and the matrix multiplication order. The
+F3DEX2 G_MOVEMEM viewport index is decoded from the low byte, matching RT64.
+
+`app/src/dx9_depth.hpp` now owns the API-independent depth semantics needed for
+the next 3D milestone: RDP `Z_CMP`, `Z_UPD`, ZMODE decoding, recognition of the
+SETZIMG/SETCIMG depth-clear idiom, and N64 screen-Z (0..1023) to D3D9 depth
+(0..1) normalization. D3D9 depth-surface attachment itself is the next graphics
+step; it is not claimed complete yet.
+
+## Build path
+
+`dx9/CMakeLists.txt` is the dedicated low-end entry point. It forces RT64 off,
+selects the existing DX9 bring-up route and links only the Windows `d3d9`
+system library for graphics:
+
+```text
+cmake -S dx9 -B build-dx9 -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-dx9 -j
+```
+
+The standalone renderer object is also cross-compiled in CI with LLVM-MinGW.
+The gate rejects references to D3D12, DXGI factory creation or Vulkan. A second
+Windows CI job compiles `dx9_rdp_ps.hlsl` with Microsoft's `fxc` as `ps_3_0`.
+
+A full distributable game build still requires the repository's generated
+recompilation units (`RecompiledFuncs`, bank units and RSP recompilation data),
+just like the normal project release build. Renderer development does not need
+to block on regenerating those files for every patch.
 
 ## Next implementation order
 
-1. Move the GL-independent types/helpers from `web_renderer.cpp` into a shared
-   renderer core: RenderState, Combiner, Blender, texture decoders, VI helpers,
-   GBI identification and display-list execution.
-2. Preserve the WebGL build against the shared core so semantic regressions are
-   caught at extraction time.
-3. Add the D3D9 draw-command backend:
-   - dynamic vertex ring buffer;
-   - reusable D3D9 texture cache;
-   - guest colour-image render-target cache;
-   - scissor and fixed render states;
-   - FILLRECT / TEXRECT / TEXRECTFLIP;
-   - F3DEX2 TRI1 / TRI2 / QUAD;
-   - S2DEX2 object rectangle/sprite path.
-4. Translate the already-working WebGL combiner/blender formula to one small
-   Shader Model 3.0 HLSL program driven by constants. Avoid compiling a new
-   shader for every combine mode.
-5. Implement dirty framebuffer readback for `ogre_sync_framebuffers()` so the
-   game's NJPEG/background CPU copies see D3D9-rendered pixels.
-6. Make DX9 a first-class CMake renderer option and package a dedicated Windows
-   low-end artifact.
+1. Attach a conservative D16 depth surface to the Stage 5 3D path and honor
+   `Z_CMP`/`Z_UPD`, while preserving device-reset safety.
+2. Handle the game's SETZIMG -> SETCIMG(z-address) -> FILLRECT depth-clear idiom.
+3. Feed the transformed N64 screen Z into D3D9 XYZRHW vertices instead of the
+   current temporary constant Z.
+4. Review RDP alpha/depth corner cases and only add commands proven relevant by
+   the WebGL reference or captured workload.
+5. Flatten the milestone inheritance/includes once the 3D path is stable.
+6. Produce one dedicated Windows low-end artifact and perform one meaningful
+   real-hardware GeForce 410M validation.
 
 ## Test discipline
 
 Use tests as gates, not as exploration:
 
-- one compile/CI check after a coherent patch set;
-- one deterministic smoke route after the RDP path can draw a real frame;
-- one real GeForce 410M test only when the build is technically ready for it.
+- compiler and shader checks for every coherent renderer patch set;
+- deterministic code/reference comparison before hardware testing;
+- one real GeForce 410M test only when the build can answer a meaningful
+  compatibility/rendering question.
 
 Do not produce a sequence of user-facing micro-builds to discover individual
-opcodes or state bits. The existing WebGL renderer and RT64 behaviour are the
-references for those semantics.
+opcodes or state bits. The validated WebGL renderer, RT64 definitions and
+existing captured DX9 logs are the first references.
