@@ -32,7 +32,6 @@ struct PSInput {
 };
 
 float4 choose_texel(int selector, bool secondCycle, float4 t0, float4 t1) {
-    // TEXEL0/TEXEL1 swap in the second RDP cycle.
     bool wants1 = (selector == 2);
     bool use1 = wants1 != secondCycle;
     return use1 ? t1 : t0;
@@ -40,22 +39,22 @@ float4 choose_texel(int selector, bool secondCycle, float4 t0, float4 t1) {
 
 float4 color_input(int sel, bool secondCycle, float4 combined,
                    float4 shade, float4 t0, float4 t1) {
-    if (sel == 0)  return combined;                                  // COMBINED
+    if (sel == 0)  return combined;
     if (sel == 1 || sel == 2) return choose_texel(sel, secondCycle, t0, t1);
     if (sel == 3)  return PrimColor;
     if (sel == 4)  return shade;
     if (sel == 5)  return EnvColor;
-    if (sel == 6 || sel == 7) return 0.0.xxxx;                        // key inputs
+    if (sel == 6 || sel == 7) return 0.0.xxxx;
     if (sel == 8)  return combined.aaaa;
     if (sel == 9)  return choose_texel(1, secondCycle, t0, t1).aaaa;
     if (sel == 10) return choose_texel(2, secondCycle, t0, t1).aaaa;
     if (sel == 11) return PrimColor.aaaa;
     if (sel == 12) return shade.aaaa;
     if (sel == 13) return EnvColor.aaaa;
-    if (sel == 14 || sel == 15 || sel == 16) return 0.0.xxxx;        // LOD/noise
-    if (sel == 17) return Misc.xxxx;                                  // K4
-    if (sel == 18) return Misc.yyyy;                                  // K5
-    if (sel == 19) return 1.0.xxxx;                                   // ONE
+    if (sel == 14 || sel == 15 || sel == 16) return 0.0.xxxx;
+    if (sel == 17) return Misc.xxxx;
+    if (sel == 18) return Misc.yyyy;
+    if (sel == 19) return 1.0.xxxx;
     return 0.0.xxxx;
 }
 
@@ -81,10 +80,10 @@ void wrap_abd(inout float v) { wrap_input(v, -0.5 - 1.0/255.0, 1.5 + 1.0/255.0);
 void wrap_clamp(inout float v) { wrap_abd(v); v = saturate(v); }
 
 float3 blend_pm(int pm, float3 cc) {
-    if (pm == 0) return cc;              // combiner / previous blender
+    if (pm == 0) return cc;
     if (pm == 2) return BlendColor.rgb;
     if (pm == 3) return FogColor.rgb;
-    return 1.0.xxx;                      // framebuffer colour represented by HW blend
+    return 1.0.xxx;
 }
 float blend_a(int a, float ca, float shadeA) {
     if (a == 0) return ca;
@@ -167,26 +166,25 @@ float4 run_blender(float4 cc, float shadeA) {
 
     float3 bc = 0.0.xxx;
     float fa = 0.0;
-    bool pass = false;
+    bool passEnabled = false;
     int passInput = 0;
     blender_cycle(Modes.x != 0, cycles == 1, false, cc.rgb, cc.a, shadeA,
-                  BlendSel0, pass, passInput, bc, fa);
+                  BlendSel0, passEnabled, passInput, bc, fa);
     if (cycles > 1) {
         blender_cycle(Modes.x != 0, true, true, cc.rgb, cc.a, shadeA,
-                      BlendSel1, pass, passInput, bc, fa);
+                      BlendSel1, passEnabled, passInput, bc, fa);
     }
     return float4(bc, fa);
 }
 
 float4 main(PSInput input) : COLOR0 {
-    // Sample both texture units once; selector logic chooses between values.
     float4 t0 = tex2D(Tex0, input.uv0);
     float4 t1 = tex2D(Tex1, input.uv1);
     if (Modes.z == 1) return float4(t1.rgb, 1.0);
     if (Modes.z == 2) return float4(t0.rgb, 1.0);
 
     const int cycle = (int)(Misc.z + 0.5);
-    if (cycle == 0) return t0; // COPY
+    if (cycle == 0) return t0;
 
     float4 c = 0.0.xxxx;
     c.rgb = (color_input(ColorSel0.x, false, c, input.shade, t0, t1).rgb -
