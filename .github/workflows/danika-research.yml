@@ -7,6 +7,7 @@ on:
     paths:
       - 'tools/audit_knight_of_danika.py'
       - 'tools/scan_danika_battle_lookup.py'
+      - 'tools/trace_danika_asset_bridge.py'
       - 'mods/playable-knight-of-danika/**'
       - '.github/workflows/danika-research.yml'
   workflow_dispatch:
@@ -29,10 +30,15 @@ jobs:
           python3 tools/scan_danika_battle_lookup.py \
             --output danika-battle-lookup-report.txt
 
-      - name: Upload reverse-engineering report
+      - name: Trace asset-selection bridge
+        run: python3 tools/trace_danika_asset_bridge.py
+
+      - name: Upload reverse-engineering reports
         uses: actions/upload-artifact@v4
         with:
-          name: danika-battle-lookup-report
-          path: danika-battle-lookup-report.txt
+          name: danika-research-reports
+          path: |
+            danika-battle-lookup-report.txt
+            danika-asset-bridge-report.txt
           if-no-files-found: error
           retention-days: 14
