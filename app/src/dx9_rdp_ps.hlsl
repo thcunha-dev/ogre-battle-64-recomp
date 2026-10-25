@@ -1,7 +1,7 @@
 // Ogre Battle 64 low-end D3D9 RDP pixel shader.
 // Target: ps_3_0. One shader covers COPY, 1-cycle and 2-cycle combiner modes.
-// The CPU supplies decoded selector integers exactly as web_renderer.cpp does.
-// No runtime shader variants are required.
+// Selector/state constants intentionally use only float constant registers so
+// old D3D9 drivers need no integer-constant bank handling.
 
 sampler2D Tex0 : register(s0);
 sampler2D Tex1 : register(s1);
@@ -14,22 +14,24 @@ float4 BlendColor : register(c3);
 // w=combiner blender cycle count.
 float4 Misc       : register(c4);
 
-// Color/alpha selector sets for the two evaluated combiner slots.
-int4 ColorSel0 : register(i0); // ca cb cc cd
-int4 AlphaSel0 : register(i1); // aa ab ac ad
-int4 ColorSel1 : register(i2);
-int4 AlphaSel1 : register(i3);
-// Blender selectors P M A B.
-int4 BlendSel0 : register(i4);
-int4 BlendSel1 : register(i5);
-// x=forceBlend, y=blendApprox, z=debugMode, w=unused.
-int4 Modes     : register(i6);
+// Decoded selector integers are uploaded as exact float values and converted
+// locally. Keeping everything in c-registers makes the runtime side one set of
+// SetPixelShaderConstantF calls and avoids driver-specific i-register behavior.
+float4 ColorSel0 : register(c5);  // ca cb cc cd
+float4 AlphaSel0 : register(c6);  // aa ab ac ad
+float4 ColorSel1 : register(c7);
+float4 AlphaSel1 : register(c8);
+float4 BlendSel0 : register(c9);  // P M A B
+float4 BlendSel1 : register(c10);
+float4 Modes     : register(c11); // forceBlend, blendApprox, debugMode, unused
 
 struct PSInput {
     float2 uv0   : TEXCOORD0;
     float2 uv1   : TEXCOORD1;
     float4 shade : COLOR0;
 };
+
+int isel(float v) { return (int)(v + 0.5); }
 
 float4 choose_texel(int selector, bool secondCycle, float4 t0, float4 t1) {
     bool wants1 = (selector == 2);
@@ -99,10 +101,13 @@ float blend_b(int b, float aMul) {
 
 void blender_cycle(bool forceBlend, bool lastCycle, bool notFirst,
                    float3 combinerRGB, float combinerA, float shadeA,
-                   int4 s, inout bool passthroughEnabled,
+                   float4 selectors, inout bool passthroughEnabled,
                    inout int passthroughInput,
                    inout float3 blenderColor, inout float finalAlpha) {
-    int P = s.x, M = s.y, A = s.z, B = s.w;
+    int P = isel(selectors.x);
+    int M = isel(selectors.y);
+    int A = isel(selectors.z);
+    int B = isel(selectors.w);
     bool replaceCC = notFirst && !passthroughEnabled;
     if (lastCycle && !forceBlend) {
         if (P == 1) finalAlpha = 0.0;
@@ -156,11 +161,11 @@ void blender_cycle(bool forceBlend, bool lastCycle, bool notFirst,
 }
 
 float4 run_blender(float4 cc, float shadeA) {
-    const int approx = Modes.y;
+    const int approx = isel(Modes.y);
     if (approx == 1) return float4(cc.rgb, cc.a * cc.a);
-    if (approx == 2) return float4(blend_pm(BlendSel0.x, cc.rgb),
-                                   blend_a(BlendSel0.z, cc.a, shadeA) *
-                                   blend_a(BlendSel1.z, cc.a, shadeA));
+    if (approx == 2) return float4(blend_pm(isel(BlendSel0.x), cc.rgb),
+                                   blend_a(isel(BlendSel0.z), cc.a, shadeA) *
+                                   blend_a(isel(BlendSel1.z), cc.a, shadeA));
     const int cycles = (int)(Misc.w + 0.5);
     if (cycles == 0) return float4(cc.rgb, 1.0);
 
@@ -168,10 +173,10 @@ float4 run_blender(float4 cc, float shadeA) {
     float fa = 0.0;
     bool passEnabled = false;
     int passInput = 0;
-    blender_cycle(Modes.x != 0, cycles == 1, false, cc.rgb, cc.a, shadeA,
+    blender_cycle(Modes.x > 0.5, cycles == 1, false, cc.rgb, cc.a, shadeA,
                   BlendSel0, passEnabled, passInput, bc, fa);
     if (cycles > 1) {
-        blender_cycle(Modes.x != 0, true, true, cc.rgb, cc.a, shadeA,
+        blender_cycle(Modes.x > 0.5, true, true, cc.rgb, cc.a, shadeA,
                       BlendSel1, passEnabled, passInput, bc, fa);
     }
     return float4(bc, fa);
@@ -180,34 +185,35 @@ float4 run_blender(float4 cc, float shadeA) {
 float4 main(PSInput input) : COLOR0 {
     float4 t0 = tex2D(Tex0, input.uv0);
     float4 t1 = tex2D(Tex1, input.uv1);
-    if (Modes.z == 1) return float4(t1.rgb, 1.0);
-    if (Modes.z == 2) return float4(t0.rgb, 1.0);
+    const int debugMode = isel(Modes.z);
+    if (debugMode == 1) return float4(t1.rgb, 1.0);
+    if (debugMode == 2) return float4(t0.rgb, 1.0);
 
     const int cycle = (int)(Misc.z + 0.5);
     if (cycle == 0) return t0;
 
     float4 c = 0.0.xxxx;
-    c.rgb = (color_input(ColorSel0.x, false, c, input.shade, t0, t1).rgb -
-             color_input(ColorSel0.y, false, c, input.shade, t0, t1).rgb) *
-             color_input(ColorSel0.z, false, c, input.shade, t0, t1).rgb +
-             color_input(ColorSel0.w, false, c, input.shade, t0, t1).rgb;
-    c.a = (alpha_input(AlphaSel0.x, false, c.a, input.shade, t0, t1) -
-           alpha_input(AlphaSel0.y, false, c.a, input.shade, t0, t1)) *
-           alpha_input(AlphaSel0.z, false, c.a, input.shade, t0, t1) +
-           alpha_input(AlphaSel0.w, false, c.a, input.shade, t0, t1);
+    c.rgb = (color_input(isel(ColorSel0.x), false, c, input.shade, t0, t1).rgb -
+             color_input(isel(ColorSel0.y), false, c, input.shade, t0, t1).rgb) *
+             color_input(isel(ColorSel0.z), false, c, input.shade, t0, t1).rgb +
+             color_input(isel(ColorSel0.w), false, c, input.shade, t0, t1).rgb;
+    c.a = (alpha_input(isel(AlphaSel0.x), false, c.a, input.shade, t0, t1) -
+           alpha_input(isel(AlphaSel0.y), false, c.a, input.shade, t0, t1)) *
+           alpha_input(isel(AlphaSel0.z), false, c.a, input.shade, t0, t1) +
+           alpha_input(isel(AlphaSel0.w), false, c.a, input.shade, t0, t1);
 
     if (cycle == 2) {
-        if (ColorSel1.z == 0) { wrap_c(c.r); wrap_c(c.g); wrap_c(c.b); }
+        if (isel(ColorSel1.z) == 0) { wrap_c(c.r); wrap_c(c.g); wrap_c(c.b); }
         else { wrap_abd(c.r); wrap_abd(c.g); wrap_abd(c.b); }
-        if (AlphaSel1.z == 0) wrap_c(c.a); else wrap_abd(c.a);
-        c.rgb = (color_input(ColorSel1.x, true, c, input.shade, t0, t1).rgb -
-                 color_input(ColorSel1.y, true, c, input.shade, t0, t1).rgb) *
-                 color_input(ColorSel1.z, true, c, input.shade, t0, t1).rgb +
-                 color_input(ColorSel1.w, true, c, input.shade, t0, t1).rgb;
-        c.a = (alpha_input(AlphaSel1.x, true, c.a, input.shade, t0, t1) -
-               alpha_input(AlphaSel1.y, true, c.a, input.shade, t0, t1)) *
-               alpha_input(AlphaSel1.z, true, c.a, input.shade, t0, t1) +
-               alpha_input(AlphaSel1.w, true, c.a, input.shade, t0, t1);
+        if (isel(AlphaSel1.z) == 0) wrap_c(c.a); else wrap_abd(c.a);
+        c.rgb = (color_input(isel(ColorSel1.x), true, c, input.shade, t0, t1).rgb -
+                 color_input(isel(ColorSel1.y), true, c, input.shade, t0, t1).rgb) *
+                 color_input(isel(ColorSel1.z), true, c, input.shade, t0, t1).rgb +
+                 color_input(isel(ColorSel1.w), true, c, input.shade, t0, t1).rgb;
+        c.a = (alpha_input(isel(AlphaSel1.x), true, c.a, input.shade, t0, t1) -
+               alpha_input(isel(AlphaSel1.y), true, c.a, input.shade, t0, t1)) *
+               alpha_input(isel(AlphaSel1.z), true, c.a, input.shade, t0, t1) +
+               alpha_input(isel(AlphaSel1.w), true, c.a, input.shade, t0, t1);
     }
 
     wrap_clamp(c.r); wrap_clamp(c.g); wrap_clamp(c.b); wrap_clamp(c.a);
