@@ -120,18 +120,27 @@ inline void set_viewport(State& st, const uint8_t* rdram, uint32_t address) {
     st.viewport_set = true;
 }
 
-inline void apply_matrix(State& st, const Mat4& mat, uint32_t flags) {
+// F3DEX2 stores the PUSH bit inverted in G_MTX (the SDK macro XORs the bit).
+// The row-vector renderer also pre-multiplies a newly supplied matrix: the new
+// matrix acts on the vertex first. Both details are required to match the
+// validated WebGL renderer and RT64; getting either wrong makes OB64's per-object
+// matrices accumulate and progressively moves geometry off-screen.
+inline void apply_matrix(State& st, const Mat4& mat, uint32_t stored_flags) {
+    const uint32_t flags = stored_flags ^ gbi::MTX_PUSH;
     const bool projection = (flags & gbi::MTX_PROJECTION) != 0;
     const bool load = (flags & gbi::MTX_LOAD) != 0;
     const bool push = (flags & gbi::MTX_PUSH) != 0;
     if (projection) {
-        st.projection = load ? mat : mul_mat4(st.projection, mat);
+        st.projection = load ? mat : mul_mat4(mat, st.projection);
         return;
     }
     if (st.modelview_stack.empty()) st.modelview_stack.push_back(Mat4::identity());
-    if (push && st.modelview_stack.size() < 32) st.modelview_stack.push_back(st.modelview_stack.back());
+    if (push && st.modelview_stack.size() < 32) {
+        const Mat4 saved = st.modelview_stack.back();
+        st.modelview_stack.push_back(saved);
+    }
     Mat4& cur = st.modelview_stack.back();
-    cur = load ? mat : mul_mat4(cur, mat);
+    cur = load ? mat : mul_mat4(mat, cur);
 }
 
 inline void pop_modelview(State& st, uint32_t count) {
