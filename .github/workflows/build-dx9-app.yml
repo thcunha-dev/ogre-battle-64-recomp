@@ -62,14 +62,22 @@ jobs:
         run: |
           set -euxo pipefail
           CXX="$PWD/tools/llvm-mingw/bin/x86_64-w64-mingw32-clang++"
+          RUNTIME="$PWD/tools/N64ModernRuntime"
+          # Mirror the PUBLIC include directories exported by ultramodern and
+          # librecomp CMake. This validates the actual renderer source, not an
+          # ad-hoc subset of the runtime headers.
           COMMON=(
             -std=c++20 -O2 -DOGRE_USE_DX9=1 -DNOMINMAX
             -I/tmp/win-case-shim
             -I"$PWD/app/src"
-            -I"$PWD/tools/N64ModernRuntime/N64Recomp/include"
-            -I"$PWD/tools/N64ModernRuntime/ultramodern/include"
-            -I"$PWD/tools/N64ModernRuntime/librecomp/include"
-            -I"$PWD/tools/N64ModernRuntime/thirdparty"
+            -I"$RUNTIME/N64Recomp/include"
+            -I"$RUNTIME/ultramodern/include"
+            -I"$RUNTIME/librecomp/include"
+            -I"$RUNTIME/librecomp/src"
+            -I"$RUNTIME/thirdparty"
+            -I"$RUNTIME/thirdparty/concurrentqueue"
+            -I"$RUNTIME/thirdparty/sse2neon"
+            -I"$RUNTIME/thirdparty/o1heap"
           )
           "$CXX" "${COMMON[@]}" -c app/src/null_renderer.cpp -o /tmp/dx9_renderer.o
           "$CXX" "${COMMON[@]}" -c app/src/gbi.cpp -o /tmp/gbi.o
