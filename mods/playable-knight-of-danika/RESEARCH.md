@@ -1,228 +1,199 @@
 # Playable Knight of Danika — research log
 
-Goal: restore the Knight of Danika / Gatekeeper as a stable allied class, including a real player-side/rear battle presentation and safe greatsword support instead of relying on cheat-only behavior or fallback graphics.
+Goal: restore the Knight of Danika / Gatekeeper as a stable allied class with a real rear/player-side battle presentation and safe greatsword support, without replacing its identity with Dragoon or changing the original enemy/front presentation.
 
-## Confirmed class identities
+## Locked identities and Rev-A layout
 
 - Player Dragoon: class ID `0x14`.
 - Knight of Danika / Gatekeeper: class ID `0x71`.
 - Hidden/enemy Dragoon-like entry: class ID `0x9C`.
+- True class-record base: RAM `0x80187C34`.
+- Class-record stride: `0x48`.
+- Dragoon `0x14` record: `0x801881D4`.
+- Danika `0x71` record: `0x80189BFC`.
+- hidden Dragoon `0x9C` record: `0x8018A814`.
+- Verified Rev-A ROM SHA-1: `d26b14bee422a09581ce438d45ba9fec9783fbb8`.
 
-These IDs are the working reverse-engineering anchors for the restoration.
+The older anchor `0x80187C62` is `record+0x2E`, not the start of a record. `D_80187C79` is `record+0x45`.
 
-## Corrected Rev-A class table contract
+## Eliminated false path: text resources
 
-The true Rev-A class-record origin is RAM `0x80187C34`, with stride `0x48` bytes.
+`func_8017FC48` and the `0x01DE....` banks are text/string formatting resources, not battle graphics. They must never be patched as sprite data.
 
-True aligned record starts:
+## Important correction: the `0x315736` renderer path is static scene data
 
-- Dragoon `0x14` -> `0x801881D4`
-- Knight of Danika `0x71` -> `0x80189BFC`
-- hidden/enemy Dragoon `0x9C` -> `0x8018A814`
+Earlier research correctly proved that `func_801AD13C` is a genuine visual resource loader/cache, but incorrectly promoted one of its callers to the normal fighter sprite path.
 
-An earlier research pass incorrectly treated `0x80187C62` as the full-record origin. It is actually the `record+0x2E` field anchor used by a family of accessors. Likewise `0x80187C79` is `record+0x45`, not `record+0x17`.
-
-The old computed addresses are still meaningful as addresses of the `+0x2E` field for each class:
-
-- Dragoon `0x14` field `+0x2E` -> `0x80188202`
-- Danika `0x71` field `+0x2E` -> `0x80189C2A`
-- hidden Dragoon `0x9C` field `+0x2E` -> `0x8018A842`
-
-They are metadata fields, not sprite pointers.
-
-Verified Rev-A ROM SHA-1: `d26b14bee422a09581ce438d45ba9fec9783fbb8`.
-
-## Why the alignment correction matters
-
-`func_8016EBC4` independently indexes `D_80187C34 + class_id * 0x48`, proving the true record origin. The CI audit now locks this alignment so future research cannot regress to the older `0x62`-as-record-start model.
-
-All class-field semantics from this point forward are expressed relative to the true `0x80187C34` record origin.
-
-## Class-field accessor family
-
-The accessor family in `asm/40E80.s` indexes class metadata with stride `0x48`. Several accessors use anchors inside the record, including the historical `D_80187C62` (`record+0x2E`) and `D_80187C79` (`record+0x45`).
-
-The important safety lesson is that these accessors serve multiple gameplay/UI consumers. We must not redirect an entire Danika record to Dragoon just because a particular field is useful for player-side compatibility.
-
-## False lead eliminated: `func_8017FC48` is text formatting
-
-The deeper bridge tracer conclusively rules out `func_8017FC48` as the battle graphics loader.
-
-Evidence includes string-length/copy behavior, zero-terminated output construction, control-code parsing and selection of `0x01DE....` banks that feed text bytes.
-
-The following addresses in that path are therefore classified as text/string-resource banks, not sprite pointers:
-
-- `0x01DE6446`
-- `0x01DE5B60`
-- `0x01DE7098`
-- `0x01DE365E`
-- `0x01DE2E4E`
-- `0x01DE4258`
-
-This closed a dangerous false path before any graphics patch was attempted.
-
-## Real renderer path discovered
-
-The search has reached real N64 display-list construction.
-
-`func_801AD6C4`:
-
-- participates in display-list rendering;
-- touches the graphics state/global path including `D_800E9BA0`;
-- receives a battle object whose descriptor is reached through `object+0x34`;
-- reads class IDs from descriptor fields `+0x4B` and `+0x4F`;
-- calls a class-field accessor during rendering.
-
-One accessor used there resolves true `record+0x04`. For `0x14`, `0x71` and `0x9C` that field is `0x01`; the renderer only special-cases value `2`, consistent with scale/size handling rather than sprite selection. This field is therefore not our missing rear-sprite selector.
-
-`func_801AD6C4` has a single identified caller, `func_801B3868`.
-
-## Concrete battle visual selector — proven
-
-The investigation has now reached the exact per-participant field that chooses the loaded battle visual set.
-
-The proven chain is:
+The proven static chain is:
 
 ```text
 resource 0x315736
   -> D_801BA6D8
-  -> 0x1A-byte battle record
-  -> record+0x00
-  -> func_801B3D1C return value
-  -> descriptor+0x50
-  -> func_801AD13C argument 0
-  -> 1-based visual pointer-table index in package 0x3B6CD0
+  -> 0x1A-byte records
+  -> func_801B3D1C
+  -> scene descriptor
+  -> func_801AD13C
+  -> package 0x3B6CD0
 ```
 
-At the same time:
+Direct Rev-A ROM extraction disproves the assumption that these are normal combatant records:
+
+- `0x315736` resolves through the generic resource base to ROM offset `0x8A9986`;
+- its header size is `0x2B00`;
+- the parsed `record+0x02` values do not enumerate class IDs `0x14`, `0x71` or `0x9C`;
+- the record selectors are scene-style values such as `0xB7`–`0xCF`;
+- the data is consistent with static/auxiliary battle-scene objects, not the player/enemy fighter roster.
+
+`func_801AD368` is also not the normal combatant loader: its only identified caller supplies the fixed resource ID `0x109F95E` and index `0x3A`, again indicating a special scene resource.
+
+Therefore:
+
+- `func_801AD13C` remains a real visual loader;
+- the previously traced `0x315736 -> func_801AD13C` route is **not** the place to patch playable Danika;
+- `danika_visual_override.h` remains deliberately unwired/fail-closed until the true class-driven combatant visual path is proven.
+
+This correction prevents a dangerous patch to scenery/object rendering.
+
+## `D_801BA72D` is not an ally/enemy flag
+
+`D_801BA72D` is an eight-mode resource-group selector sourced through `D_801B9540`. Its values include normal and high-bit-set selectors. It must not be treated as a boolean team/ownership source.
+
+Likewise, render-context bits from the static scene-object records are real renderer inputs but are not independently proven player/enemy ownership.
+
+## Strongest current clue: class tail metadata
+
+The final bytes of the aligned class records contain a very strong structural relationship between the two Dragoon entries and Danika.
 
 ```text
-battle record+0x02 -> descriptor+0x4C class word
-                       low class byte at descriptor+0x4F
+field       Dragoon 0x14   Danika 0x71   hidden Dragoon 0x9C
+record+40       1F             1F               1C
+record+41       02             00               02
+record+42       06             00               06
+record+43       05             00               05
+record+44       11             00               11
+record+45       00             00               14
+record+46       FF             03               04
+record+47       02             02               02
 ```
 
-`func_801AD13C` is a real visual resource loader/cache. It loads package `0x3B6CD0`, uses argument 0 as a 1-based pointer-table selector, decompresses four resource components through `func_8009DD38`, and caches the result using the selector plus class word.
+Two facts are now locked:
 
-Therefore **battle record `+0x00` is the concrete visual asset selector**. This is no longer a hypothesis.
+1. Hidden Dragoon `0x9C` and playable Dragoon `0x14` differ at only `+0x40`, `+0x45` and `+0x46` across the entire `0x48`-byte record.
+2. Hidden Dragoon explicitly stores `0x14` at `record+0x45`.
 
-The first diagnostic playable-Danika patch must therefore keep class identity `0x71` and substitute only this visual selector (or its descriptor `+0x50` copy) with the proven player-Dragoon selector, and only when allied ownership has independently been proven.
+The global alias audit found many other hidden/enemy entries in the `0x89`–`0xA2` region whose `+0x45` points back to a normal class, often with the records differing only at `+0x45/+0x46` or one additional tail field. This establishes `+0x45` as a genuine class-reference/alias mechanism rather than coincidence.
 
-`mods/playable-knight-of-danika/danika_visual_override.h` already implements this contract fail-closed: donor selector `0` means unresolved and returns vanilla data; enemy/unknown-side Danika and every non-`0x71` class remain untouched.
+However, `+0x45` is used by gameplay class accessors too, so it is **not yet safe** to set Danika `+0x45 = 0x14` globally. That could change more than presentation.
 
-The exact Dragoon player-side selector value is still pending extraction from live battle data/resource `0x315736`; it is deliberately not guessed.
+The more suspicious Danika signature is `+0x41..+0x44 = 00 00 00 00`, while both Dragoon records share `02 06 05 11`. These fields are now the highest-priority consumer-tracing targets.
 
-## Battle render context
+## Current class-driven investigation
 
-The battle record field `+0x0C` is also proven to reach the renderer:
+The project has pivoted away from ranking functions merely because they touch class metadata.
 
-- bit 0 selects object state `2` or `3`;
-- bit 1 reaches `func_801AD6C4` as renderer argument `a2 & 2`.
+Confirmed non-graphics paths include:
 
-These bits are genuine render-context inputs but are **not yet proven ownership/team flags**.
+- `func_8016E52C`: leads into the already eliminated text-formatting route;
+- `func_8016EBC4`: character/class progression/stat logic using `unit+0x12` as class and `unit+0x13` as a counter;
+- adjacent setup callers that do not reach ROM graphics loaders.
 
-Likewise `D_801BA72D` is now classified as an eight-mode resource-group selector selected through `D_801B9540`, not a boolean player/enemy flag. It must not be used directly as the allied-side gate.
+The current strategy is to trace every consumer of class-tail anchors:
 
-See `RENDER-CONTEXT.md` for the locked dataflow and safety rules.
+- `D_80187C75` = `record+0x41`
+- `D_80187C76` = `record+0x42`
+- `D_80187C77` = `record+0x43`
+- `D_80187C78` = `record+0x44`
+- `D_80187C79` = `record+0x45`
+- `D_80187C7A` = `record+0x46`
 
-## Greatsword decision: Dragoon is the compatibility baseline
+and classify each consumer as gameplay, UI, battle setup, animation, equipment, or graphics/resource loading before any field is copied from Dragoon.
 
-The allied Knight of Danika will use a **greatsword / large-sword weapon family**.
+## Dragoon remains the compatibility donor, not the visual replacement
 
-Player Dragoon `0x14` is the structural donor for weapon compatibility because it provides a known player-side humanoid sword-user baseline and is already our preferred pose/animation reference for the restored rear presentation.
+For the final allied Knight of Danika:
 
-This does **not** mean replacing Danika with Dragoon.
+What may be inherited only after proof:
 
-What may be inherited only after data-flow proof:
-
-1. player-side stance skeleton;
+1. player-side stance/pose skeleton;
 2. rear-facing attack frame sequencing;
-3. weapon hand/anchor offsets;
-4. greatsword-compatible animation timing/events;
-5. equipment-family eligibility if class `0x71` lacks a safe player-side entry;
-6. side-specific animation metadata needed to prevent invalid resource access.
+3. weapon-hand/anchor geometry;
+4. large-sword animation timing/events;
+5. narrowly scoped side-specific metadata required for a valid player presentation.
 
 What remains Danika-specific:
 
 - class ID `0x71`;
-- original enemy/front presentation;
-- armor, helmet, sword design, silhouette and green/gold/white palette;
+- original enemy/front graphics;
+- armor, helmet/crest, sword design, silhouette;
+- green/gold/white palette;
 - class identity/name;
 - Danika stats/behavior unless separately redesigned later.
 
-`tools/scan_danika_weapon_compat.py` ranks fields where player Dragoon `0x14` and hidden Dragoon `0x9C` agree while Danika `0x71` differs, then correlates those offsets with known accessors and callers. Those matches are candidates only; unknown fields are never automatically copied.
+The final rear sprite must look like a native rear view of the Knight of Danika, not a recolored Dragoon.
 
-See `WEAPON-RESTORATION.md` for the weapon safety contract.
+## Diagnostic patch contract
 
-## Why `0x9C` still matters
+The first runtime proof-of-concept will happen only after the true fighter visual/animation path and allied ownership source are identified.
 
-The hidden Dragoon-like entry provides a second reference for identifying structural values shared with playable Dragoon. If `0x14 == 0x9C != 0x71`, that is useful evidence that a field may belong to a Dragoon-compatible subsystem.
+It will:
 
-It is not enough by itself to prove weapon or graphics semantics. Downstream consumers must still be identified.
+- match class `0x71` only;
+- match proven allied/player-side context only;
+- keep class identity `0x71`;
+- temporarily borrow the known-safe player Dragoon presentation resource only as a diagnostic;
+- leave enemy/front Danika untouched;
+- leave every other class untouched;
+- fail closed to vanilla when context or donor data is unresolved.
 
-## Restoration strategy
-
-1. Extract/observe `resource 0x315736` in a real battle and compare `record+0x00`, `record+0x02` and `record+0x0C` for `0x14`, `0x71` and `0x9C`.
-2. Independently prove the player/enemy ownership source; never infer it solely from camera/render flags or `D_801BA72D`.
-3. Run the first diagnostic substitution: class `0x71` + proven allied side -> player Dragoon visual selector; class stays `0x71`.
-4. Preserve original Knight of Danika enemy/front path unchanged.
-5. Once the diagnostic proves the visual path, build the missing allied/rear Danika set using Dragoon pose/animation geometry where compatible.
-6. Preserve Danika armor, helmet, sword design, silhouette and palette rather than simply showing a Dragoon.
-7. Trace greatsword equipment acceptance and animation consumers before enabling the family for `0x71`.
-8. Audit formation, menu, equipment, attack, save/load and post-battle paths for enemy-only assumptions.
+If that diagnostic enters battle, idles, attacks, receives damage and exits to the map safely, the missing player-side presentation path is proven. Only then will the real Danika rear asset set replace the temporary donor.
 
 ## Automated evidence
 
-Current research tooling includes:
+Important current tools include:
 
-- `tools/audit_knight_of_danika.py` — locks IDs, true table base/stride and field anchors;
-- `tools/audit_danika_class_layout.py` — extracts aligned 0x48-byte records and maps accessors to true offsets;
-- `tools/scan_danika_battle_lookup.py` — searches class lookup consumers;
-- `tools/trace_danika_asset_bridge.py` — permanently classifies the old `func_8017FC48` route as text;
-- `tools/scan_danika_gfx_candidates.py` — ranks graphics-path candidates;
-- `tools/trace_danika_gfx_pipeline.py` — deep-traces renderer candidates;
-- `tools/scan_danika_renderer_accessors.py` — correlates class fields with renderer paths;
-- `tools/scan_danika_battle_object_class_reads.py` — tracks battle-object class selectors;
-- `tools/scan_danika_weapon_compat.py` — ranks Dragoon-compatible weapon/animation field candidates;
-- `tools/trace_danika_render_context_flags.py` — locks the `record+0x0C` renderer-context chain;
-- `tools/trace_danika_resource_group_selector.py` — prevents `D_801BA72D` from being misclassified as side;
-- `tools/trace_danika_visual_descriptor_init.py` — inventories the real visual loader/cache;
-- `tools/trace_danika_visual_asset_selector.py` — proves `record+0x00 -> descriptor+0x50 -> visual package 0x3B6CD0`;
-- `tools/test_danika_gate_contract.py` — locks allied-only fail-closed class gating;
-- `tools/test_danika_visual_override.py` — locks visual donor substitution to `0x71 + ALLIED + resolved donor` only.
+- `tools/audit_knight_of_danika.py` — locks IDs/table contracts;
+- `tools/audit_danika_class_layout.py` — verifies aligned `0x48` records;
+- `tools/audit_danika_class_aliases.py` — maps `record+0x45` aliases globally;
+- `tools/trace_danika_tail_field_consumers.py` — inventories consumers of `+0x41..+0x46`;
+- `tools/trace_danika_asset_bridge.py` — permanently eliminates the text-resource false path;
+- `tools/trace_danika_dynamic_visual_loader.py` — documents why the special/static visual callers are not normal fighter loaders;
+- `tools/trace_danika_class_asset_consumers.py` — starts from verified class-table users instead of renderer guesses;
+- `tools/scan_danika_weapon_compat.py` — ranks Dragoon-compatible candidates without copying unknown fields;
+- `tools/test_danika_gate_contract.py` — locks allied-only fail-closed gating;
+- `tools/test_danika_visual_override.py` — locks class-specific visual donor safety.
 
-`.github/workflows/danika-research.yml` executes the research probes and publishes their reports as CI artifacts.
+The CI workflow now triggers on `tools/**`, so future reverse-engineering probes are automatically exercised and archived.
 
 ## Safety rules
 
-- Never overwrite global Dragoon resources to make Danika work.
-- Never replace the entire Danika class record with Dragoon's record.
-- Never replace descriptor `+0x4C` / class identity with Dragoon; Danika stays `0x71`.
-- Never redirect all enemy-only classes to one player sprite.
-- Do not assume class metadata fields are direct graphics pointers without data-flow proof.
-- Do not patch `0x01DE....` text banks as graphics.
-- Do not use `D_801BA72D` or unproven render-context bits as allied ownership.
-- Do not equip a greatsword by blindly forcing an item ID.
-- Greatsword enablement requires a valid equipment path, player-side animation, weapon anchor and resource set.
+- Never overwrite global Dragoon resources.
+- Never replace the whole Danika record with Dragoon's record.
+- Never globally set Danika `+0x45` to Dragoon until all consumers are classified.
+- Never copy `+0x41..+0x46` blindly.
+- Never use the static `0x315736` scenery path as the fighter sprite hook.
+- Never use `D_801BA72D` or unproven render bits as ownership.
+- Never patch `0x01DE....` text banks as graphics.
 - Preserve enemy/front Danika behavior.
-- Prefer a class-specific allied-side override over broad renderer changes.
-- Unsupported/unresolved paths must fail closed to known-safe/vanilla behavior rather than dereference guessed data.
+- Prefer a narrow `class 0x71 + proven allied side` hook.
+- Unsupported/unresolved paths must fall back to vanilla behavior.
 
 ## Current milestone
 
-Completed:
+M1 remains:
 
-- class identities locked;
-- true class-record origin corrected and CI-verified;
-- old text-resource false path eliminated;
-- real display-list renderer reached;
-- battle descriptor class-byte path identified;
-- render-context bit chain proven without misclassifying it as ownership;
-- eight-mode resource-group selector separated from side semantics;
-- **concrete battle visual selector proven (`record+0x00 -> descriptor+0x50 -> func_801AD13C -> package 0x3B6CD0`);**
-- fail-closed visual override helper implemented;
-- Dragoon selected and documented as the greatsword/animation compatibility baseline;
-- weapon compatibility scanner added to CI.
+> Knight of Danika `0x71` can be placed in a player unit, rendered from the allied side with a valid rear presentation, enter battle, idle, attack, receive damage, and return to the map without a crash.
+
+Completed toward M1:
+
+- class IDs and true record layout locked;
+- text-resource false path eliminated;
+- genuine visual loader identified but its static-scene callers separated from fighter rendering;
+- `D_801BA72D` prevented from being misused as ownership;
+- global `+0x45` alias mechanism demonstrated;
+- hidden Dragoon `0x9C -> 0x14` relationship proven;
+- Danika's missing-looking `+0x41..+0x44` block isolated;
+- CI now tracing the exact consumers of the suspicious tail fields.
 
 Next blocking discovery:
 
-Obtain the live/ROM-derived `record+0x00` values for player Dragoon `0x14`, Danika `0x71` and hidden Dragoon `0x9C`, and independently prove participant ownership. Once those two values are known, the diagnostic Dragoon rear-resource substitution can be wired without changing enemy Danika or class identity.
+**Classify `record+0x41..+0x46`, especially the shared Dragoon values `02 06 05 11`, and follow whichever consumer reaches the real combatant animation/visual loader.**
