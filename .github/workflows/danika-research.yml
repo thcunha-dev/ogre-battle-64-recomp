@@ -1,0 +1,38 @@
+name: Knight of Danika Research
+
+on:
+  push:
+    branches:
+      - mod/playable-knight-of-danika
+    paths:
+      - 'tools/audit_knight_of_danika.py'
+      - 'tools/scan_danika_battle_lookup.py'
+      - 'mods/playable-knight-of-danika/**'
+      - '.github/workflows/danika-research.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reverse-engineering-probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate established class-table contracts
+        run: python3 tools/audit_knight_of_danika.py
+
+      - name: Scan battle lookup candidates
+        run: |
+          python3 tools/scan_danika_battle_lookup.py \
+            --output danika-battle-lookup-report.txt
+
+      - name: Upload reverse-engineering report
+        uses: actions/upload-artifact@v4
+        with:
+          name: danika-battle-lookup-report
+          path: danika-battle-lookup-report.txt
+          if-no-files-found: error
+          retention-days: 14
