@@ -35,6 +35,9 @@ jobs:
       - name: Scan external class-to-visual table candidates
         run: python3 tools/scan_danika_external_class_visual_tables.py
 
+      - name: Trace class-pair dispatch table
+        run: python3 tools/trace_danika_class_dispatch.py
+
       - name: Scan battle lookup candidates
         run: python3 tools/scan_danika_battle_lookup.py --output danika-battle-lookup-report.txt
 
@@ -122,6 +125,7 @@ jobs:
             danika-class-aliases.txt
             danika-tail-field-consumers.txt
             danika-external-class-visual-tables.txt
+            danika-class-dispatch.txt
             danika-battle-lookup-report.txt
             danika-asset-bridge-report.txt
             danika-gfx-candidate-report.txt
