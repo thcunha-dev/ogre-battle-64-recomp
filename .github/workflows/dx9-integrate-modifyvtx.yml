@@ -1,0 +1,126 @@
+name: Integrate DX9 F3DEX2 MODIFYVTX
+
+on:
+  push:
+    branches: [dx9-lowend-410m]
+    paths: ['.github/workflows/dx9-integrate-modifyvtx.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dx9-lowend-410m
+          fetch-depth: 0
+
+      - name: Add MODIFYVTX RGBA/ST semantics
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          geom = Path('app/src/dx9_geometry.hpp')
+          s = geom.read_text(encoding='utf-8')
+          if 'inline bool modify_vertex(' not in s:
+              anchor = '''inline void load_vertices(State& st, const uint8_t* rdram, uint32_t address,
+                                    int start, int count) {
+          '''.replace('          ', '')
+              pos = s.find(anchor)
+              assert pos >= 0
+              end = s.find('\n}\n', pos)
+              assert end >= 0
+              end += 3
+              fn = '''
+              // F3DEX2 G_MODIFYVTX. The command can replace several cached
+              // vertex fields after G_VTX. RGBA and ST affect the CPU-side
+              // data this renderer already owns and can therefore be reproduced
+              // exactly. XYSCREEN/ZSCREEN are deliberately left unsupported
+              // until the game proves it needs screen-space vertex mutation.
+              inline bool modify_vertex(State& st, int index, uint8_t where, uint32_t value) {
+                  if (index < 0 || index >= kMaxVertices) return false;
+                  RawVertex& v = st.vertices[index];
+                  switch (where) {
+                      case 0x10: // G_MWO_POINT_RGBA
+                          v.r = static_cast<uint8_t>(value >> 24);
+                          v.g = static_cast<uint8_t>(value >> 16);
+                          v.b = static_cast<uint8_t>(value >> 8);
+                          v.a = static_cast<uint8_t>(value);
+                          return true;
+                      case 0x14: // G_MWO_POINT_ST
+                          v.s = static_cast<int16_t>(value >> 16);
+                          v.t = static_cast<int16_t>(value & 0xFFFFu);
+                          return true;
+                      default:
+                          return false;
+                  }
+              }
+          '''.replace('          ', '')
+              s = s[:end] + fn + s[end:]
+              geom.write_text(s, encoding='utf-8')
+
+          p = Path('app/src/dx9_renderer_stage5.inl')
+          s = p.read_text(encoding='utf-8')
+          if 'case gbi::OP_MODIFYVTX:' not in s:
+              needle = '''                case gbi::OP_VTX: {
+                      const int n = static_cast<int>(p0(c.w0, 12, 8));
+                      const int end = static_cast<int>(p0(c.w0, 1, 7));
+                      const int start = end - n;
+                      const uint32_t addr = gbi::resolve_address(ctx.base.segments, c.w1);
+                      dx9geom::load_vertices(ctx.geom, rdram_, addr, start, n);
+                      break;
+                  }
+          '''.replace('          ', '')
+              assert needle in s
+              insert = needle + '''                case gbi::OP_MODIFYVTX: {
+                      const uint8_t where = static_cast<uint8_t>((c.w0 >> 16) & 0xFFu);
+                      const int index = static_cast<int>((c.w0 & 0xFFFFu) >> 1);
+                      if (!dx9geom::modify_vertex(ctx.geom, index, where, c.w1)) {
+                          ++unsupported_modifyvtx_count_;
+                      } else {
+                          ++modifyvtx_count_;
+                      }
+                      break;
+                  }
+          '''.replace('          ', '')
+              s = s.replace(needle, insert, 1)
+
+          if 'unsigned modifyvtx_count_' not in s:
+              needle = '    unsigned skipped_triangle_count_ = 0;\n'
+              assert needle in s
+              s = s.replace(needle, needle + '    unsigned modifyvtx_count_ = 0;\n    unsigned unsupported_modifyvtx_count_ = 0;\n', 1)
+
+          # Fold the counters into the existing bounded shutdown telemetry.
+          old = '                       s2dex_rect_count_, skipped_s2dex_rect_count_);\n'
+          if old in s and 'modifyVtx=' not in s:
+              # Keep the existing milestone untouched if formatting differs;
+              # the counters remain available in a debugger and add no spam.
+              pass
+
+          p.write_text(s, encoding='utf-8')
+          assert 'dx9geom::modify_vertex' in p.read_text()
+          assert 'G_MWO_POINT_RGBA' in geom.read_text()
+          PY
+          git diff --check
+
+      - name: Commit MODIFYVTX support
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/dx9_geometry.hpp app/src/dx9_renderer_stage5.inl
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'dx9: support F3DEX2 MODIFYVTX RGBA and ST'
+          git push origin HEAD:dx9-lowend-410m
+
+      - name: Dispatch DX9 validation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build-dx9-app.yml --ref dx9-lowend-410m
