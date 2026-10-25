@@ -22,6 +22,7 @@ on:
       - 'tools/trace_danika_descriptor_class_provenance.py'
       - 'tools/trace_danika_descriptor_class_semantics.py'
       - 'tools/trace_danika_participant_link.py'
+      - 'tools/trace_danika_renderer_facing.py'
       - 'mods/playable-knight-of-danika/**'
       - '.github/workflows/danika-research.yml'
   workflow_dispatch:
@@ -89,6 +90,9 @@ jobs:
       - name: Trace live battle participant bridge
         run: python3 tools/trace_danika_participant_link.py
 
+      - name: Trace renderer facing argument
+        run: python3 tools/trace_danika_renderer_facing.py
+
       - name: Upload reverse-engineering reports
         uses: actions/upload-artifact@v4
         with:
@@ -110,5 +114,6 @@ jobs:
             danika-descriptor-class-provenance.txt
             danika-descriptor-class-semantics.txt
             danika-participant-link.txt
+            danika-renderer-facing-trace.txt
           if-no-files-found: error
           retention-days: 14
