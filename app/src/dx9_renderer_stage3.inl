@@ -182,11 +182,12 @@ class DX9Renderer final : public ultramodern::renderer::RendererContext {
         D3DCAPS9 caps{};
         if (SUCCEEDED(d3d_->GetDeviceCaps(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, &caps))) {
             fprintf(stderr, "[dx9] caps: VS=%u.%u PS=%u.%u maxTexture=%ux%u HW-T&L=%d\n",
-                    D3DSHADER_VERSION_MAJOR(caps.VertexShaderVersion),
-                    D3DSHADER_VERSION_MINOR(caps.VertexShaderVersion),
-                    D3DSHADER_VERSION_MAJOR(caps.PixelShaderVersion),
-                    D3DSHADER_VERSION_MINOR(caps.PixelShaderVersion),
-                    caps.MaxTextureWidth, caps.MaxTextureHeight,
+                    static_cast<unsigned>(D3DSHADER_VERSION_MAJOR(caps.VertexShaderVersion)),
+                    static_cast<unsigned>(D3DSHADER_VERSION_MINOR(caps.VertexShaderVersion)),
+                    static_cast<unsigned>(D3DSHADER_VERSION_MAJOR(caps.PixelShaderVersion)),
+                    static_cast<unsigned>(D3DSHADER_VERSION_MINOR(caps.PixelShaderVersion)),
+                    static_cast<unsigned>(caps.MaxTextureWidth),
+                    static_cast<unsigned>(caps.MaxTextureHeight),
                     (caps.DevCaps & D3DDEVCAPS_HWTRANSFORMANDLIGHT) ? 1 : 0);
         }
         if (!create_device()) return;
@@ -354,7 +355,6 @@ class DX9Renderer final : public ultramodern::renderer::RendererContext {
         release_scanout_texture();
         for (auto& kv : framebuffers_) release_framebuffer(kv.second);
         framebuffers_.clear();
-        // Tile textures live in D3DPOOL_MANAGED and survive Reset.
     }
 
     bool reset_device_if_needed() {
@@ -726,9 +726,6 @@ class DX9Renderer final : public ultramodern::renderer::RendererContext {
 
     void draw_texrect(RdpState& st, uint32_t geom0, uint32_t geom1,
                       uint32_t half1, uint32_t half2, bool flip) {
-        // The generic combiner is deliberately not approximated by fixed
-        // function. COPY is exact and useful for framebuffer/background blits;
-        // 1/2-cycle draws wait for the SM3 combiner stage.
         const uint32_t cyc = (st.othermode_h >> 20) & 3u;
         if (cyc != kCycCopy) {
             ++skipped_combiner_texrect_count_;
@@ -970,7 +967,7 @@ class DX9Renderer final : public ultramodern::renderer::RendererContext {
                 }
             }
         }
-        staging->UnlockRect(0);
+        staging->UnlockRect();
         staging->Release();
         fb.dirty = false;
         ++framebuffer_readbacks_;
