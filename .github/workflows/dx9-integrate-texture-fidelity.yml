@@ -1,0 +1,119 @@
+name: Integrate DX9 texture fidelity
+
+on:
+  push:
+    branches: [dx9-lowend-410m]
+    paths: ['.github/workflows/dx9-integrate-texture-fidelity.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dx9-lowend-410m
+          fetch-depth: 0
+
+      - name: Match validated RDP texture filtering and tile shifts
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('app/src/dx9_renderer_stage4.inl')
+          s = p.read_text(encoding='utf-8')
+
+          if 'uint8_t shifts = 0, shiftt = 0;' not in s:
+              needle = '    uint8_t fmt = 0, siz = 0;\n'
+              # This exact field occurs in TileGpu after origin_s/origin_t.
+              pos = s.find('struct TileGpu {')
+              assert pos >= 0
+              field = s.find(needle, pos)
+              assert field >= 0
+              s = s[:field] + needle.join([]) if False else s
+              s = s[:field] + '    uint8_t fmt = 0, siz = 0;\n    uint8_t shifts = 0, shiftt = 0;\n' + s[field+len(needle):]
+
+          # Keep shifts current even when texture pixels remain cached.
+          old = '''        if (g.texture && g.width == w && g.height == h && g.origin_s == x0 && g.origin_t == y0 &&
+              g.source_generation == t.source_generation && g.palette_stamp == pal_stamp &&
+              g.fmt == t.fmt && g.siz == t.siz) return true;
+          '''.replace('          ', '')
+          if old in s:
+              new = '''        if (g.texture && g.width == w && g.height == h && g.origin_s == x0 && g.origin_t == y0 &&
+              g.source_generation == t.source_generation && g.palette_stamp == pal_stamp &&
+              g.fmt == t.fmt && g.siz == t.siz) {
+              g.shifts = t.shifts; g.shiftt = t.shiftt;
+              return true;
+          }
+          '''.replace('          ', '')
+              s = s.replace(old, new, 1)
+
+          old = '        g.width=w; g.height=h; g.origin_s=x0; g.origin_t=y0; g.fmt=t.fmt; g.siz=t.siz;\n'
+          if old in s and 'g.shifts=t.shifts' not in s[s.find(old):s.find(old)+220]:
+              s = s.replace(old, old + '        g.shifts=t.shifts; g.shiftt=t.shiftt;\n', 1)
+
+          old = '''    static void normalized_uv(const TileGpu* g, float raw_s, float raw_t, float& u, float& v) {
+              if (!g || g->width<=0 || g->height<=0) { u=0; v=0; return; }
+              u=(raw_s-static_cast<float>(g->origin_s))/static_cast<float>(g->width);
+              v=(raw_t-static_cast<float>(g->origin_t))/static_cast<float>(g->height);
+          }
+          '''.replace('          ', '')
+          if old in s:
+              new = '''    static float apply_tile_shift(float coord, uint8_t shift) {
+              shift &= 0x0Fu;
+              if (shift == 0) return coord;
+              if (shift <= 10) return coord / static_cast<float>(1u << shift);
+              return coord * static_cast<float>(1u << (16u - shift));
+          }
+
+              static void normalized_uv(const TileGpu* g, float raw_s, float raw_t, float& u, float& v) {
+              if (!g || g->width<=0 || g->height<=0) { u=0; v=0; return; }
+              raw_s = apply_tile_shift(raw_s, g->shifts);
+              raw_t = apply_tile_shift(raw_t, g->shiftt);
+              u=(raw_s-static_cast<float>(g->origin_s))/static_cast<float>(g->width);
+              v=(raw_t-static_cast<float>(g->origin_t))/static_cast<float>(g->height);
+          }
+          '''.replace('          ', '')
+              s = s.replace(old, new, 1)
+
+          # WebGL reference: G_TF_BILERP is exactly value 2, not any non-zero filter mode.
+          s = s.replace('const bool bilerp=((st.othermode_h>>12)&3u)!=0u;',
+                        'const bool bilerp=((st.othermode_h>>12)&3u)==2u;')
+          s = s.replace('const bool bilerp = ((st.othermode_h >> 12) & 3u) != 0u;',
+                        'const bool bilerp = ((st.othermode_h >> 12) & 3u) == 2u;')
+          p.write_text(s, encoding='utf-8')
+
+          p = Path('app/src/dx9_renderer_stage5.inl')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('const bool bilerp = ((st.othermode_h >> 12) & 3u) != 0u;',
+                        'const bool bilerp = ((st.othermode_h >> 12) & 3u) == 2u;')
+          p.write_text(s, encoding='utf-8')
+
+          chk = Path('app/src/dx9_renderer_stage4.inl').read_text()
+          assert 'apply_tile_shift' in chk
+          assert 'g.shifts=t.shifts' in chk or 'g.shifts = t.shifts' in chk
+          assert '!=0u' not in '\n'.join(line for line in chk.splitlines() if 'bilerp' in line)
+          PY
+          git diff --check
+
+      - name: Commit texture fidelity fixes
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/dx9_renderer_stage4.inl app/src/dx9_renderer_stage5.inl
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'dx9: match tile shift and bilerp semantics'
+          git push origin HEAD:dx9-lowend-410m
+
+      - name: Dispatch DX9 validation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build-dx9-app.yml --ref dx9-lowend-410m
