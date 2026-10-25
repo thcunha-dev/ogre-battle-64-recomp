@@ -5,6 +5,7 @@ on:
     branches:
       - dx9-lowend-410m
     paths:
+      - 'dx9/CMakeLists.txt'
       - 'app/src/dx9_renderer.cpp'
       - 'app/src/dx9_renderer.inl'
       - 'app/src/dx9_renderer_stage3.inl'
@@ -14,6 +15,7 @@ on:
       - 'app/src/dx9_s2dex.hpp'
       - 'app/src/dx9_texture.hpp'
       - 'app/src/dx9_rdp_state.hpp'
+      - 'app/src/dx9_depth.hpp'
       - 'app/src/dx9_shader.hpp'
       - 'app/src/dx9_rdp_ps.hlsl'
       - 'app/src/renderer.hpp'
@@ -35,6 +37,18 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: false
+
+      - name: Validate low-end CMake wrapper contract
+        shell: bash
+        run: |
+          set -euxo pipefail
+          grep -q 'set(OGRE_USE_RT64 OFF' dx9/CMakeLists.txt
+          grep -q 'add_compile_definitions(OGRE_USE_DX9=1)' dx9/CMakeLists.txt
+          grep -q 'target_link_libraries(ogrebattle64 PRIVATE d3d9)' dx9/CMakeLists.txt
+          if grep -Eqi '(d3d12|dxgi|vulkan|rt64 PRIVATE)' dx9/CMakeLists.txt; then
+            echo '::error::DX9 wrapper links or selects a modern renderer.'
+            exit 1
+          fi
 
       - name: Prepare LLVM-MinGW
         shell: bash
@@ -83,12 +97,12 @@ jobs:
           )
           "$CXX" "${COMMON[@]}" -c app/src/dx9_renderer.cpp -o /tmp/dx9_renderer.o
           "$CXX" "${COMMON[@]}" -c app/src/gbi.cpp -o /tmp/gbi.o
-          printf '#include "dx9_texture.hpp"\n#include "dx9_rdp_state.hpp"\n#include "dx9_shader.hpp"\n#include "dx9_geometry.hpp"\n#include "dx9_s2dex.hpp"\n' > /tmp/dx9_core_tu.cpp
+          printf '#include "dx9_texture.hpp"\n#include "dx9_rdp_state.hpp"\n#include "dx9_shader.hpp"\n#include "dx9_geometry.hpp"\n#include "dx9_s2dex.hpp"\n#include "dx9_depth.hpp"\n' > /tmp/dx9_core_tu.cpp
           "$CXX" "${COMMON[@]}" -c /tmp/dx9_core_tu.cpp -o /tmp/dx9_core.o
           test -s /tmp/dx9_renderer.o
           test -s /tmp/gbi.o
           test -s /tmp/dx9_core.o
-          echo "Standalone DX9 stage5 renderer and texture/state/shader/geometry/S2DEX2 cores compile for Windows x86-64."
+          echo "Standalone DX9 stage5 renderer and texture/state/shader/geometry/S2DEX2/depth cores compile for Windows x86-64."
 
       - name: Verify D3D9-only renderer object
         shell: bash
