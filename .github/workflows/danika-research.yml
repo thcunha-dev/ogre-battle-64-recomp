@@ -12,6 +12,7 @@ on:
       - 'tools/scan_danika_gfx_candidates.py'
       - 'tools/trace_danika_gfx_pipeline.py'
       - 'tools/scan_danika_renderer_accessors.py'
+      - 'tools/scan_danika_battle_object_class_reads.py'
       - 'mods/playable-knight-of-danika/**'
       - '.github/workflows/danika-research.yml'
   workflow_dispatch:
@@ -49,6 +50,9 @@ jobs:
       - name: Correlate class fields with renderer paths
         run: python3 tools/scan_danika_renderer_accessors.py
 
+      - name: Trace battle object class selectors
+        run: python3 tools/scan_danika_battle_object_class_reads.py
+
       - name: Upload reverse-engineering reports
         uses: actions/upload-artifact@v4
         with:
@@ -60,5 +64,6 @@ jobs:
             danika-gfx-candidate-report.txt
             danika-gfx-pipeline-trace.txt
             danika-renderer-accessor-report.txt
+            danika-battle-object-class-report.txt
           if-no-files-found: error
           retention-days: 14
