@@ -75,15 +75,54 @@ The search has reached real N64 display-list construction.
 
 One accessor used there resolves true `record+0x04`. For `0x14`, `0x71` and `0x9C` that field is `0x01`; the renderer only special-cases value `2`, consistent with scale/size handling rather than sprite selection. This field is therefore not our missing rear-sprite selector.
 
-`func_801AD6C4` has a single identified caller, `func_801B3868`, which is now a high-value upstream target for tracing how the battle descriptor and visual resources are prepared.
+`func_801AD6C4` has a single identified caller, `func_801B3868`.
 
-## Battle object class selectors
+## Concrete battle visual selector — proven
 
-The current rendering investigation follows the chain:
+The investigation has now reached the exact per-participant field that chooses the loaded battle visual set.
 
-`battle object` -> `object+0x34 descriptor` -> class IDs at `descriptor+0x4B/+0x4F` -> renderer
+The proven chain is:
 
-This is substantially closer to the missing player-side resource lookup than the eliminated text path.
+```text
+resource 0x315736
+  -> D_801BA6D8
+  -> 0x1A-byte battle record
+  -> record+0x00
+  -> func_801B3D1C return value
+  -> descriptor+0x50
+  -> func_801AD13C argument 0
+  -> 1-based visual pointer-table index in package 0x3B6CD0
+```
+
+At the same time:
+
+```text
+battle record+0x02 -> descriptor+0x4C class word
+                       low class byte at descriptor+0x4F
+```
+
+`func_801AD13C` is a real visual resource loader/cache. It loads package `0x3B6CD0`, uses argument 0 as a 1-based pointer-table selector, decompresses four resource components through `func_8009DD38`, and caches the result using the selector plus class word.
+
+Therefore **battle record `+0x00` is the concrete visual asset selector**. This is no longer a hypothesis.
+
+The first diagnostic playable-Danika patch must therefore keep class identity `0x71` and substitute only this visual selector (or its descriptor `+0x50` copy) with the proven player-Dragoon selector, and only when allied ownership has independently been proven.
+
+`mods/playable-knight-of-danika/danika_visual_override.h` already implements this contract fail-closed: donor selector `0` means unresolved and returns vanilla data; enemy/unknown-side Danika and every non-`0x71` class remain untouched.
+
+The exact Dragoon player-side selector value is still pending extraction from live battle data/resource `0x315736`; it is deliberately not guessed.
+
+## Battle render context
+
+The battle record field `+0x0C` is also proven to reach the renderer:
+
+- bit 0 selects object state `2` or `3`;
+- bit 1 reaches `func_801AD6C4` as renderer argument `a2 & 2`.
+
+These bits are genuine render-context inputs but are **not yet proven ownership/team flags**.
+
+Likewise `D_801BA72D` is now classified as an eight-mode resource-group selector selected through `D_801B9540`, not a boolean player/enemy flag. It must not be used directly as the allied-side gate.
+
+See `RENDER-CONTEXT.md` for the locked dataflow and safety rules.
 
 ## Greatsword decision: Dragoon is the compatibility baseline
 
@@ -106,13 +145,13 @@ What remains Danika-specific:
 
 - class ID `0x71`;
 - original enemy/front presentation;
-- armor, helmet, palette and silhouette;
+- armor, helmet, sword design, silhouette and green/gold/white palette;
 - class identity/name;
 - Danika stats/behavior unless separately redesigned later.
 
-`tools/scan_danika_weapon_compat.py` now ranks fields where player Dragoon `0x14` and hidden Dragoon `0x9C` agree while Danika `0x71` differs, then correlates those offsets with known accessors and callers. Those matches are candidates only; unknown fields are never automatically copied.
+`tools/scan_danika_weapon_compat.py` ranks fields where player Dragoon `0x14` and hidden Dragoon `0x9C` agree while Danika `0x71` differs, then correlates those offsets with known accessors and callers. Those matches are candidates only; unknown fields are never automatically copied.
 
-See `mods/playable-knight-of-danika/WEAPON-RESTORATION.md` for the weapon safety contract.
+See `WEAPON-RESTORATION.md` for the weapon safety contract.
 
 ## Why `0x9C` still matters
 
@@ -122,13 +161,13 @@ It is not enough by itself to prove weapon or graphics semantics. Downstream con
 
 ## Restoration strategy
 
-1. Continue tracing `func_801B3868` and the battle descriptor construction path.
-2. Prove the player/enemy-side resource selection used by `0x14`, `0x71` and `0x9C`.
-3. Preserve the original Knight of Danika enemy/front path unchanged.
-4. Build the missing allied/rear resource set for `0x71`, using Dragoon as the pose/animation skeleton where compatible.
-5. Preserve Knight of Danika armor, helmet, sword design, silhouette and palette rather than simply showing a Dragoon.
-6. Trace greatsword equipment acceptance and animation consumers before enabling the family for `0x71`.
-7. Patch only class-specific player-side paths needed by `0x71`.
+1. Extract/observe `resource 0x315736` in a real battle and compare `record+0x00`, `record+0x02` and `record+0x0C` for `0x14`, `0x71` and `0x9C`.
+2. Independently prove the player/enemy ownership source; never infer it solely from camera/render flags or `D_801BA72D`.
+3. Run the first diagnostic substitution: class `0x71` + proven allied side -> player Dragoon visual selector; class stays `0x71`.
+4. Preserve original Knight of Danika enemy/front path unchanged.
+5. Once the diagnostic proves the visual path, build the missing allied/rear Danika set using Dragoon pose/animation geometry where compatible.
+6. Preserve Danika armor, helmet, sword design, silhouette and palette rather than simply showing a Dragoon.
+7. Trace greatsword equipment acceptance and animation consumers before enabling the family for `0x71`.
 8. Audit formation, menu, equipment, attack, save/load and post-battle paths for enemy-only assumptions.
 
 ## Automated evidence
@@ -143,7 +182,13 @@ Current research tooling includes:
 - `tools/trace_danika_gfx_pipeline.py` — deep-traces renderer candidates;
 - `tools/scan_danika_renderer_accessors.py` — correlates class fields with renderer paths;
 - `tools/scan_danika_battle_object_class_reads.py` — tracks battle-object class selectors;
-- `tools/scan_danika_weapon_compat.py` — ranks Dragoon-compatible weapon/animation field candidates.
+- `tools/scan_danika_weapon_compat.py` — ranks Dragoon-compatible weapon/animation field candidates;
+- `tools/trace_danika_render_context_flags.py` — locks the `record+0x0C` renderer-context chain;
+- `tools/trace_danika_resource_group_selector.py` — prevents `D_801BA72D` from being misclassified as side;
+- `tools/trace_danika_visual_descriptor_init.py` — inventories the real visual loader/cache;
+- `tools/trace_danika_visual_asset_selector.py` — proves `record+0x00 -> descriptor+0x50 -> visual package 0x3B6CD0`;
+- `tools/test_danika_gate_contract.py` — locks allied-only fail-closed class gating;
+- `tools/test_danika_visual_override.py` — locks visual donor substitution to `0x71 + ALLIED + resolved donor` only.
 
 `.github/workflows/danika-research.yml` executes the research probes and publishes their reports as CI artifacts.
 
@@ -151,14 +196,16 @@ Current research tooling includes:
 
 - Never overwrite global Dragoon resources to make Danika work.
 - Never replace the entire Danika class record with Dragoon's record.
+- Never replace descriptor `+0x4C` / class identity with Dragoon; Danika stays `0x71`.
 - Never redirect all enemy-only classes to one player sprite.
 - Do not assume class metadata fields are direct graphics pointers without data-flow proof.
 - Do not patch `0x01DE....` text banks as graphics.
+- Do not use `D_801BA72D` or unproven render-context bits as allied ownership.
 - Do not equip a greatsword by blindly forcing an item ID.
 - Greatsword enablement requires a valid equipment path, player-side animation, weapon anchor and resource set.
 - Preserve enemy/front Danika behavior.
 - Prefer a class-specific allied-side override over broad renderer changes.
-- Unsupported paths must fail closed to known-safe/vanilla behavior rather than dereference guessed data.
+- Unsupported/unresolved paths must fail closed to known-safe/vanilla behavior rather than dereference guessed data.
 
 ## Current milestone
 
@@ -169,9 +216,13 @@ Completed:
 - old text-resource false path eliminated;
 - real display-list renderer reached;
 - battle descriptor class-byte path identified;
+- render-context bit chain proven without misclassifying it as ownership;
+- eight-mode resource-group selector separated from side semantics;
+- **concrete battle visual selector proven (`record+0x00 -> descriptor+0x50 -> func_801AD13C -> package 0x3B6CD0`);**
+- fail-closed visual override helper implemented;
 - Dragoon selected and documented as the greatsword/animation compatibility baseline;
 - weapon compatibility scanner added to CI.
 
 Next blocking discovery:
 
-Trace the unique upstream renderer caller and descriptor/resource construction until the exact player-side visual/animation resource selector is proven. In parallel, use the new weapon compatibility report to isolate the smallest Dragoon-derived fields required for a crash-safe greatsword path.
+Obtain the live/ROM-derived `record+0x00` values for player Dragoon `0x14`, Danika `0x71` and hidden Dragoon `0x9C`, and independently prove participant ownership. Once those two values are known, the diagnostic Dragoon rear-resource substitution can be wired without changing enemy Danika or class identity.
