@@ -29,6 +29,7 @@ on:
       - 'tools/trace_danika_resource_group_selector.py'
       - 'tools/trace_danika_visual_descriptor_init.py'
       - 'tools/trace_danika_visual_asset_selector.py'
+      - 'tools/trace_danika_dynamic_visual_loader.py'
       - 'tools/test_danika_gate_contract.py'
       - 'tools/test_danika_visual_override.py'
       - 'mods/playable-knight-of-danika/**'
@@ -119,6 +120,9 @@ jobs:
       - name: Prove concrete visual asset selector
         run: python3 tools/trace_danika_visual_asset_selector.py
 
+      - name: Trace dynamic combatant visual loader candidate
+        run: python3 tools/trace_danika_dynamic_visual_loader.py
+
       - name: Lock fail-closed allied gate
         run: python3 tools/test_danika_gate_contract.py
 
@@ -153,5 +157,6 @@ jobs:
             danika-resource-group-selector.txt
             danika-visual-descriptor-init.txt
             danika-visual-asset-selector.txt
+            danika-dynamic-visual-loader.txt
           if-no-files-found: error
           retention-days: 14
