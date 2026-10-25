@@ -40,9 +40,6 @@
 #include <windows.h>
 #include <d3d9.h>
 
-// Compile Stage 4 as a reusable base in this same translation unit. Names that
-// would otherwise export the active renderer are renamed; Stage 5 supplies the
-// public factory/hooks at the end of this file.
 #define final
 #define private protected
 #define DX9Renderer DX9RendererStage4
@@ -136,8 +133,6 @@ class DX9Renderer final : public DX9RendererStage4 {
     }
 
     void exec_stage5_command(Stage5Ctx& ctx, const gbi::DlCommand& c) {
-        // S2DEX2 collides with F3DEX2 at 0x01/0x02/0xDA/0xDC/0xE4. Handle
-        // those commands first and do not let Stage 4 reinterpret them.
         if (ctx.base.s2dex) {
             switch (c.op) {
                 case dx9s2d::OBJ_MOVEMEM: {
@@ -157,10 +152,6 @@ class DX9Renderer final : public DX9RendererStage4 {
                     return;
                 }
                 case dx9s2d::RDPHALF_0:
-                    // Same deliberate boundary as the validated WebGL path:
-                    // OB64's NJPEG lists use the object commands above. The
-                    // S2DEX2 RDPHALF_0 texrect encoding is not needed there and
-                    // must not be mistaken for F3DEX2 G_TEXRECT.
                     if (!s2dex_half0_logged_) {
                         s2dex_half0_logged_ = true;
                         OGRE_MILESTONE("DX9-S2D", "S2DEX2 RDPHALF_0 seen and ignored (object path remains active)");
@@ -172,7 +163,10 @@ class DX9Renderer final : public DX9RendererStage4 {
         } else {
             switch (c.op) {
                 case gbi::OP_MOVEMEM: {
-                    const uint8_t idx = static_cast<uint8_t>((c.w0 >> 16) & 0xFFu);
+                    // F3DEX2 G_MOVEMEM keeps the index in the low byte. This is
+                    // the same decode used by the validated WebGL renderer and
+                    // RT64's GBI_F3DEX2::moveMem.
+                    const uint8_t idx = static_cast<uint8_t>(p0(c.w0, 0, 8));
                     if (idx == gbi::MV_VIEWPORT) {
                         const uint32_t addr = gbi::resolve_address(ctx.base.segments, c.w1);
                         dx9geom::set_viewport(ctx.geom, rdram_, addr);
@@ -183,9 +177,6 @@ class DX9Renderer final : public DX9RendererStage4 {
                     dx9geom::Mat4 mat{};
                     const uint32_t addr = gbi::resolve_address(ctx.base.segments, c.w1);
                     if (dx9geom::read_matrix(rdram_, addr, mat)) {
-                        // F3DEX2 stores the PUSH bit inverted in the command;
-                        // dx9geom::apply_matrix mirrors the validated WebGL
-                        // matrix semantics including that flag convention.
                         dx9geom::apply_matrix(ctx.geom, mat, c.w0 & 0xFFu);
                     }
                     break;
@@ -224,9 +215,6 @@ class DX9Renderer final : public DX9RendererStage4 {
                     break;
             }
         }
-
-        // Stage 4 remains the single owner of RDP state, texture loads,
-        // framebuffers, fills and normal F3DEX2 TEXRECT/combiner execution.
         exec_command(ctx.base, c);
     }
 
@@ -308,9 +296,6 @@ class DX9Renderer final : public DX9RendererStage4 {
             return;
         }
 
-        // Match WebGL draw_obj_rect exactly: S2DEX2 programs render tile 0 from
-        // the object's own texture descriptor, then consumes the block loaded by
-        // the preceding LOADTILE/LOADBLOCK into TMEM.
         constexpr int tile0 = 0;
         constexpr int tile1 = 1;
         dx9tex::TileState& t = st.tex.tiles[tile0];
@@ -476,8 +461,6 @@ class DX9Renderer final : public DX9RendererStage4 {
         }
 
         if (cyc == dx9rdp::kCycCopy) {
-            // Geometry in COPY cycle is unusual for OB64, but keep a correct
-            // fixed-function path rather than requiring ps_3_0 unnecessarily.
             device_->SetFVF(kCopyFvf);
             CopyVertex out[3]{};
             for (int i = 0; i < 3; ++i) {
