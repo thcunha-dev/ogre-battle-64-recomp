@@ -1,0 +1,234 @@
+name: Universal Randomizer Stock Runtime QA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - randomizer/universal-grant
+    paths:
+      - 'mods/universal-item-randomizer/src/**'
+      - 'mods/universal-item-randomizer/include/**'
+      - 'mods/universal-item-randomizer/mod-stock-qa.toml'
+      - 'mods/universal-item-randomizer/mod.ld'
+      - 'mods/universal-item-randomizer/STOCK-RUNTIME-QA.md'
+      - 'mods/universal-item-randomizer/STOCK-QA-CHECKLIST.md'
+      - 'tools/test_randomizer_*.py'
+      - 'tools/test_universal_randomizer_*.py'
+      - 'tools/test_stock_runtime_coverage.py'
+      - 'tools/test_inventory_writer_taxonomy.py'
+      - '.github/workflows/randomizer-stock-runtime-qa.yml'
+
+concurrency:
+  group: universal-randomizer-stock-runtime-qa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-stock-runtime-qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Full host-side randomizer verification suite
+        run: python3 tools/test_universal_randomizer_all.py
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-mips-linux-gnu cmake ninja-build unzip zip curl
+
+      - name: Build pinned RecompModTool
+        run: |
+          set -eux
+          N64RECOMP_COMMIT=81213c1831fab2521a6a5459c67b63437d67e253
+          git clone https://github.com/N64Recomp/N64Recomp.git /tmp/N64Recomp
+          git -C /tmp/N64Recomp checkout "$N64RECOMP_COMMIT"
+          git -C /tmp/N64Recomp submodule update --init --recursive
+          test "$(git -C /tmp/N64Recomp rev-parse HEAD)" = "$N64RECOMP_COMMIT"
+          cmake -S /tmp/N64Recomp -B /tmp/N64Recomp/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/N64Recomp/build --target RecompModTool
+
+      - name: Prepare stock-runtime QA source
+        run: |
+          set -eux
+          rm -rf /tmp/universal-item-randomizer-stock-qa
+          mkdir -p /tmp/universal-item-randomizer-stock-qa/src
+          cp mods/universal-item-randomizer/src/*.c /tmp/universal-item-randomizer-stock-qa/src/
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('/tmp/universal-item-randomizer-stock-qa/src/universal_item_randomizer.c')
+          text = p.read_text()
+
+          init_old = 's_starting_items_enabled = recomp_get_config_u32("starting_items") != 0u;'
+          init_new = 's_starting_items_enabled = 0u; /* stock-runtime QA: direct Bank-N grants disabled */'
+          if text.count(init_old) != 1:
+              raise SystemExit('unexpected starting_items init shape')
+          text = text.replace(init_old, init_new)
+
+          patch_old = 'RECOMP_PATCH\nvoid func_ovlN_801DC740(unsigned int item_word, unsigned int used_flag) {'
+          patch_new = 'void func_ovlN_801DC740(unsigned int item_word, unsigned int used_flag) {'
+          if text.count(patch_old) != 1:
+              raise SystemExit('unexpected central Bank-N patch shape')
+          text = text.replace(patch_old, patch_new)
+          p.write_text(text)
+          PY
+          ! grep -B1 -F 'void func_ovlN_801DC740' /tmp/universal-item-randomizer-stock-qa/src/universal_item_randomizer.c | grep -q 'RECOMP_PATCH'
+          grep -q 'stock-runtime QA: direct Bank-N grants disabled' /tmp/universal-item-randomizer-stock-qa/src/universal_item_randomizer.c
+
+      - name: Build stock-runtime QA MIPS ELF
+        run: |
+          set -eux
+          mod=mods/universal-item-randomizer
+          srcroot=/tmp/universal-item-randomizer-stock-qa/src
+          mkdir -p "$mod/build" build/mods mods/reference
+          objs=""
+          for src in "$srcroot"/*.c; do
+            base=$(basename "${src%.c}")
+            obj="$mod/build/stock-qa-$base.o"
+            mips-linux-gnu-gcc \
+              -mips2 -march=mips2 -mno-check-zero-division -mabi=32 -O2 -G0 \
+              -mno-abicalls -mno-odd-spreg -fno-builtin -ffreestanding -nostdinc \
+              -fno-pic -fno-pie -Wall -Wextra -Wno-unused-parameter \
+              -I "$mod/include" -c "$src" -o "$obj"
+            objs="$objs $obj"
+          done
+          mips-linux-gnu-ld -nostdlib -T "$mod/mod.ld" \
+            --unresolved-symbols=ignore-all --emit-relocs -e 0 \
+            -o "$mod/build/mod-stock-qa.elf" $objs
+
+          test -s "$mod/build/mod-stock-qa.elf"
+          mips-linux-gnu-readelf -SW "$mod/build/mod-stock-qa.elf" | tee /tmp/stock-qa-sections.txt
+          mips-linux-gnu-nm "$mod/build/mod-stock-qa.elf" | tee /tmp/stock-qa-symbols.txt
+          grep -q 'func_80172820' /tmp/stock-qa-symbols.txt
+          grep -q 'universal_item_randomizer_tick' /tmp/stock-qa-symbols.txt
+          grep -q 'universal_item_randomizer_use_repair_tick_impl' /tmp/stock-qa-symbols.txt
+          grep -q '.recomp_patch' /tmp/stock-qa-sections.txt
+          grep -q '.recomp_hook.func_80072944' /tmp/stock-qa-sections.txt
+
+      - name: Write stock-runtime-only reference symbols
+        run: |
+          set -eux
+          cat >mods/reference/dump-stock-qa.toml <<'EOF'
+          [[section]]
+          name = ".main"
+          rom = 0x00001060
+          vram = 0x80070C60
+          size = 0x3E150
+          functions = [
+            { name = "func_80072944", vram = 0x80072944, size = 0x38 },
+          ]
+
+          [[section]]
+          name = ".streamedB"
+          rom = 0x00040E80
+          vram = 0x8016AF80
+          size = 0x265B0
+          functions = [
+            { name = "func_80172820", vram = 0x80172820, size = 0x100 },
+          ]
+          EOF
+          ! grep -q 'func_ovlN_801DC740' mods/reference/dump-stock-qa.toml
+
+      - name: Package stock-runtime QA NRM without Bank-N references
+        run: |
+          set -eux
+          tool=/tmp/N64Recomp/build/RecompModTool
+          out=build/mods
+          nrm="$out/universal-item-randomizer-stock-qa.nrm"
+          grep -q 'id = "ogre_universal_item_randomizer_stock_qa"' mods/universal-item-randomizer/mod-stock-qa.toml
+          grep -q 'version = "0.3.1"' mods/universal-item-randomizer/mod-stock-qa.toml
+          "$tool" mods/universal-item-randomizer/mod-stock-qa.toml "$out"
+          test -s "$nrm"
+          unzip -t "$nrm"
+          unzip -p "$nrm" mod.json > /tmp/stock-qa-mod.json
+          grep -q 'ogre_universal_item_randomizer_stock_qa' /tmp/stock-qa-mod.json
+          grep -q 'Stock Runtime QA' /tmp/stock-qa-mod.json
+          sha256sum "$nrm"
+
+      - name: Assemble stock-runtime QA artifact
+        run: |
+          set -eux
+          qa=build/stock-runtime-qa
+          rm -rf "$qa"
+          mkdir -p "$qa"
+          cp build/mods/universal-item-randomizer-stock-qa.nrm "$qa/"
+          cp mods/universal-item-randomizer/STOCK-RUNTIME-QA.md "$qa/README.md"
+          cp mods/universal-item-randomizer/STOCK-QA-CHECKLIST.md "$qa/STOCK-QA-CHECKLIST.md"
+          cp mods/universal-item-randomizer/TESTING.md "$qa/TESTING.md"
+          cp mods/universal-item-randomizer/QA-CHECKLIST.md "$qa/QA-CHECKLIST.md"
+          suite_count=$(python3 tools/test_universal_randomizer_all.py --count)
+          cat >"$qa/BUILD-MANIFEST.txt" <<EOF
+          version=0.3.1
+          variant=stock_runtime_qa
+          target_runtime=official_v0.8.3
+          central_bank_n_patch=disabled
+          starting_items=unsupported_in_this_variant
+          post_battle_patch=enabled
+          source_rewrites=table_o_table_p_reward
+          shop_source_rewrite=available_default_off
+          native_save_metadata=none
+          use_repair=native_slot_indexed
+          host_suite=${suite_count}_tests
+          persistence_model=5000_on_off_on_sequences
+          postgame_persistence_model=2000_finished_game_on_off_on_sequences
+          campaign_stress_model=1000_campaigns_x_600_events
+          official_windows_runtime_sha256=d9c269587b2f2b224bc6203c7ac9c4f42022f6990643cd38a870cb56df243169
+          head_sha=${GITHUB_SHA}
+          EOF
+          ! grep -q 'central_bank_n_patch=enabled' "$qa/BUILD-MANIFEST.txt"
+          grep -q 'central_bank_n_patch=disabled' "$qa/BUILD-MANIFEST.txt"
+          grep -q "host_suite=${suite_count}_tests" "$qa/BUILD-MANIFEST.txt"
+          grep -q 'persistence_model=5000_on_off_on_sequences' "$qa/BUILD-MANIFEST.txt"
+          grep -q 'postgame_persistence_model=2000_finished_game_on_off_on_sequences' "$qa/BUILD-MANIFEST.txt"
+          grep -q 'campaign_stress_model=1000_campaigns_x_600_events' "$qa/BUILD-MANIFEST.txt"
+          sha256sum "$qa"/*
+
+      - name: Assemble ready-to-run Windows QA bundle from official v0.8.3
+        run: |
+          set -eux
+          url=https://github.com/lfarroco/ogre-battle-64-recomp/releases/download/v0.8.3/ogre-battle-64-recomp-windows-x86_64.zip
+          expected=d9c269587b2f2b224bc6203c7ac9c4f42022f6990643cd38a870cb56df243169
+          official=/tmp/ogre-battle-64-recomp-v0.8.3-windows.zip
+          root=build/windows-stock-runtime-qa
+          out=build/ogre-battle-64-v0.8.3-stock-runtime-randomizer-qa-windows.zip
+
+          curl -fL --retry 3 --retry-delay 2 "$url" -o "$official"
+          echo "$expected  $official" | sha256sum -c -
+
+          rm -rf "$root" "$out"
+          mkdir -p "$root"
+          unzip -q "$official" -d "$root"
+          exe=$(find "$root" -type f -iname '*.exe' -print -quit)
+          test -n "$exe"
+          appdir=$(dirname "$exe")
+
+          mkdir -p "$appdir/mods"
+          cp build/mods/universal-item-randomizer-stock-qa.nrm "$appdir/mods/"
+          cp mods/universal-item-randomizer/STOCK-RUNTIME-QA.md "$appdir/STOCK-RUNTIME-QA.md"
+          cp mods/universal-item-randomizer/STOCK-QA-CHECKLIST.md "$appdir/STOCK-QA-CHECKLIST.md"
+          cp build/stock-runtime-qa/BUILD-MANIFEST.txt "$appdir/STOCK-RUNTIME-QA-MANIFEST.txt"
+
+          test -s "$appdir/mods/universal-item-randomizer-stock-qa.nrm"
+          test -s "$appdir/STOCK-QA-CHECKLIST.md"
+          test -z "$(find "$root" -type f \( -iname '*.z64' -o -iname '*.n64' -o -iname '*.v64' \) -print -quit)"
+
+          (cd "$root" && zip -qr "$GITHUB_WORKSPACE/$out" .)
+          test -s "$out"
+          unzip -t "$out"
+          unzip -Z1 "$out" | tee /tmp/windows-stock-qa-files.txt
+          grep -q 'mods/universal-item-randomizer-stock-qa.nrm$' /tmp/windows-stock-qa-files.txt
+          grep -q 'STOCK-QA-CHECKLIST.md$' /tmp/windows-stock-qa-files.txt
+          grep -q 'STOCK-RUNTIME-QA-MANIFEST.txt$' /tmp/windows-stock-qa-files.txt
+          sha256sum "$official" "$out" build/mods/universal-item-randomizer-stock-qa.nrm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: universal-item-randomizer-0.3.1-stock-runtime-qa
+          path: build/stock-runtime-qa
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ogre-battle-64-v0.8.3-stock-runtime-randomizer-qa-windows
+          path: build/ogre-battle-64-v0.8.3-stock-runtime-randomizer-qa-windows.zip
+          if-no-files-found: error
