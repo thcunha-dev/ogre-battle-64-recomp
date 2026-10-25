@@ -5,35 +5,7 @@ on:
     branches:
       - mod/playable-knight-of-danika
     paths:
-      - 'tools/audit_knight_of_danika.py'
-      - 'tools/audit_danika_class_layout.py'
-      - 'tools/audit_danika_class_aliases.py'
-      - 'tools/scan_danika_battle_lookup.py'
-      - 'tools/trace_danika_asset_bridge.py'
-      - 'tools/scan_danika_gfx_candidates.py'
-      - 'tools/trace_danika_gfx_pipeline.py'
-      - 'tools/scan_danika_renderer_accessors.py'
-      - 'tools/scan_danika_battle_object_class_reads.py'
-      - 'tools/scan_danika_weapon_compat.py'
-      - 'tools/trace_danika_renderer_caller.py'
-      - 'tools/trace_danika_render_callback.py'
-      - 'tools/trace_danika_battle_record_flags.py'
-      - 'tools/trace_danika_battle_selector_state.py'
-      - 'tools/trace_danika_object_state_semantics.py'
-      - 'tools/trace_danika_descriptor_class_provenance.py'
-      - 'tools/trace_danika_descriptor_class_semantics.py'
-      - 'tools/trace_danika_participant_link.py'
-      - 'tools/trace_danika_renderer_facing.py'
-      - 'tools/trace_danika_classword_flags.py'
-      - 'tools/trace_danika_allied_resource_path.py'
-      - 'tools/trace_danika_render_context_flags.py'
-      - 'tools/trace_danika_resource_group_selector.py'
-      - 'tools/trace_danika_visual_descriptor_init.py'
-      - 'tools/trace_danika_visual_asset_selector.py'
-      - 'tools/trace_danika_dynamic_visual_loader.py'
-      - 'tools/trace_danika_class_asset_consumers.py'
-      - 'tools/test_danika_gate_contract.py'
-      - 'tools/test_danika_visual_override.py'
+      - 'tools/**'
       - 'mods/playable-knight-of-danika/**'
       - '.github/workflows/danika-research.yml'
   workflow_dispatch:
@@ -57,10 +29,11 @@ jobs:
       - name: Audit class alias field
         run: python3 tools/audit_danika_class_aliases.py | tee danika-class-aliases.txt
 
+      - name: Trace class tail-field consumers
+        run: python3 tools/trace_danika_tail_field_consumers.py
+
       - name: Scan battle lookup candidates
-        run: |
-          python3 tools/scan_danika_battle_lookup.py \
-            --output danika-battle-lookup-report.txt
+        run: python3 tools/scan_danika_battle_lookup.py --output danika-battle-lookup-report.txt
 
       - name: Trace eliminated text-resource bridge
         run: python3 tools/trace_danika_asset_bridge.py
@@ -144,6 +117,7 @@ jobs:
           path: |
             danika-class-layout-report.txt
             danika-class-aliases.txt
+            danika-tail-field-consumers.txt
             danika-battle-lookup-report.txt
             danika-asset-bridge-report.txt
             danika-gfx-candidate-report.txt
