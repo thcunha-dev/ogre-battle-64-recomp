@@ -6,6 +6,7 @@ on:
       - dx9-lowend-410m
     paths:
       - 'app/src/dx9_renderer.inl'
+      - 'app/src/dx9_texture.hpp'
       - 'app/src/null_renderer.cpp'
       - 'app/src/renderer.hpp'
       - 'app/src/gbi.cpp'
@@ -38,10 +39,6 @@ jobs:
           mkdir -p tools/llvm-mingw
           tar -xJf /tmp/llvm-mingw.tar.xz -C tools/llvm-mingw --strip-components=1
           tools/llvm-mingw/bin/x86_64-w64-mingw32-clang++ --version | head -1
-          # N64ModernRuntime spells the Win32 umbrella header as <Windows.h>.
-          # Windows is case-insensitive; the Linux cross runner is not and
-          # llvm-mingw ships windows.h. This shim reproduces Windows lookup
-          # semantics without modifying the runtime or the actual DX9 source.
           mkdir -p /tmp/win-case-shim
           printf '#pragma once\n#include <windows.h>\n' > /tmp/win-case-shim/Windows.h
 
@@ -63,9 +60,6 @@ jobs:
           set -euxo pipefail
           CXX="$PWD/tools/llvm-mingw/bin/x86_64-w64-mingw32-clang++"
           RUNTIME="$PWD/tools/N64ModernRuntime"
-          # Mirror the PUBLIC include directories exported by ultramodern and
-          # librecomp CMake. This validates the actual renderer source, not an
-          # ad-hoc subset of the runtime headers.
           COMMON=(
             -std=c++20 -O2 -DOGRE_USE_DX9=1 -DNOMINMAX
             -I/tmp/win-case-shim
@@ -81,9 +75,12 @@ jobs:
           )
           "$CXX" "${COMMON[@]}" -c app/src/null_renderer.cpp -o /tmp/dx9_renderer.o
           "$CXX" "${COMMON[@]}" -c app/src/gbi.cpp -o /tmp/gbi.o
+          printf '#include "dx9_texture.hpp"\n' > /tmp/dx9_texture_tu.cpp
+          "$CXX" "${COMMON[@]}" -c /tmp/dx9_texture_tu.cpp -o /tmp/dx9_texture.o
           test -s /tmp/dx9_renderer.o
           test -s /tmp/gbi.o
-          echo "DX9 renderer and shared GBI walker compile for Windows x86-64 without ROM-derived sources."
+          test -s /tmp/dx9_texture.o
+          echo "DX9 renderer, texture decoder and shared GBI walker compile for Windows x86-64."
 
       - name: Verify D3D9-only renderer object
         shell: bash
