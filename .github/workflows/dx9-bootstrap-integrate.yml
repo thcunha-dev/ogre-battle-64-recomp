@@ -1,0 +1,198 @@
+name: Integrate DX9 low-end runtime
+
+on:
+  push:
+    branches:
+      - dx9-lowend-410m
+    paths:
+      - '.github/workflows/dx9-bootstrap-integrate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  integrate:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: dx9-lowend-410m
+          fetch-depth: 0
+
+      - name: Find fxc and compile canonical ps_3_0
+        id: shader
+        shell: pwsh
+        run: |
+          $roots = @(
+            "${env:ProgramFiles(x86)}\Windows Kits\10\bin",
+            "${env:ProgramFiles(x86)}\Windows Kits\8.1\bin"
+          ) | Where-Object { Test-Path $_ }
+          $fxc = $roots | ForEach-Object {
+            Get-ChildItem $_ -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue
+          } | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $fxc) { throw 'fxc.exe was not found' }
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\dx9" | Out-Null
+          $out = "$env:RUNNER_TEMP\dx9\dx9_rdp_ps.cso"
+          & $fxc.FullName /nologo /T ps_3_0 /E main /O3 /Fo $out app/src/dx9_rdp_ps.hlsl
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $out)) { throw 'fxc ps_3_0 compilation failed' }
+          "cso=$out" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Generate embedded shader and first-class DX9 route
+        shell: pwsh
+        env:
+          CSO: ${{ steps.shader.outputs.cso }}
+        run: |
+          @'
+          from pathlib import Path
+          import hashlib, re, struct, os
+
+          root = Path.cwd()
+          cso = Path(os.environ['CSO']).read_bytes()
+          if len(cso) < 8 or len(cso) % 4:
+              raise SystemExit(f'invalid ps_3_0 size: {len(cso)}')
+          if struct.unpack_from('<I', cso, 0)[0] != 0xFFFF0300:
+              raise SystemExit('fxc output is not ps_3_0')
+          digest = hashlib.sha256(cso).hexdigest()
+          words = struct.unpack('<%dI' % (len(cso) // 4), cso)
+          rows = []
+          for i in range(0, len(words), 8):
+              rows.append('    ' + ', '.join(f'0x{w:08X}u' for w in words[i:i+8]) + ',')
+          header = f'''#pragma once
+
+          // Auto-generated from dx9_rdp_ps.hlsl by Microsoft fxc:
+          // /T ps_3_0 /E main /O3. Do not hand-edit this array.
+          // Bytecode SHA-256: {digest}
+          #include <cstddef>
+          #include <cstdint>
+          namespace ogre::dx9shader::embedded {{
+          alignas(4) inline constexpr std::uint32_t kRdpPs30[] = {{
+          {chr(10).join(rows)}
+          }};
+          inline constexpr std::size_t kRdpPs30Size = sizeof(kRdpPs30);
+          static_assert(kRdpPs30[0] == 0xFFFF0300u, "embedded shader must be ps_3_0");
+          }} // namespace ogre::dx9shader::embedded
+          '''
+          # Remove indentation introduced by this embedded Python block only on
+          # fixed source lines; array rows deliberately keep four spaces.
+          fixed = []
+          for line in header.splitlines():
+              fixed.append(line[10:] if line.startswith('          ') else line)
+          (root / 'app/src/dx9_rdp_ps_bytecode.hpp').write_text('\n'.join(fixed) + '\n', encoding='utf-8')
+
+          shader = root / 'app/src/dx9_shader.hpp'
+          s = shader.read_text(encoding='utf-8')
+          if '#include "dx9_rdp_ps_bytecode.hpp"' not in s:
+              s = s.replace('#include "dx9_rdp_state.hpp"', '#include "dx9_rdp_state.hpp"\n#include "dx9_rdp_ps_bytecode.hpp"')
+          s = s.replace('#include <cwchar>\n', '').replace('#include <vector>\n', '')
+          start = s.find('constexpr wchar_t kShaderFilename[]')
+          end = s.find('struct Constants {')
+          if start < 0 or end <= start:
+              raise SystemExit('dx9_shader.hpp sidecar section was not found')
+          create = '''inline IDirect3DPixelShader9* create_rdp_pixel_shader(IDirect3DDevice9* device) {
+              if (!device) return nullptr;
+              IDirect3DPixelShader9* shader = nullptr;
+              const HRESULT hr = device->CreatePixelShader(embedded::kRdpPs30, &shader);
+              if (FAILED(hr) || !shader) {
+                  fprintf(stderr, "[dx9] CreatePixelShader(embedded ps_3_0) failed (0x%08lX)\\n",
+                          static_cast<unsigned long>(hr));
+                  return nullptr;
+              }
+              fprintf(stderr, "[dx9] embedded RDP ps_3_0 loaded (%zu bytes, no sidecar/compiler)\\n",
+                      embedded::kRdpPs30Size);
+              return shader;
+          }
+
+          '''
+          s = s[:start] + create + s[end:]
+          shader.write_text(s, encoding='utf-8')
+
+          cmake = root / 'app/CMakeLists.txt'
+          s = cmake.read_text(encoding='utf-8')
+          if 'option(OGRE_USE_DX9 ' not in s:
+              s = s.replace(
+                  'option(OGRE_USE_RT64 "Build with the RT64 renderer (native builds only)" ON)\n',
+                  'option(OGRE_USE_RT64 "Build with the RT64 renderer (native builds only)" ON)\n'
+                  'option(OGRE_USE_DX9 "Build with the Direct3D 9 low-end renderer (Windows only)" OFF)\n', 1)
+          old = 'if (EMSCRIPTEN)\n    set(OGRE_USE_RT64 OFF)\nendif()\n'
+          if old in s and 'Direct3D 9 low-end renderer requires Windows' not in s:
+              s = s.replace(old, '''if (EMSCRIPTEN)
+              set(OGRE_USE_RT64 OFF)
+              set(OGRE_USE_DX9 OFF)
+          endif()
+
+          if (OGRE_USE_DX9)
+              if (NOT WIN32)
+                  message(FATAL_ERROR "The Direct3D 9 low-end renderer requires Windows")
+              endif()
+              set(OGRE_USE_RT64 OFF)
+          endif()
+          '''.replace('          ', ''), 1)
+          old_renderer = '''elseif (EMSCRIPTEN)
+              # Milestone 7: WebGL2 browser renderer (docs/WEB-PORT.md §16 Option A).
+              set(OGRE_RENDERER_SOURCES src/web_renderer.cpp)
+          else()
+              set(OGRE_RENDERER_SOURCES src/null_renderer.cpp)
+          endif()
+          '''.replace('          ', '')
+          if old_renderer in s:
+              new_renderer = '''elseif (EMSCRIPTEN)
+              # Milestone 7: WebGL2 browser renderer (docs/WEB-PORT.md §16 Option A).
+              set(OGRE_RENDERER_SOURCES src/web_renderer.cpp)
+          elseif (OGRE_USE_DX9)
+              # The DX9 implementation is selected inside null_renderer.cpp.
+              set(OGRE_RENDERER_SOURCES src/null_renderer.cpp)
+          else()
+              set(OGRE_RENDERER_SOURCES src/null_renderer.cpp)
+          endif()
+          '''.replace('          ', '')
+              s = s.replace(old_renderer, new_renderer, 1)
+          marker = '# --- Direct3D 9 low-end renderer ---------------------------------------------'
+          if marker not in s:
+              s += '''
+
+          # --- Direct3D 9 low-end renderer ---------------------------------------------
+          # GeForce 410M-class route: system d3d9 only; no RT64/D3D12/DXGI/Vulkan.
+          if (OGRE_USE_DX9)
+              target_compile_definitions(ogrebattle64 PRIVATE OGRE_USE_DX9=1)
+              target_link_libraries(ogrebattle64 PRIVATE d3d9)
+          endif()
+          '''.replace('          ', '')
+          cmake.write_text(s, encoding='utf-8')
+
+          # Strong local invariants before anything is committed.
+          rebuilt = b''.join(struct.pack('<I', w) for w in re.findall(
+              r'0x([0-9A-Fa-f]{8})u', (root/'app/src/dx9_rdp_ps_bytecode.hpp').read_text()))
+          if rebuilt != cso:
+              raise SystemExit('embedded shader does not reconstruct fxc bytecode exactly')
+          if 'CreateFileW' in shader.read_text() or 'ReadFile(' in shader.read_text():
+              raise SystemExit('sidecar shader I/O is still present')
+          cm = cmake.read_text()
+          for required in ('OGRE_USE_DX9', 'target_link_libraries(ogrebattle64 PRIVATE d3d9)'):
+              if required not in cm:
+                  raise SystemExit(f'missing CMake integration: {required}')
+          print('DX9 integration generated from fxc bytecode', digest, len(cso), 'bytes')
+          '@ | python -
+
+      - name: Commit integration
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/dx9_rdp_ps_bytecode.hpp app/src/dx9_shader.hpp app/CMakeLists.txt
+          git diff --cached --check
+          if (git diff --cached --quiet) {
+            Write-Host 'Integration already present; nothing to commit.'
+            exit 0
+          }
+          git commit -m "dx9: embed validated ps3 shader and add first-class cmake route"
+          git push origin HEAD:dx9-lowend-410m
+
+      - name: Dispatch DX9 validation
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run build-dx9-app.yml --ref dx9-lowend-410m
