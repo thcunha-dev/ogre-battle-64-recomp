@@ -81,7 +81,11 @@ class Surface {
 
         if (!initialized_) {
             if (FAILED(device->Clear(0, nullptr, D3DCLEAR_ZBUFFER, 0, 1.0f, 0))) {
-                device->SetDepthStencilSurface(old_depth);
+                // The caller still has the guest render target bound here. Do
+                // not try to reattach a host depth surface that may belong to a
+                // differently-sized backbuffer; detach and let the caller
+                // restore its complete old target pair in a safe order.
+                device->SetDepthStencilSurface(nullptr);
                 if (old_depth) {
                     old_depth->Release();
                     old_depth = nullptr;
@@ -106,6 +110,9 @@ class Surface {
         return true;
     }
 
+    // Call only after the caller has restored the old render target. This order
+    // matters on old D3D9 drivers because a depth surface must match its colour
+    // target's dimensions/multisample type.
     void detach(IDirect3DDevice9* device, IDirect3DSurface9* old_depth) {
         if (!device) return;
         device->SetRenderState(D3DRS_ZENABLE, FALSE);
@@ -143,8 +150,10 @@ class Surface {
             if (ok) initialized_ = true;
         }
 
-        device->SetDepthStencilSurface(old_depth);
+        // Restore the colour target first, then the depth surface that belongs
+        // to it. This avoids transient incompatible target pairs on old drivers.
         device->SetRenderTarget(0, old_rt);
+        device->SetDepthStencilSurface(old_depth);
         if (old_depth) old_depth->Release();
         old_rt->Release();
         return ok;
