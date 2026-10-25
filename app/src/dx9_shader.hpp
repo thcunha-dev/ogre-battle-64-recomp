@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
+#include <cwchar>
 #include <vector>
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -130,10 +132,15 @@ struct Constants {
         const float shader_cycle = cycle_type == dx9rdp::kCycCopy ? 0.0f
                                  : cycle_type == dx9rdp::kCyc2 ? 2.0f : 1.0f;
         set4(c[4], k4, k5, shader_cycle, static_cast<float>(blender.blend_cycles));
-        set4(c[5], static_cast<float>(combiner.ca[0]), static_cast<float>(combiner.cb[0]),
-                   static_cast<float>(combiner.cc[0]), static_cast<float>(combiner.cd[0]));
-        set4(c[6], static_cast<float>(combiner.aa[0]), static_cast<float>(combiner.ab[0]),
-                   static_cast<float>(combiner.ac[0]), static_cast<float>(combiner.ad[0]));
+
+        // RDP 1-cycle ignores mux 0 and evaluates mux 1. For 2-cycle, c5/c6
+        // carry mux 0 and c7/c8 carry mux 1. Mapping it here keeps the shader
+        // small and makes 1-cycle use the same first evaluation path.
+        const int first = (cycle_type == dx9rdp::kCyc1) ? 1 : 0;
+        set4(c[5], static_cast<float>(combiner.ca[first]), static_cast<float>(combiner.cb[first]),
+                   static_cast<float>(combiner.cc[first]), static_cast<float>(combiner.cd[first]));
+        set4(c[6], static_cast<float>(combiner.aa[first]), static_cast<float>(combiner.ab[first]),
+                   static_cast<float>(combiner.ac[first]), static_cast<float>(combiner.ad[first]));
         set4(c[7], static_cast<float>(combiner.ca[1]), static_cast<float>(combiner.cb[1]),
                    static_cast<float>(combiner.cc[1]), static_cast<float>(combiner.cd[1]));
         set4(c[8], static_cast<float>(combiner.aa[1]), static_cast<float>(combiner.ab[1]),
