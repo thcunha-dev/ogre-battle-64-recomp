@@ -23,6 +23,7 @@ on:
       - 'tools/trace_danika_descriptor_class_semantics.py'
       - 'tools/trace_danika_participant_link.py'
       - 'tools/trace_danika_renderer_facing.py'
+      - 'tools/trace_danika_classword_flags.py'
       - 'tools/test_danika_gate_contract.py'
       - 'mods/playable-knight-of-danika/**'
       - '.github/workflows/danika-research.yml'
@@ -94,6 +95,9 @@ jobs:
       - name: Trace renderer facing argument
         run: python3 tools/trace_danika_renderer_facing.py
 
+      - name: Trace class-word upper flags
+        run: python3 tools/trace_danika_classword_flags.py
+
       - name: Lock fail-closed allied gate
         run: python3 tools/test_danika_gate_contract.py
 
@@ -119,5 +123,6 @@ jobs:
             danika-descriptor-class-semantics.txt
             danika-participant-link.txt
             danika-renderer-facing-trace.txt
+            danika-classword-flags.txt
           if-no-files-found: error
           retention-days: 14
