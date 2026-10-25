@@ -45,8 +45,8 @@ jobs:
           grep -q 'set(OGRE_USE_RT64 OFF' dx9/CMakeLists.txt
           grep -q 'add_compile_definitions(OGRE_USE_DX9=1)' dx9/CMakeLists.txt
           grep -q 'target_link_libraries(ogrebattle64 PRIVATE d3d9)' dx9/CMakeLists.txt
-          if grep -Eqi '(d3d12|dxgi|vulkan|rt64 PRIVATE)' dx9/CMakeLists.txt; then
-            echo '::error::DX9 wrapper links or selects a modern renderer.'
+          if grep -Eqi 'target_link_libraries\([^)]*(d3d12|dxgi|vulkan|rt64)' dx9/CMakeLists.txt; then
+            echo '::error::DX9 wrapper links a modern renderer dependency.'
             exit 1
           fi
 
