@@ -17,6 +17,7 @@ on:
       - 'tools/trace_danika_renderer_caller.py'
       - 'tools/trace_danika_render_callback.py'
       - 'tools/trace_danika_battle_record_flags.py'
+      - 'tools/trace_danika_battle_selector_state.py'
       - 'mods/playable-knight-of-danika/**'
       - '.github/workflows/danika-research.yml'
   workflow_dispatch:
@@ -69,6 +70,9 @@ jobs:
       - name: Trace battle-record flag writers
         run: python3 tools/trace_danika_battle_record_flags.py
 
+      - name: Trace battle group selector state
+        run: python3 tools/trace_danika_battle_selector_state.py
+
       - name: Upload reverse-engineering reports
         uses: actions/upload-artifact@v4
         with:
@@ -85,5 +89,6 @@ jobs:
             danika-renderer-caller-trace.txt
             danika-render-callback-trace.txt
             danika-battle-record-flags.txt
+            danika-battle-selector-state.txt
           if-no-files-found: error
           retention-days: 14
