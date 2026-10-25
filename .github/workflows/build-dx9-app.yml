@@ -23,6 +23,49 @@ jobs:
         with:
           submodules: recursive
 
+      # RecompiledFuncs/Bank*Funcs/RspFuncs are intentionally not public: they
+      # are generated from the user's ROM. Reuse the same private data bundle
+      # contract as release.yml instead of pretending a clean runner can build
+      # the app without the generated game code.
+      - name: Check generated-code bundle configuration
+        shell: bash
+        env:
+          DATA_REPO: ${{ vars.OGRE_DATA_REPO }}
+          DATA_TOKEN: ${{ secrets.OGRE_DATA_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DATA_REPO" ]; then
+            echo "::error::OGRE_DATA_REPO is not configured; the DX9 build needs the same generated-code bundle as release.yml."
+            exit 1
+          fi
+          if [ -z "$DATA_TOKEN" ]; then
+            echo "::error::OGRE_DATA_TOKEN is missing; add a Contents: Read token for $DATA_REPO."
+            exit 1
+          fi
+
+      - name: Fetch generated game code
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.OGRE_DATA_REPO }}
+          token: ${{ secrets.OGRE_DATA_TOKEN }}
+          path: ogre-data
+
+      - name: Unpack generated game code
+        shell: bash
+        run: |
+          set -euxo pipefail
+          tar xzf ogre-data/files.tar.gz -C .
+          find . -name '._*' -delete
+          find . -name '.DS_Store' -delete
+          test -d RecompiledFuncs
+          test -f app/src/bank_funcs.inc
+          test -d RspFuncs
+          banks=$( (ls -d Bank*Funcs 2>/dev/null || true) | wc -l | tr -d ' ')
+          [ "$banks" -gt 0 ]
+          echo "RecompiledFuncs: $(find RecompiledFuncs -type f | wc -l | tr -d ' ') files"
+          echo "Bank units:      $banks"
+          echo "RspFuncs:        $(find RspFuncs -type f | wc -l | tr -d ' ') files"
+
       - name: Prepare LLVM-MinGW
         shell: bash
         run: |
@@ -89,8 +132,16 @@ jobs:
           set -euxo pipefail
           cmake --build build-dx9 --parallel 2
           test -f build-dx9/ogrebattle64.exe
+          echo 'Imported graphics APIs:'
           tools/llvm-mingw/bin/llvm-objdump -p build-dx9/ogrebattle64.exe | \
             grep -Ei 'DLL Name: (d3d9|dxgi|d3d12|vulkan)' || true
+          # The low-end binary must import d3d9 and must not accidentally pull
+          # RT64's modern graphics APIs back in.
+          tools/llvm-mingw/bin/llvm-objdump -p build-dx9/ogrebattle64.exe | grep -qi 'DLL Name: d3d9.dll'
+          if tools/llvm-mingw/bin/llvm-objdump -p build-dx9/ogrebattle64.exe | grep -Eqi 'DLL Name: (dxgi|d3d12|vulkan-1)\.dll'; then
+            echo '::error::DX9 build unexpectedly imports a modern graphics API.'
+            exit 1
+          fi
 
       - name: Package compile artifact
         shell: bash
