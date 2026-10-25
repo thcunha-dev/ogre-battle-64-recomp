@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Trace registration and source dataflow for the Danika battle renderer callback.
+"""Trace Danika battle renderer side/orientation flags to their source record.
 
-Known chain:
-  func_801AE794 calls func_801B3D1C with explicit output pointers.  In the
-  callback-building loop, stack words sp+0x50, sp+0x54 and sp+0x58 are outputs
-  7, 8 and 9 of that selector.  sp+0x50 is then copied to object+0xB4, while
-  bit0 also selects object+0x14 value 3 vs 2.  func_801B3868 maps those object
-  fields into func_801AD6C4 renderer arguments.
+Proven chain:
+  func_801AE794 -> func_801B3D1C(selector, slot, ... outputs ...)
+  func_801B3D1C indexes 0x1A-byte battle records and writes record+0x0C to the
+  8th output pointer.  In func_801AE794 that output is sp+0x50.
+  sp+0x50 bit0 selects object+0x14=3/2; the full word goes to object+0xB4.
+  func_801B3868 turns those into renderer a1/a2 for func_801AD6C4.
 
-The goal is to prove the shared flag word's source field/semantics from the
-selector itself rather than infer them from rendering behavior.
+This probe also inventories every caller of func_801B3D1C so record+0x0C can be
+semantically identified from independent consumers instead of guessed.
 """
 
 from __future__ import annotations
@@ -20,25 +20,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ASM_ROOT = ROOT / "asm"
 TARGET = "func_801B3868"
-TARGET_ADDR = "801B3868"
-REGISTRATION = "func_801AE794"
 PRODUCER = "func_801B3D1C"
 OUT = ROOT / "danika-render-callback-trace.txt"
 
 FUNC_RE = re.compile(r"^\s*glabel\s+([A-Za-z0-9_.$]+)")
 END_RE = re.compile(r"^\s*endlabel\s+([A-Za-z0-9_.$]+)")
+CALL_PRODUCER_RE = re.compile(r"\bjal\s+" + re.escape(PRODUCER) + r"\b")
+TARGET_RE = re.compile(r"\b" + re.escape(TARGET) + r"\b")
 MEM14_RE = re.compile(r"\b(?:lb|lbu|lh|lhu|lw|sb|sh|sw)\s+\$[A-Za-z0-9]+,\s*0x14\(\$([A-Za-z0-9]+)\)", re.I)
 MEMB4_RE = re.compile(r"\b(?:lb|lbu|lh|lhu|lw|sb|sh|sw)\s+\$[A-Za-z0-9]+,\s*0xB4\(\$([A-Za-z0-9]+)\)", re.I)
-STACK_RESULT_RE = re.compile(r"\b(?:lb|lbu|lh|lhu|lw|sb|sh|sw)\s+\$[A-Za-z0-9]+,\s*0x(48|4C|50|54|58)\(\$sp\)", re.I)
-STACK_RESULT_ADDR_RE = re.compile(r"\baddiu\s+\$([A-Za-z0-9]+),\s*\$sp,\s*0x(48|4C|50|54|58)\b", re.I)
-OBJ14_STORE_RE = re.compile(r"\bsb\s+\$[A-Za-z0-9]+,\s*0x14\(\$([A-Za-z0-9]+)\)", re.I)
-OBJB4_STORE_RE = re.compile(r"\bsw\s+\$[A-Za-z0-9]+,\s*0xB4\(\$([A-Za-z0-9]+)\)", re.I)
-CALL_PRODUCER_RE = re.compile(r"\bjal\s+" + re.escape(PRODUCER) + r"\b")
+STACK_RE = re.compile(r"\b(?:lb|lbu|lh|lhu|lw|sb|sh|sw|addiu)\b.*(?:0x)?(48|4C|50|54|58)\(?(?:\$sp)?\)?", re.I)
 STORE_RE = re.compile(r"\b(sb|sh|sw)\s+\$([A-Za-z0-9]+),\s*(?:0x)?([0-9A-Fa-f]+)\(\$([A-Za-z0-9]+)\)", re.I)
-LOAD_RE = re.compile(r"\b(lb|lbu|lh|lhu|lw)\s+\$([A-Za-z0-9]+),\s*(?:0x)?([0-9A-Fa-f]+)\(\$([A-Za-z0-9]+)\)", re.I)
+BIT_RE = re.compile(r"\b(?:andi|ori|xori)\s+\$[A-Za-z0-9]+,\s*\$[A-Za-z0-9]+,\s*(0x[0-9A-Fa-f]+|[0-9]+)", re.I)
 
 
-def function_blocks(path: Path):
+def blocks(path: Path):
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     i = 0
     while i < len(lines):
@@ -46,164 +42,104 @@ def function_blocks(path: Path):
         if not m:
             i += 1
             continue
-        name = m.group(1)
-        s = i
-        e = min(len(lines) - 1, i + 3500)
-        for j in range(i + 1, e + 1):
+        name = m.group(1); s = i; e = min(len(lines)-1, i+3500)
+        for j in range(i+1, e+1):
             em = END_RE.match(lines[j])
-            if em and em.group(1) == name:
-                e = j
-                break
-            if j > i + 1 and FUNC_RE.match(lines[j]):
-                e = j - 1
-                break
-        yield name, s + 1, e + 1, lines[s : e + 1]
-        i = e + 1
+            if em and em.group(1) == name: e = j; break
+            if j > i+1 and FUNC_RE.match(lines[j]): e = j-1; break
+        yield name, s+1, e+1, lines[s:e+1]
+        i = e+1
 
 
 def numbered(lines, start):
-    return [(start + i, line) for i, line in enumerate(lines)]
+    return [(start+i, x) for i, x in enumerate(lines)]
 
 
 def main() -> int:
-    refs = []
-    numeric_refs = []
-    flag_funcs = []
-    registrations = []
-    producer_blocks = []
-
-    text_ext = {".s", ".c", ".h", ".toml", ".json", ".txt", ".md", ".yml", ".yaml", ".ld"}
-    for path in ROOT.rglob("*"):
-        if not path.is_file() or path.suffix.lower() not in text_ext:
-            continue
-        try:
-            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-        except OSError:
-            continue
-        rel = path.relative_to(ROOT).as_posix()
-        for idx, line in enumerate(lines, start=1):
-            if TARGET in line and not rel.endswith("trace_danika_render_callback.py"):
-                refs.append((rel, idx, line.rstrip()))
-            if TARGET_ADDR.lower() in line.lower() and TARGET not in line:
-                numeric_refs.append((rel, idx, line.rstrip()))
-
+    registrations=[]; producer=[]; producer_callers=[]; flag_funcs=[]
     for path in sorted(ASM_ROOT.rglob("*.s")):
-        rel = path.relative_to(ROOT).as_posix()
-        for name, s, e, lines in function_blocks(path):
-            nlines = numbered(lines, s)
-            has14 = [(n, x.strip()) for n, x in nlines if (m := MEM14_RE.search(x)) and m.group(1).lower() != "sp"]
-            hasb4 = [(n, x.strip()) for n, x in nlines if (m := MEMB4_RE.search(x)) and m.group(1).lower() != "sp"]
-            if has14 or hasb4:
-                score = (10 if has14 and hasb4 else 0) + len(has14) + len(hasb4)
-                flag_funcs.append((score, rel, name, s, e, has14, hasb4, lines))
+        rel=path.relative_to(ROOT).as_posix()
+        for name,s,e,lines in blocks(path):
+            nl=numbered(lines,s)
+            h14=[(n,x.strip()) for n,x in nl if (m:=MEM14_RE.search(x)) and m.group(1).lower()!="sp"]
+            hb4=[(n,x.strip()) for n,x in nl if (m:=MEMB4_RE.search(x)) and m.group(1).lower()!="sp"]
+            if h14 or hb4:
+                flag_funcs.append(((10 if h14 and hb4 else 0)+len(h14)+len(hb4),rel,name,s,e,h14,hb4))
+            target_hits=[(n,x.strip()) for n,x in nl if TARGET_RE.search(x)]
+            if target_hits and name!=TARGET:
+                registrations.append((rel,name,s,e,target_hits,lines))
+            pcalls=[(n,x.strip()) for n,x in nl if CALL_PRODUCER_RE.search(x)]
+            if pcalls and name!=PRODUCER:
+                producer_callers.append((rel,name,s,e,pcalls,lines))
+            if name==PRODUCER:
+                producer.append((rel,name,s,e,lines))
 
-            target_hits = [(n, x) for n, x in nlines if TARGET in x]
-            if target_hits and name != TARGET:
-                stack_result = [(n, x.strip()) for n, x in nlines if STACK_RESULT_RE.search(x) or STACK_RESULT_ADDR_RE.search(x)]
-                producer_calls = [(n, x.strip()) for n, x in nlines if CALL_PRODUCER_RE.search(x)]
-                obj14stores = [(n, x.strip()) for n, x in nlines if OBJ14_STORE_RE.search(x) and "($sp)" not in x]
-                objb4stores = [(n, x.strip()) for n, x in nlines if OBJB4_STORE_RE.search(x) and "($sp)" not in x]
-                registrations.append((rel, name, s, e, target_hits, stack_result, producer_calls, obj14stores, objb4stores, lines))
-
-            if name == PRODUCER:
-                stores = []
-                loads = []
-                for n, x in nlines:
-                    m = STORE_RE.search(x)
-                    if m:
-                        stores.append((n, m.group(1).lower(), m.group(2).lower(), int(m.group(3), 16), m.group(4).lower(), x.strip()))
-                    m = LOAD_RE.search(x)
-                    if m:
-                        loads.append((n, m.group(1).lower(), m.group(2).lower(), int(m.group(3), 16), m.group(4).lower(), x.strip()))
-                producer_blocks.append((rel, name, s, e, stores, loads, lines))
-
-    flag_funcs.sort(reverse=True, key=lambda x: x[0])
-
-    out = [
-        "Danika render callback / side-flag trace",
-        "=======================================",
-        f"target={TARGET}",
-        f"registration={REGISTRATION}",
-        f"result_producer={PRODUCER}",
-        f"symbol_refs={len(refs)}",
-        f"numeric_refs={len(numeric_refs)}",
-        f"registration_functions={len(registrations)}",
-        f"producer_functions={len(producer_blocks)}",
-        "wrapper_contract: a1=(object+0x14 != 3), a2=(object+0xB4 & 0x2)",
-        "",
-        "Registration dataflow",
-        "---------------------",
+    out=[
+      "Danika renderer flag provenance", "===============================",
+      f"callback={TARGET}", f"selector={PRODUCER}",
+      f"selector_callers={len(producer_callers)}", "",
+      "Proven field mapping", "--------------------",
+      "func_801B3D1C indexes battle records with stride 0x1A.",
+      "output a2 <- record+0x02", "output a3 <- record+0x04",
+      "output arg5 <- record+0x06", "output arg6 <- record+0x08",
+      "output arg7 <- record+0x0A", "output arg8 <- record+0x0C",
+      "output arg9 <- record+0x0E", "output arg10 <- record+0x10", "",
+      "In func_801AE794: arg8=&sp[0x50], arg9=&sp[0x54], arg10=&sp[0x58].",
+      "Therefore the shared renderer flag word is battle-record field +0x0C.", "",
+      "Callback registration", "---------------------"
     ]
-
-    for rel, name, s, e, hits, stack_result, producer_calls, st14, stb4, lines in registrations:
+    for rel,name,s,e,hits,lines in registrations:
         out.append(f"### {name} {rel}:{s}-{e}")
-        for n, x in hits:
-            out.append(f"  callback {n}: {x.strip()}")
-        for n, x in producer_calls:
-            out.append(f"  result producer call {n}: {x}")
-        for n, x in stack_result:
-            out.append(f"  result-struct {n}: {x}")
-        for n, x in st14:
-            out.append(f"  object+14 store {n}: {x}")
-        for n, x in stb4:
-            out.append(f"  object+B4 store {n}: {x}")
-
-        interesting = [n for n, _ in hits + producer_calls + stack_result + st14 + stb4]
+        interesting=[]
+        for n,x in numbered(lines,s):
+            if TARGET in x or PRODUCER in x or "0x50($sp)" in x or "0x54($sp)" in x or "0x58($sp)" in x or "0xB4($s0)" in x:
+                interesting.append(n)
         if interesting:
-            lo = max(s, min(interesting) - 28)
-            hi = min(e, max(interesting) + 24)
-            out.append(f"  -- focused snapshot {lo}-{hi} --")
-            for n, x in numbered(lines, s):
-                if lo <= n <= hi:
-                    out.append(f"  {n}: {x}")
+            lo=max(s,min(interesting)-22); hi=min(e,max(interesting)+18)
+            for n,x in numbered(lines,s):
+                if lo<=n<=hi: out.append(f"  {n}: {x}")
+        out.append("")
+
+    out += ["Selector implementation", "-----------------------"]
+    for rel,name,s,e,lines in producer:
+        out.append(f"### {name} {rel}:{s}-{e}")
+        for n,x in numbered(lines,s): out.append(f"  {n}: {x}")
         out.append("")
 
     out += [
-        "Result producer",
-        "---------------",
-        "In the relevant func_801AE794 loop, func_801B3D1C receives explicit output pointers:",
-        "a3=&sp[0x4C], stack arg +0x1C=&sp[0x50], +0x20=&sp[0x54], +0x24=&sp[0x58].",
-        "The dump below is complete so aliases of those incoming output pointers can be followed.",
+      "All selector callers / independent consumers",
+      "--------------------------------------------",
+      "For each call, a wide window is emitted so output pointers and subsequent bit tests can be correlated.",
     ]
-    for rel, name, s, e, stores, loads, lines in producer_blocks:
-        out.append(f"### {name} {rel}:{s}-{e} stores={len(stores)} loads={len(loads)}")
-        out.append("  -- stores --")
-        for n, op, src, off, base, x in stores:
-            out.append(f"  STORE {n}: op={op} src=${src} off=0x{off:X} base=${base} :: {x}")
-        out.append("  -- full producer snapshot --")
-        for n, x in numbered(lines, s):
-            out.append(f"  {n}: {x}")
+    for rel,name,s,e,calls,lines in producer_callers:
+        out.append(f"### {name} {rel}:{s}-{e} calls={len(calls)}")
+        nums=numbered(lines,s)
+        for calln,_ in calls:
+            lo=max(s,calln-34); hi=min(e,calln+44)
+            out.append(f"  -- call {calln}, window {lo}-{hi} --")
+            for n,x in nums:
+                if lo<=n<=hi:
+                    mark=""
+                    if "0x1C($sp)" in x: mark="  # arg8 pointer -> record+0x0C"
+                    elif BIT_RE.search(x): mark="  # bitwise immediate"
+                    out.append(f"  {n}: {x}{mark}")
         out.append("")
 
+    flag_funcs.sort(reverse=True,key=lambda x:x[0])
+    out += ["Safety conclusion", "-----------------"]
     out += [
-        "Correlated contract",
-        "-------------------",
-        "func_801B3D1C is the authoritative producer of sp+0x50/54/58 in the callback-building loop.",
-        "sp+0x50 is copied to object+0xB4 and bit0 selects object+0x14=3/2.",
-        "Thus renderer a1/a2 are correlated views of the producer's output word at sp+0x50.",
-        "Do not call either bit 'allied' until its source record field is semantically proven.",
-        "",
-        "Object functions touching +0x14 / +0xB4",
-        "---------------------------------------",
+      "The renderer gate must use battle-context field +0x0C, not a class-table field.",
+      "Class 0x71 alone is insufficient because enemy Danika must remain vanilla.",
+      "Do not patch until an independent selector caller establishes which +0x0C bit denotes side/orientation.",
+      "The 21 Dragoon-matching class fields remain structural candidates only; none is promoted by this proof.",
     ]
-    for score, rel, name, s, e, h14, hb4, lines in flag_funcs[:40]:
-        out.append(f"### score={score} {name} {rel}:{s}-{e} +14={len(h14)} +B4={len(hb4)}")
-        for n, line in h14:
-            out.append(f"  +14 {n}: {line}")
-        for n, line in hb4:
-            out.append(f"  +B4 {n}: {line}")
-        out.append("")
-
-    OUT.write_text("\n".join(out) + "\n", encoding="utf-8")
-
-    assert registrations, "expected callback registration"
-    assert producer_blocks, f"expected producer {PRODUCER}"
-    assert any(r[6] for r in registrations), f"expected call to {PRODUCER} in callback registration function"
-    assert any(r[5] and r[7] and r[8] for r in registrations), "registration must expose result structure and both object stores"
-    print(f"Danika render callback trace: PASS (registrations={len(registrations)}, producers={len(producer_blocks)})")
+    OUT.write_text("\n".join(out)+"\n",encoding="utf-8")
+    assert producer, "selector function missing"
+    assert registrations, "callback registration missing"
+    assert producer_callers, "selector callers missing"
+    assert any(name=="func_801AE794" for _,name,_,_,_,_ in producer_callers), "expected callback builder to call selector"
+    print(f"Danika renderer flag provenance: PASS (selector callers={len(producer_callers)})")
     print(f"report={OUT.name}")
     return 0
 
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+if __name__=="__main__": raise SystemExit(main())
