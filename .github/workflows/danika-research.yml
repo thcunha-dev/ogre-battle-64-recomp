@@ -32,6 +32,9 @@ jobs:
       - name: Trace class tail-field consumers
         run: python3 tools/trace_danika_tail_field_consumers.py
 
+      - name: Classify class-tail semantics
+        run: python3 tools/classify_danika_tail_semantics.py
+
       - name: Scan external class-to-visual table candidates
         run: python3 tools/scan_danika_external_class_visual_tables.py
 
@@ -130,6 +133,7 @@ jobs:
             danika-class-layout-report.txt
             danika-class-aliases.txt
             danika-tail-field-consumers.txt
+            danika-tail-semantics.txt
             danika-external-class-visual-tables.txt
             danika-class-dispatch.txt
             danika-character-to-battle.txt
