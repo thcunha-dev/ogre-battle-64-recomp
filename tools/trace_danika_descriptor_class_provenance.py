@@ -67,7 +67,7 @@ def main():
     for score,rel,name,s,e,near,adds,pool,stride,obj34,calls,lines in funcs[:100]:
         writes=sum(1 for _,_,g in near if g[0].lower() in {'sb','sh','sw'})
         out.append(f'### score={score} {name} {rel}:{s}-{e} near={len(near)} writes={writes} poolrefs={len(pool)} strideF8={len(stride)} obj34={len(obj34)}')
-        centers=sorted(set(n for n,_,_ in near)+set(n for n,_ in pool)+set(n for n,_ in obj34))
+        centers=sorted(set(n for n,_,_ in near) | set(n for n,_ in pool) | set(n for n,_ in obj34))
         for center in centers:
             lo=max(s,center-30); hi=min(e,center+38)
             out.append(f'  -- window {lo}-{hi} around {center} --')
