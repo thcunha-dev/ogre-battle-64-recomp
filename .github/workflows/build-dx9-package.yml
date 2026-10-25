@@ -1,0 +1,175 @@
+name: Build Ogre Battle 64 DX9 package
+
+on:
+  push:
+    branches:
+      - dx9-lowend-410m
+    paths:
+      - '.github/workflows/build-dx9-package.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  data-status:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Report generated-code availability
+        shell: bash
+        run: |
+          if [ -n '${{ vars.OGRE_DATA_REPO }}' ]; then
+            echo 'Generated-code repository is configured; full DX9 package build will run.'
+          else
+            echo 'Generated-code repository is not configured; skipping the expensive full package build.'
+            echo 'The focused DX9 renderer/shader validation remains authoritative for source changes.'
+          fi
+
+  build-package:
+    if: vars.OGRE_DATA_REPO != ''
+    runs-on: ubuntu-24.04
+    env:
+      LLVM_MINGW_TAG: '20261020'
+      SDL_VERSION: '2.32.10'
+      RUNTIME_COMMIT: '589bbf018a3e6d3646ddf7de1e7919f1b7e99bb1'
+    steps:
+      - name: Checkout public source
+        uses: actions/checkout@v4
+        with:
+          ref: dx9-lowend-410m
+          submodules: false
+          fetch-depth: 0
+
+      - name: Check generated-code token
+        shell: bash
+        env:
+          TOKEN: ${{ secrets.OGRE_DATA_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo '::error::OGRE_DATA_REPO is configured but OGRE_DATA_TOKEN is missing.'
+            exit 1
+          fi
+
+      - name: Checkout generated game code
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.OGRE_DATA_REPO }}
+          token: ${{ secrets.OGRE_DATA_TOKEN }}
+          path: ogre-data
+
+      - name: Unpack generated game code
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -f ogre-data/files.tar.gz
+          tar xzf ogre-data/files.tar.gz -C .
+          find . -name '._*' -delete
+          find . -name '.DS_Store' -delete
+          test -d RecompiledFuncs
+          test -f app/src/bank_funcs.inc
+          test -d RspFuncs
+          test "$(find RecompiledFuncs -type f | wc -l)" -gt 100
+          test "$(find RspFuncs -type f | wc -l)" -gt 0
+          test "$(find . -maxdepth 1 -type d -name 'Bank*Funcs' | wc -l)" -gt 0
+
+      - name: Prepare LLVM-MinGW
+        shell: bash
+        run: |
+          set -euxo pipefail
+          FILE="llvm-mingw-${LLVM_MINGW_TAG}-msvcrt-ubuntu-22.04-x86_64.tar.xz"
+          curl -fL --retry 3 -o /tmp/llvm-mingw.tar.xz \
+            "https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_TAG}/${FILE}"
+          rm -rf tools/llvm-mingw
+          mkdir -p tools/llvm-mingw
+          tar -xJf /tmp/llvm-mingw.tar.xz -C tools/llvm-mingw --strip-components=1
+          tools/llvm-mingw/bin/x86_64-w64-mingw32-clang++ --version | head -1
+
+      - name: Prepare patched N64ModernRuntime
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf tools/N64ModernRuntime
+          git clone https://github.com/N64Recomp/N64ModernRuntime.git --recurse-submodules tools/N64ModernRuntime
+          git -C tools/N64ModernRuntime checkout "$RUNTIME_COMMIT"
+          git -C tools/N64ModernRuntime submodule update --init --recursive
+          ( cd tools/N64ModernRuntime && git apply ../../patches/n64modernruntime-ob64.patch )
+          ( cd tools/N64ModernRuntime/N64Recomp && git apply ../../../patches/n64modernruntime-n64recomp.patch )
+
+      - name: Build static SDL2 for Windows
+        shell: bash
+        run: |
+          set -euxo pipefail
+          TOOL="$PWD/tools/llvm-mingw/bin"
+          PREFIX="$PWD/tools/SDL2-static/prefix"
+          rm -rf tools/SDL2-static
+          mkdir -p tools/SDL2-static
+          curl -fL --retry 3 -o /tmp/SDL2.tar.gz \
+            "https://github.com/libsdl-org/SDL/releases/download/release-${SDL_VERSION}/SDL2-${SDL_VERSION}.tar.gz"
+          tar xzf /tmp/SDL2.tar.gz -C tools/SDL2-static
+          cmake -S "tools/SDL2-static/SDL2-${SDL_VERSION}" -B tools/SDL2-static/build -G Ninja \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_C_COMPILER="$TOOL/x86_64-w64-mingw32-clang" \
+            -DCMAKE_CXX_COMPILER="$TOOL/x86_64-w64-mingw32-clang++" \
+            -DCMAKE_RC_COMPILER="$TOOL/x86_64-w64-mingw32-windres" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+            -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST=OFF -DSDL_TESTS=OFF
+          cmake --build tools/SDL2-static/build --target install --parallel 2
+          test -f "$PREFIX/lib/cmake/SDL2/SDL2Config.cmake" -o -f "$PREFIX/cmake/SDL2Config.cmake"
+
+      - name: Configure full DX9 application
+        shell: bash
+        run: |
+          set -euxo pipefail
+          TOOL="$PWD/tools/llvm-mingw/bin"
+          cmake -S app -B build-dx9 -G Ninja \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_C_COMPILER="$TOOL/x86_64-w64-mingw32-clang" \
+            -DCMAKE_CXX_COMPILER="$TOOL/x86_64-w64-mingw32-clang++" \
+            -DCMAKE_RC_COMPILER="$TOOL/x86_64-w64-mingw32-windres" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DOGRE_USE_DX9=ON \
+            -DOGRE_STATIC_SDL2=ON
+
+      - name: Build full DX9 application
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cmake --build build-dx9 --parallel 2
+          test -s build-dx9/ogrebattle64.exe
+
+      - name: Verify old-PC graphics dependency surface
+        shell: bash
+        run: |
+          set -euxo pipefail
+          OBJDUMP="$PWD/tools/llvm-mingw/bin/llvm-objdump"
+          "$OBJDUMP" -p build-dx9/ogrebattle64.exe | tee /tmp/imports.txt
+          grep -Eqi 'DLL Name: d3d9\.dll' /tmp/imports.txt
+          if grep -Eqi 'DLL Name: (d3d12|dxgi|vulkan-1)\.dll' /tmp/imports.txt; then
+            echo '::error::DX9 package unexpectedly imports a modern graphics API.'
+            exit 1
+          fi
+
+      - name: Package deterministic DX9 test build
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf package-dx9
+          mkdir -p package-dx9
+          cp build-dx9/ogrebattle64.exe package-dx9/
+          if [ -d build/mods ]; then cp -R build/mods package-dx9/mods; fi
+          cat > package-dx9/DX9-LOWEND.txt <<'EOF'
+          Ogre Battle 64 - Direct3D 9 low-end build
+          Target baseline: GeForce 410M-class hardware / Shader Model 3.0.
+          Renderer: native D3D9. No RT64/D3D12/DXGI/Vulkan renderer dependency.
+          EOF
+          "$PWD/tools/llvm-mingw/bin/llvm-objdump" -p package-dx9/ogrebattle64.exe > package-dx9/imports.txt
+
+      - name: Upload full DX9 package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ogre-battle-64-dx9-lowend-full
+          path: package-dx9/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 6
