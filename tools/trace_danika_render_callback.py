@@ -2,13 +2,14 @@
 """Trace registration and source dataflow for the Danika battle renderer callback.
 
 Known chain:
-  func_801AE794 builds a temporary selection/result structure at sp+0x48 and
-  passes it to func_801B3C78.  The word at structure+0x08 (sp+0x50) is later
-  copied to object+0xB4, while bit0 also selects object+0x14 value 3 vs 2.
-  func_801B3868 maps those object fields into func_801AD6C4 renderer flags.
+  func_801AE794 calls func_801B3D1C with explicit output pointers.  In the
+  callback-building loop, stack words sp+0x50, sp+0x54 and sp+0x58 are outputs
+  7, 8 and 9 of that selector.  sp+0x50 is then copied to object+0xB4, while
+  bit0 also selects object+0x14 value 3 vs 2.  func_801B3868 maps those object
+  fields into func_801AD6C4 renderer arguments.
 
-This probe captures the callback construction and the producer function so the
-meaning of that shared flag word can be established from writes, not guessed.
+The goal is to prove the shared flag word's source field/semantics from the
+selector itself rather than infer them from rendering behavior.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ ASM_ROOT = ROOT / "asm"
 TARGET = "func_801B3868"
 TARGET_ADDR = "801B3868"
 REGISTRATION = "func_801AE794"
-PRODUCER = "func_801B3C78"
+PRODUCER = "func_801B3D1C"
 OUT = ROOT / "danika-render-callback-trace.txt"
 
 FUNC_RE = re.compile(r"^\s*glabel\s+([A-Za-z0-9_.$]+)")
@@ -160,12 +161,13 @@ def main() -> int:
     out += [
         "Result producer",
         "---------------",
-        "Caller passes a3=&result[0] at sp+0x48; result+0x08 is the shared flag word.",
-        "The dump below is intentionally complete so register aliases to a3 can be followed.",
+        "In the relevant func_801AE794 loop, func_801B3D1C receives explicit output pointers:",
+        "a3=&sp[0x4C], stack arg +0x1C=&sp[0x50], +0x20=&sp[0x54], +0x24=&sp[0x58].",
+        "The dump below is complete so aliases of those incoming output pointers can be followed.",
     ]
     for rel, name, s, e, stores, loads, lines in producer_blocks:
         out.append(f"### {name} {rel}:{s}-{e} stores={len(stores)} loads={len(loads)}")
-        out.append("  -- stores, useful for identifying writes through a3/aliases --")
+        out.append("  -- stores --")
         for n, op, src, off, base, x in stores:
             out.append(f"  STORE {n}: op={op} src=${src} off=0x{off:X} base=${base} :: {x}")
         out.append("  -- full producer snapshot --")
@@ -176,11 +178,10 @@ def main() -> int:
     out += [
         "Correlated contract",
         "-------------------",
-        "func_801AE794 passes &sp[0x48] as a3 to func_801B3C78.",
-        "result+0x08 (sp+0x50) is copied to object+0xB4 and bit0 selects object+0x14=3/2.",
-        "Therefore renderer a1 and a2 are correlated views of one result word; the producer above",
-        "is the authoritative place to determine the gameplay meaning of bits 0 and 1.",
-        "Do not call either bit 'allied' until its producer/source field is semantically proven.",
+        "func_801B3D1C is the authoritative producer of sp+0x50/54/58 in the callback-building loop.",
+        "sp+0x50 is copied to object+0xB4 and bit0 selects object+0x14=3/2.",
+        "Thus renderer a1/a2 are correlated views of the producer's output word at sp+0x50.",
+        "Do not call either bit 'allied' until its source record field is semantically proven.",
         "",
         "Object functions touching +0x14 / +0xB4",
         "---------------------------------------",
