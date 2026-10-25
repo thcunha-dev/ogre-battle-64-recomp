@@ -36,6 +36,8 @@ The official upstream Windows archive is accepted only when its SHA-256 is exact
 
 The QA bundle contains **no ROM/game data**. Extract it, launch the port and provide your own Ogre Battle 64 USA Rev A ROM when the port requests it on first launch. Then open MODS and enable **Universal Item Randomizer - Stock Runtime QA**.
 
+**Important:** the official v0.8.3 archive also ships the older experimental `item-randomizer.nrm`. Do **not** enable that legacy randomizer at the same time as **Universal Item Randomizer - Stock Runtime QA**. Running two item randomizers together invalidates the QA result and can create conflicting item rewrites.
+
 Recommended first-run settings:
 
 - seed `123456`;
@@ -48,8 +50,9 @@ Follow `STOCK-QA-CHECKLIST.md` first. It is intentionally shorter than the final
 ## Manual install on an existing official v0.8.3 runtime
 
 1. Copy `universal-item-randomizer-stock-qa.nrm` into the `mods/` folder beside the executable.
-2. Launch the port, open MODS and enable **Universal Item Randomizer - Stock Runtime QA**.
-3. Use seed `123456`, `RANDOMIZE SHOPS=OFF`, `KEY ITEMS=OFF`, `LOG=ON` for the first pass.
-4. Follow `STOCK-QA-CHECKLIST.md`, then use `TESTING.md` for deeper coverage.
+2. Make sure the legacy **Item Randomizer** mod is disabled; only the Stock Runtime QA randomizer should be active during this test.
+3. Launch the port, open MODS and enable **Universal Item Randomizer - Stock Runtime QA**.
+4. Use seed `123456`, `RANDOMIZE SHOPS=OFF`, `KEY ITEMS=OFF`, `LOG=ON` for the first pass.
+5. Follow `STOCK-QA-CHECKLIST.md`, then use `TESTING.md` for deeper coverage.
 
 Do not use this QA package as a release build. Its mod id is deliberately different from the final randomizer so both packages cannot be confused by the runtime config.
