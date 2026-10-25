@@ -41,6 +41,9 @@ jobs:
       - name: Trace live character records into battle
         run: python3 tools/trace_danika_character_to_battle.py
 
+      - name: Dissect world-to-battle entry bridge
+        run: python3 tools/trace_danika_battle_entry_bridge.py
+
       - name: Scan battle lookup candidates
         run: python3 tools/scan_danika_battle_lookup.py --output danika-battle-lookup-report.txt
 
@@ -130,6 +133,7 @@ jobs:
             danika-external-class-visual-tables.txt
             danika-class-dispatch.txt
             danika-character-to-battle.txt
+            danika-battle-entry-bridge.txt
             danika-battle-lookup-report.txt
             danika-asset-bridge-report.txt
             danika-gfx-candidate-report.txt
