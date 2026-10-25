@@ -9,6 +9,7 @@ on:
       - 'tools/scan_danika_battle_lookup.py'
       - 'tools/trace_danika_asset_bridge.py'
       - 'tools/scan_danika_gfx_candidates.py'
+      - 'tools/trace_danika_gfx_pipeline.py'
       - 'mods/playable-knight-of-danika/**'
       - '.github/workflows/danika-research.yml'
   workflow_dispatch:
@@ -37,6 +38,9 @@ jobs:
       - name: Scan real graphics-path candidates
         run: python3 tools/scan_danika_gfx_candidates.py
 
+      - name: Deep trace graphics-pipeline candidates
+        run: python3 tools/trace_danika_gfx_pipeline.py
+
       - name: Upload reverse-engineering reports
         uses: actions/upload-artifact@v4
         with:
@@ -45,5 +49,6 @@ jobs:
             danika-battle-lookup-report.txt
             danika-asset-bridge-report.txt
             danika-gfx-candidate-report.txt
+            danika-gfx-pipeline-trace.txt
           if-no-files-found: error
           retention-days: 14
