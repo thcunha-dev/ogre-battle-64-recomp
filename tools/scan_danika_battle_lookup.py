@@ -2,9 +2,9 @@
 """Reverse-engineering probe for the playable Knight of Danika restoration.
 
 Evidence only: this script never patches graphics. It locates class-table accessors,
-traces their callers, and extracts the complete 0x48-byte records for Dragoon 0x14,
-Knight of Danika 0x71 and hidden Dragoon 0x9C so we can identify meaningful field
-relationships before touching the battle asset path.
+traces their callers, extracts the complete 0x48-byte records for Dragoon 0x14,
+Knight of Danika 0x71 and hidden Dragoon 0x9C, and summarizes the candidate asset
+selection routine that consumes the expanded class fields.
 """
 
 from __future__ import annotations
@@ -25,14 +25,10 @@ ANCHORS = {
 }
 TARGET_RECORDS = {k: v for k, v in ANCHORS.items() if k != "class_table_base"}
 ACCESSORS = (
-    "func_8016DFA8",
-    "func_8016DFFC",
-    "func_8016E050",
-    "func_8016E0A4",
-    "func_8016E0F8",
-    "func_8016E14C",
-    "func_8016E52C",
+    "func_8016DFA8", "func_8016DFFC", "func_8016E050", "func_8016E0A4",
+    "func_8016E0F8", "func_8016E14C", "func_8016E52C",
 )
+FOCUS_FUNCTION = "func_8017FC48"
 TEXT_ROOTS = ("asm", "config", "include", "mods", "patches")
 TEXT_SUFFIXES = {".s", ".S", ".c", ".h", ".toml", ".json", ".yaml", ".yml", ".txt", ".md"}
 MAX_CONTEXT = 5
@@ -62,10 +58,7 @@ def iter_text_files(root: Path) -> Iterable[Path]:
 
 
 def address_spellings(addr: int) -> set[str]:
-    return {
-        f"0x{addr:08x}", f"0x{addr:08X}", f"{addr:08x}", f"{addr:08X}",
-        f"D_{addr:08X}", f"D_{addr:08x}",
-    }
+    return {f"0x{addr:08x}", f"0x{addr:08X}", f"{addr:08x}", f"{addr:08X}", f"D_{addr:08X}", f"D_{addr:08x}"}
 
 
 def mips_halves(addr: int) -> tuple[set[int], int]:
@@ -89,13 +82,11 @@ def scan_file(root: Path, path: Path) -> list[Hit]:
         return []
     rel = path.relative_to(root).as_posix()
     hits: list[Hit] = []
-
     for idx, line in enumerate(lines):
         low = line.lower()
         for name, addr in ANCHORS.items():
             if any(spelling.lower() in low for spelling in address_spellings(addr)):
                 hits.append(Hit("direct", name, rel, idx + 1, line.strip()))
-
     for name, addr in ANCHORS.items():
         his, lo = mips_halves(addr)
         for idx, line in enumerate(lines):
@@ -104,9 +95,7 @@ def scan_file(root: Path, path: Path) -> list[Hit]:
             for j in range(idx + 1, min(len(lines), idx + 1 + MAX_CONTEXT)):
                 next_low = lines[j].lower()
                 if any(op in next_low for op in ("addiu", "addi", "ori", "daddiu")) and lo in parse_imm(lines[j]):
-                    hits.append(Hit("mips-hi-lo", name, rel, idx + 1,
-                                    f"{line.strip()}  ||  {lines[j].strip()}"))
-
+                    hits.append(Hit("mips-hi-lo", name, rel, idx + 1, f"{line.strip()}  ||  {lines[j].strip()}"))
     stride_pat = re.compile(r"(?i)(?:,|\s)(?:0x48|\$48|72)(?:\s|$)")
     for idx, line in enumerate(lines):
         if stride_pat.search(line) and any(op in line.lower() for op in ("mult", "mul", "add", "sll", "li", "ori", "addiu")):
@@ -126,10 +115,7 @@ def nearest_function(lines: list[str], one_based_line: int) -> tuple[int, str]:
 def bounded_context(lines: list[str], hit_idx: int, before: int, after: int, floor: int = 0) -> list[str]:
     start = max(floor, hit_idx - before)
     end = min(len(lines), hit_idx + after + 1)
-    rows: list[str] = []
-    for i in range(start, end):
-        rows.append(f"{'>>>' if i == hit_idx else '   '} {i + 1:6d}: {lines[i]}")
-    return rows
+    return [f"{'>>>' if i == hit_idx else '   '} {i + 1:6d}: {lines[i]}" for i in range(start, end)]
 
 
 def executable_contexts(root: Path, direct: list[Hit]) -> list[str]:
@@ -180,8 +166,7 @@ def directive_width(kind: str) -> int:
 
 
 def parse_int_token(token: str) -> int | None:
-    token = token.strip()
-    token = token.split("#", 1)[0].strip()
+    token = token.strip().split("#", 1)[0].strip()
     try:
         return int(token, 0)
     except ValueError:
@@ -198,7 +183,7 @@ def extract_record_bytes(data_lines: list[str], start_addr: int) -> tuple[dict[i
             continue
         addr = int(m.group(1), 16)
         tail = m.group(2).strip()
-        if addr >= end_addr or addr < start_addr:
+        if not (start_addr <= addr < end_addr):
             continue
         source.append(line.strip())
         dm = DIRECTIVE_RE.search(tail)
@@ -212,7 +197,6 @@ def extract_record_bytes(data_lines: list[str], start_addr: int) -> tuple[dict[i
                 cursor += width
                 continue
             masked = value & ((1 << (width * 8)) - 1)
-            # N64 is big-endian: emit directive value high byte first.
             for shift in range((width - 1) * 8, -1, -8):
                 if start_addr <= cursor < end_addr:
                     out[cursor - start_addr] = (masked >> shift) & 0xFF
@@ -229,46 +213,75 @@ def class_record_report(root: Path) -> list[str]:
     sources: dict[str, list[str]] = {}
     for name, addr in TARGET_RECORDS.items():
         parsed[name], sources[name] = extract_record_bytes(lines, addr)
-
-    out: list[str] = []
-    out.append("Class-record byte coverage")
-    out.append("--------------------------")
+    names = list(TARGET_RECORDS)
+    out = ["Class-record byte coverage", "--------------------------"]
     for name, addr in TARGET_RECORDS.items():
         out.append(f"{name}: addr=0x{addr:08X} parsed_bytes={len(parsed[name])}/{CLASS_STRIDE}")
-    out.append("")
-
-    out.append("Field-by-field byte diff (0x00..0x47)")
-    out.append("--------------------------------------")
-    out.append("off  dragoon14 danika71 hidden9c same")
+    out += ["", "Field-by-field byte diff (0x00..0x47)", "--------------------------------------", "off  dragoon14 danika71 hidden9c same"]
     for off in range(CLASS_STRIDE):
-        vals = [parsed[name].get(off) for name in TARGET_RECORDS]
+        vals = [parsed[name].get(off) for name in names]
         fmt = ["??" if v is None else f"{v:02X}" for v in vals]
-        known = all(v is not None for v in vals)
-        same = "=" if known and len(set(vals)) == 1 else "!"
+        same = "=" if all(v is not None for v in vals) and len(set(vals)) == 1 else "!"
         out.append(f"{off:02X}   {fmt[0]:>2}       {fmt[1]:>2}       {fmt[2]:>2}      {same}")
-    out.append("")
-
-    out.append("16-bit aligned view")
-    out.append("-------------------")
-    out.append("off  dragoon14 danika71 hidden9c same")
-    names = list(TARGET_RECORDS)
+    out += ["", "16-bit aligned view", "-------------------", "off  dragoon14 danika71 hidden9c same"]
     for off in range(0, CLASS_STRIDE, 2):
         vals16: list[int | None] = []
         for name in names:
             b0, b1 = parsed[name].get(off), parsed[name].get(off + 1)
             vals16.append(None if b0 is None or b1 is None else (b0 << 8) | b1)
         fmt = ["????" if v is None else f"{v:04X}" for v in vals16]
-        known = all(v is not None for v in vals16)
-        same = "=" if known and len(set(vals16)) == 1 else "!"
+        same = "=" if all(v is not None for v in vals16) and len(set(vals16)) == 1 else "!"
         out.append(f"{off:02X}   {fmt[0]}     {fmt[1]}     {fmt[2]}    {same}")
-    out.append("")
-
-    out.append("Raw source lines per target record")
-    out.append("----------------------------------")
+    out += ["", "Raw source lines per target record", "----------------------------------"]
     for name in names:
         out.append(f"### {name}")
         out.extend(sources[name] or ["(none)"])
         out.append("")
+    return out
+
+
+def focus_function_report(root: Path) -> list[str]:
+    """Summarize func_8017FC48 without assuming what its ROM-like constants mean."""
+    path = root / "asm/40E80.s"
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    start = next((i for i, line in enumerate(lines) if re.match(rf"\s*glabel\s+{re.escape(FOCUS_FUNCTION)}\b", line)), None)
+    if start is None:
+        return [f"{FOCUS_FUNCTION}: not found", ""]
+    end = next((i for i in range(start + 1, len(lines)) if re.match(rf"\s*endlabel\s+{re.escape(FOCUS_FUNCTION)}\b", lines[i])), len(lines) - 1)
+    body = lines[start:end + 1]
+    call_re = re.compile(r"\bjal\s+([A-Za-z0-9_.$]+)")
+    calls: dict[str, list[int]] = {}
+    constants: list[tuple[int, str]] = []
+    global_refs: list[tuple[int, str]] = []
+    for rel_idx, line in enumerate(body):
+        absolute_line = start + rel_idx + 1
+        m = call_re.search(line)
+        if m:
+            calls.setdefault(m.group(1), []).append(absolute_line)
+        if re.search(r"0x1DE[0-9A-Fa-f]{3,5}", line):
+            constants.append((absolute_line, line.strip()))
+        if re.search(r"D_8019[0-9A-Fa-f]{4}", line):
+            global_refs.append((absolute_line, line.strip()))
+    out = [
+        f"Focused candidate routine: {FOCUS_FUNCTION}",
+        "------------------------------------------",
+        f"source=asm/40E80.s:{start + 1}-{end + 1}",
+        f"instructions_or_labels={len(body)}",
+        f"unique_jal_targets={len(calls)}",
+        f"rom_like_0x1DE_constants={len(constants)}",
+        f"D_8019_global_refs={len(global_refs)}",
+        "",
+        "Call targets:",
+    ]
+    for target, line_numbers in sorted(calls.items()):
+        out.append(f"{target}: count={len(line_numbers)} lines={','.join(map(str, line_numbers))}")
+    out += ["", "0x1DE... constant materializations:"]
+    out.extend(f"line {ln}: {text}" for ln, text in constants)
+    out += ["", "D_8019... state references:"]
+    out.extend(f"line {ln}: {text}" for ln, text in global_refs[:120])
+    if len(global_refs) > 120:
+        out.append(f"... {len(global_refs) - 120} additional global refs omitted")
+    out.append("")
     return out
 
 
@@ -278,7 +291,6 @@ def main() -> int:
     ap.add_argument("--output", type=Path, default=Path("danika-battle-lookup-report.txt"))
     args = ap.parse_args()
     root = args.root.resolve()
-
     files = sorted(set(iter_text_files(root)))
     hits: list[Hit] = []
     for path in files:
@@ -287,20 +299,15 @@ def main() -> int:
     hilo = [h for h in hits if h.kind == "mips-hi-lo"]
     stride = [h for h in hits if h.kind == "stride-0x48"]
     callers, call_counts = caller_contexts(root)
-
     out: list[str] = [
         "Knight of Danika battle-lookup reverse-engineering probe",
         "========================================================",
-        f"files_scanned={len(files)}",
-        f"direct_anchor_hits={len(direct)}",
-        f"mips_hi_lo_hits={len(hilo)}",
-        f"stride_0x48_hits={len(stride)}",
-        "",
+        f"files_scanned={len(files)}", f"direct_anchor_hits={len(direct)}",
+        f"mips_hi_lo_hits={len(hilo)}", f"stride_0x48_hits={len(stride)}", "",
     ]
     for name, addr in ANCHORS.items():
         out.append(f"{name}=0x{addr:08X}")
     out.append("")
-
     def section(title: str, rows: list[Hit], cap: int = 250) -> None:
         out.extend((title, "-" * len(title)))
         if not rows:
@@ -311,27 +318,21 @@ def main() -> int:
             if len(rows) > cap:
                 out.append(f"... {len(rows) - cap} additional hits omitted")
         out.append("")
-
     section("Direct anchor references", direct)
     section("MIPS split-address candidates", hilo)
     section("0x48 stride candidates (triage only)", stride)
-
     out.extend(("Accessor caller counts", "----------------------"))
     for symbol in ACCESSORS:
         out.append(f"{symbol}={call_counts[symbol]}")
     out.append("")
-
     out.extend(class_record_report(root))
-
+    out.extend(focus_function_report(root))
     contexts = executable_contexts(root, direct)
     out.extend(("Executable direct-reference contexts", "------------------------------------"))
     out.extend(contexts or ["(none)", ""])
-
     out.extend(("Accessor caller contexts", "------------------------"))
     out.extend(callers or ["(none)", ""])
-
-    out.append("INTERPRETATION: prove which record fields and callers feed battle-side asset selection before applying any graphics override. Unknown or unrelated paths remain vanilla.")
-
+    out.append("INTERPRETATION: prove which class fields and caller branches feed battle-side asset selection before applying any graphics override. Unknown or unrelated paths remain vanilla.")
     text = "\n".join(out) + "\n"
     args.output.write_text(text, encoding="utf-8")
     print(text)
