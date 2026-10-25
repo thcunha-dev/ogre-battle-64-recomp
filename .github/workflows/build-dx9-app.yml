@@ -1,0 +1,114 @@
+name: Build Ogre Battle 64 DX9 low-end
+
+on:
+  push:
+    branches:
+      - dx9-lowend-410m
+    paths:
+      - 'app/**'
+      - 'patches/n64modernruntime-ob64.patch'
+      - 'patches/n64modernruntime-n64recomp.patch'
+      - '.github/workflows/build-dx9-app.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Prepare LLVM-MinGW
+        shell: bash
+        run: |
+          set -euxo pipefail
+          LLVM_MINGW_TAG=20261020
+          LLVM_MINGW_FILE=llvm-mingw-${LLVM_MINGW_TAG}-msvcrt-ubuntu-22.04-x86_64.tar.xz
+          curl -fL --retry 3 -o /tmp/llvm-mingw.tar.xz \
+            "https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_TAG}/${LLVM_MINGW_FILE}"
+          mkdir -p tools/llvm-mingw
+          tar -xJf /tmp/llvm-mingw.tar.xz -C tools/llvm-mingw --strip-components=1
+          tools/llvm-mingw/bin/x86_64-w64-mingw32-clang --version | head -1
+
+      - name: Prepare patched N64ModernRuntime
+        shell: bash
+        run: |
+          set -euxo pipefail
+          RUNTIME_COMMIT=589bbf018a3e6d3646ddf7de1e7919f1b7e99bb1
+          rm -rf tools/N64ModernRuntime
+          git clone https://github.com/N64Recomp/N64ModernRuntime.git --recurse-submodules tools/N64ModernRuntime
+          git -C tools/N64ModernRuntime checkout "$RUNTIME_COMMIT"
+          git -C tools/N64ModernRuntime submodule update --init --recursive
+          ( cd tools/N64ModernRuntime && git apply ../../patches/n64modernruntime-ob64.patch )
+          ( cd tools/N64ModernRuntime/N64Recomp && git apply ../../../patches/n64modernruntime-n64recomp.patch )
+
+      - name: Build static SDL2 for Windows
+        shell: bash
+        run: |
+          set -euxo pipefail
+          SDL_VERSION=2.32.10
+          curl -fL --retry 3 -o /tmp/sdl.tar.gz \
+            "https://github.com/libsdl-org/SDL/releases/download/release-${SDL_VERSION}/SDL2-${SDL_VERSION}.tar.gz"
+          tar -xzf /tmp/sdl.tar.gz -C /tmp
+          CC="$PWD/tools/llvm-mingw/bin/x86_64-w64-mingw32-clang"
+          CXX="$PWD/tools/llvm-mingw/bin/x86_64-w64-mingw32-clang++"
+          cmake -S "/tmp/SDL2-${SDL_VERSION}" -B /tmp/sdl-dx9 -G Ninja \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_C_COMPILER="$CC" \
+            -DCMAKE_CXX_COMPILER="$CXX" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST=OFF -DSDL_TESTS=OFF \
+            -DCMAKE_INSTALL_PREFIX="$PWD/tools/SDL2-static/prefix"
+          cmake --build /tmp/sdl-dx9 --parallel 2
+          cmake --install /tmp/sdl-dx9
+
+      - name: Configure DX9 app
+        shell: bash
+        run: |
+          set -euxo pipefail
+          CC="$PWD/tools/llvm-mingw/bin/x86_64-w64-mingw32-clang"
+          CXX="$PWD/tools/llvm-mingw/bin/x86_64-w64-mingw32-clang++"
+          cmake -S app -B build-dx9 -G Ninja \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_C_COMPILER="$CC" \
+            -DCMAKE_CXX_COMPILER="$CXX" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DOGRE_USE_RT64=OFF \
+            -DOGRE_STATIC_SDL2=ON \
+            -DCMAKE_CXX_FLAGS='-DOGRE_USE_DX9=1' \
+            -DCMAKE_EXE_LINKER_FLAGS='-ld3d9'
+
+      - name: Compile DX9 app
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cmake --build build-dx9 --parallel 2
+          test -f build-dx9/ogrebattle64.exe
+          tools/llvm-mingw/bin/llvm-objdump -p build-dx9/ogrebattle64.exe | \
+            grep -Ei 'DLL Name: (d3d9|dxgi|d3d12|vulkan)' || true
+
+      - name: Package compile artifact
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p dx9-artifact
+          cp build-dx9/ogrebattle64.exe dx9-artifact/
+          printf '%s\n' \
+            'Ogre Battle 64 low-end Direct3D 9 development build.' \
+            'Renderer target: Direct3D 9 / fixed-function scanout; RDP executor is the next implementation stage.' \
+            'This build intentionally does not use RT64, D3D12, DXGI or Vulkan.' \
+            > dx9-artifact/README-DX9.txt
+
+      - name: Upload DX9 compile artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ogre-battle-64-dx9-lowend
+          path: dx9-artifact/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 6
