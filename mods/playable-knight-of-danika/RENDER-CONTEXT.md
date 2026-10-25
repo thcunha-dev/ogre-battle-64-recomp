@@ -1,6 +1,6 @@
 # Knight of Danika — render-context chain
 
-This note records the narrow runtime path that determines two renderer context inputs for battle participants. It exists to prevent the playable-Danika restoration from confusing camera/layout flags with proven player/enemy ownership.
+This note records the narrow runtime path that determines two renderer context inputs for battle participants. It exists to prevent the playable-Danika restoration from confusing camera/layout/resource-group flags with proven player/enemy ownership.
 
 ## Proven data path
 
@@ -33,9 +33,28 @@ The callback `func_801B3868` transforms those values before entering the real di
 
 Therefore **bit 0 and bit 1 of battle-record `+0x0C` are genuine renderer-context inputs**.
 
+## Resource-group selector is not side
+
+A second nearby state variable, `D_801BA72D`, has now been separated from ownership semantics.
+
+`func_801B2D2C` accepts a selector bounded to eight modes, indexes `D_801B9540`, stores the selected resource-group value in `D_801BA72D`, and feeds its low byte to `func_801ACF60`. The currently observed eight table values are:
+
+- mode 0 -> `0x003E`
+- mode 1 -> `0x0025`
+- mode 2 -> `0x8004`
+- mode 3 -> `0x0035`
+- mode 4 -> `0x0034`
+- mode 5 -> `0x0039`
+- mode 6 -> `0x800E`
+- mode 7 -> `0x0000`
+
+This makes `D_801BA72D` a **multi-mode battle resource-group selector**, not a boolean allied/enemy flag. It must not be used as `DANIKA_SIDE_ALLIED`.
+
+`tools/trace_danika_resource_group_selector.py` locks this classification in CI so a future patch cannot accidentally regress to treating the selector as ownership state.
+
 ## What this does NOT prove
 
-It does not prove that either bit means "player", "ally", "enemy", "left side", or "right side".
+It does not prove that either `record+0x0C` bit means "player", "ally", "enemy", "left side", or "right side".
 
 The current Danika gate remains deliberately fail-closed:
 
@@ -43,7 +62,7 @@ The current Danika gate remains deliberately fail-closed:
 class == 0x71 AND independently_proven_side == ALLIED
 ```
 
-Until an ownership/team producer is traced into one of these context values, neither `record+0x0C bit0` nor `bit1` may activate the Dragoon donor path.
+Until an ownership/team producer is traced into one of these context values, neither `record+0x0C bit0`, `bit1`, nor `D_801BA72D` may activate the Dragoon donor path.
 
 This restriction protects the original enemy/front Knight of Danika presentation from accidental replacement.
 
@@ -55,4 +74,4 @@ Do not patch `func_8016DE3C` for playable Danika graphics.
 
 ## Next reverse-engineering target
 
-Trace the provenance/semantics of `record+0x0C` inside resource `0x315736` and independently correlate it with a known player/enemy ownership field. In parallel, trace the class-bearing descriptor into the resource/animation selection below `func_801AD13C` and the battle asset loader so the temporary Dragoon rear-resource substitution can be attached to the smallest class-specific selector.
+Trace the provenance/semantics of `record+0x0C` inside resource `0x315736` and independently correlate it with a known player/enemy ownership field. In parallel, `tools/trace_danika_visual_descriptor_init.py` inventories `func_801AD13C` and its callers to locate the class-bearing resource/animation decision feeding the renderer. The temporary Dragoon rear-resource substitution may be attached only after both class-resource provenance and allied ownership are independently proven.
