@@ -20,6 +20,7 @@ on:
       - 'tools/trace_danika_battle_selector_state.py'
       - 'tools/trace_danika_object_state_semantics.py'
       - 'tools/trace_danika_descriptor_class_provenance.py'
+      - 'tools/trace_danika_descriptor_class_semantics.py'
       - 'mods/playable-knight-of-danika/**'
       - '.github/workflows/danika-research.yml'
   workflow_dispatch:
@@ -81,6 +82,9 @@ jobs:
       - name: Trace descriptor class provenance
         run: python3 tools/trace_danika_descriptor_class_provenance.py
 
+      - name: Prove descriptor class semantics
+        run: python3 tools/trace_danika_descriptor_class_semantics.py
+
       - name: Upload reverse-engineering reports
         uses: actions/upload-artifact@v4
         with:
@@ -100,5 +104,6 @@ jobs:
             danika-battle-selector-state.txt
             danika-object-state-semantics.txt
             danika-descriptor-class-provenance.txt
+            danika-descriptor-class-semantics.txt
           if-no-files-found: error
           retention-days: 14
