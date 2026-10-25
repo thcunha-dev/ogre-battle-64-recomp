@@ -25,6 +25,7 @@ on:
       - 'tools/trace_danika_renderer_facing.py'
       - 'tools/trace_danika_classword_flags.py'
       - 'tools/trace_danika_allied_resource_path.py'
+      - 'tools/trace_danika_render_context_flags.py'
       - 'tools/test_danika_gate_contract.py'
       - 'mods/playable-knight-of-danika/**'
       - '.github/workflows/danika-research.yml'
@@ -102,6 +103,9 @@ jobs:
       - name: Trace allied resource selector path
         run: python3 tools/trace_danika_allied_resource_path.py
 
+      - name: Lock render-context flag chain
+        run: python3 tools/trace_danika_render_context_flags.py
+
       - name: Lock fail-closed allied gate
         run: python3 tools/test_danika_gate_contract.py
 
@@ -129,5 +133,6 @@ jobs:
             danika-renderer-facing-trace.txt
             danika-classword-flags.txt
             danika-allied-resource-path.txt
+            danika-render-context-flags.txt
           if-no-files-found: error
           retention-days: 14
