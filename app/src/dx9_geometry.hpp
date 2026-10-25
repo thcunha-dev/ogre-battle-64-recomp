@@ -27,8 +27,6 @@ struct Mat4 {
     }
 };
 
-// Row-vector convention: v' = v * M. This is the same convention used by the
-// WebGL renderer and the N64 fixed matrices in this project.
 inline Vec4 mul(const Vec4& v, const Mat4& M) {
     return {
         v.x*M.m[0] + v.y*M.m[4] + v.z*M.m[8]  + v.w*M.m[12],
@@ -43,9 +41,7 @@ inline Mat4 mul_mat4(const Mat4& A, const Mat4& B) {
     for (int r = 0; r < 4; ++r) {
         for (int c = 0; c < 4; ++c) {
             float sum = 0.0f;
-            for (int k = 0; k < 4; ++k) {
-                sum += A.m[r*4+k] * B.m[k*4+c];
-            }
+            for (int k = 0; k < 4; ++k) sum += A.m[r*4+k] * B.m[k*4+c];
             out.m[r*4+c] = sum;
         }
     }
@@ -57,6 +53,8 @@ inline bool read_matrix(const uint8_t* rdram, uint32_t address, Mat4& out) {
     const uint8_t* p = rdram + address;
     for (int r = 0; r < 4; ++r) {
         for (int c = 0; c < 4; ++c) {
+            // dx9tex::n64h applies the runtime word-half swap. This is exactly
+            // web_renderer.cpp's rd16(index r*4+(c^1)).
             const int off = (r * 4 + c) * 2;
             const int16_t ip = static_cast<int16_t>(dx9tex::n64h(p, off));
             const uint16_t fp = dx9tex::n64h(p + 32, off);
@@ -93,11 +91,9 @@ struct State {
     std::vector<Mat4> modelview_stack{Mat4::identity()};
     RawVertex vertices[kMaxVertices]{};
     uint32_t geometry_mode = 0;
-
     bool viewport_set = false;
     float view_scale[3] = {1, 1, 1};
     float view_trans[3] = {0, 0, 0};
-
     int32_t tex_sc = 0, tex_tc = 0;
     float tex_scale_s = 1.0f, tex_scale_t = 1.0f;
     bool texture_on = false;
@@ -117,8 +113,6 @@ inline void load_vertices(State& st, const uint8_t* rdram, uint32_t address,
 inline void set_viewport(State& st, const uint8_t* rdram, uint32_t address) {
     if (!rdram || static_cast<uint64_t>(address) + 16u > gbi::kRdramSize) return;
     const uint8_t* p = rdram + address;
-    // Vp_t scale/trans are signed 10.2 fixed-point. The fourth component is
-    // padding/clip state and is not needed for screen mapping.
     for (int i = 0; i < 3; ++i) {
         st.view_scale[i] = static_cast<float>(static_cast<int16_t>(dx9tex::n64h(p, i*2))) / 4.0f;
         st.view_trans[i] = static_cast<float>(static_cast<int16_t>(dx9tex::n64h(p, 8 + i*2))) / 4.0f;
@@ -141,7 +135,6 @@ inline void apply_matrix(State& st, const Mat4& mat, uint32_t flags) {
 }
 
 inline void pop_modelview(State& st, uint32_t count) {
-    if (count == 0) count = 1;
     while (count-- && st.modelview_stack.size() > 1) st.modelview_stack.pop_back();
 }
 
@@ -155,7 +148,7 @@ inline void set_texture(State& st, uint32_t w0, uint32_t w1) {
 
 struct TransformedVertex {
     float x = 0, y = 0, z = 0, rhw = 1;
-    float s = 0, t = 0; // texel-space coordinates before tile normalization
+    float s = 0, t = 0;
     uint8_t r = 255, g = 255, b = 255, a = 255;
     bool valid = false;
 };
@@ -165,30 +158,32 @@ inline TransformedVertex transform_vertex(const State& st, int index,
     TransformedVertex out;
     if (index < 0 || index >= kMaxVertices || st.modelview_stack.empty()) return out;
     const RawVertex& src = st.vertices[index];
-    Vec4 v{static_cast<float>(src.x), static_cast<float>(src.y), static_cast<float>(src.z), 1.0f};
-    v = mul(v, st.modelview_stack.back());
-    const Vec4 clip = mul(v, st.projection);
-    if (!std::isfinite(clip.w) || std::fabs(clip.w) < 1.0e-6f) return out;
-    const float inv_w = 1.0f / clip.w;
-    const float nx = clip.x * inv_w;
-    const float ny = clip.y * inv_w;
-    const float nz = clip.z * inv_w;
+    Vec4 pos{static_cast<float>(src.x), static_cast<float>(src.y), static_cast<float>(src.z), 1.0f};
+    pos = mul(pos, st.modelview_stack.back());
+    pos = mul(pos, st.projection);
+    // Match the validated WebGL path: geometry at/behind the camera is rejected.
+    if (!std::isfinite(pos.w) || pos.w <= 0.0f) return out;
+    const float inv_w = 1.0f / pos.w;
+    const float nx = pos.x * inv_w;
+    const float ny = pos.y * inv_w;
+    const float nz = pos.z * inv_w;
     if (!std::isfinite(nx) || !std::isfinite(ny) || !std::isfinite(nz)) return out;
 
+    // RSP screen Y points down. web_renderer maps scr_y = -NDC.y*scale + trans;
+    // D3D9 pretransformed screen coordinates already use Y-down, so retain that
+    // screen value directly rather than converting back through GL NDC.
     if (st.viewport_set) {
         out.x = nx * st.view_scale[0] + st.view_trans[0];
-        out.y = ny * st.view_scale[1] + st.view_trans[1];
+        out.y = -ny * st.view_scale[1] + st.view_trans[1];
         out.z = nz * st.view_scale[2] + st.view_trans[2];
     } else {
         out.x = (nx * 0.5f + 0.5f) * static_cast<float>(std::max(1, fallback_width));
-        out.y = (ny * 0.5f + 0.5f) * static_cast<float>(std::max(1, fallback_height));
+        out.y = (-ny * 0.5f + 0.5f) * static_cast<float>(std::max(1, fallback_height));
         out.z = nz * 0.5f + 0.5f;
     }
-    // D3D9 pre-transformed vertices carry reciprocal homogeneous W; this keeps
-    // texture interpolation perspective-correct without a vertex shader.
     out.rhw = inv_w;
-    out.s = (static_cast<float>(src.s) / 32.0f) * st.tex_scale_s;
-    out.t = (static_cast<float>(src.t) / 32.0f) * st.tex_scale_t;
+    out.s = (static_cast<float>(src.s) * st.tex_scale_s) / 32.0f;
+    out.t = (static_cast<float>(src.t) * st.tex_scale_t) / 32.0f;
     out.r = src.r; out.g = src.g; out.b = src.b; out.a = src.a;
     out.valid = std::isfinite(out.x) && std::isfinite(out.y) && std::isfinite(out.rhw);
     return out;
