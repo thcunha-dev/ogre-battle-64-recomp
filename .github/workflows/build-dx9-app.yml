@@ -8,6 +8,7 @@ on:
       - 'app/src/dx9_renderer.inl'
       - 'app/src/dx9_renderer_stage3.inl'
       - 'app/src/dx9_texture.hpp'
+      - 'app/src/dx9_rdp_state.hpp'
       - 'app/src/dx9_rdp_ps.hlsl'
       - 'app/src/null_renderer.cpp'
       - 'app/src/renderer.hpp'
@@ -77,12 +78,12 @@ jobs:
           )
           "$CXX" "${COMMON[@]}" -c app/src/null_renderer.cpp -o /tmp/dx9_renderer.o
           "$CXX" "${COMMON[@]}" -c app/src/gbi.cpp -o /tmp/gbi.o
-          printf '#include "dx9_texture.hpp"\n' > /tmp/dx9_texture_tu.cpp
-          "$CXX" "${COMMON[@]}" -c /tmp/dx9_texture_tu.cpp -o /tmp/dx9_texture.o
+          printf '#include "dx9_texture.hpp"\n#include "dx9_rdp_state.hpp"\n' > /tmp/dx9_core_tu.cpp
+          "$CXX" "${COMMON[@]}" -c /tmp/dx9_core_tu.cpp -o /tmp/dx9_core.o
           test -s /tmp/dx9_renderer.o
           test -s /tmp/gbi.o
-          test -s /tmp/dx9_texture.o
-          echo "DX9 stage3 renderer, texture decoder and shared GBI walker compile for Windows x86-64."
+          test -s /tmp/dx9_core.o
+          echo "DX9 stage3 renderer, texture/state core and shared GBI walker compile for Windows x86-64."
 
       - name: Verify D3D9-only renderer object
         shell: bash
@@ -119,7 +120,8 @@ jobs:
             exit 1
           }
           Write-Host "Using $($fxc.FullName)"
-          $out = Join-Path $env:RUNNER_TEMP 'dx9_rdp_ps.cso'
+          New-Item -ItemType Directory -Force -Path shader-artifact | Out-Null
+          $out = Join-Path (Resolve-Path shader-artifact) 'dx9_rdp_ps.cso'
           $asm = Join-Path $env:RUNNER_TEMP 'dx9_rdp_ps.asm'
           & $fxc.FullName /nologo /T ps_3_0 /E main /O3 /Fo $out /Fc $asm app/src/dx9_rdp_ps.hlsl
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path $out)) { exit 1 }
@@ -129,3 +131,12 @@ jobs:
             Write-Error "Unexpected SM3 shader bytecode size: $bytes"
             exit 1
           }
+
+      - name: Upload precompiled SM3 shader
+        uses: actions/upload-artifact@v4
+        with:
+          name: ogre-dx9-rdp-ps3
+          path: shader-artifact/dx9_rdp_ps.cso
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
