@@ -1,3 +1,12 @@
+#if defined(_WIN32) && defined(OGRE_USE_DX9)
+
+// Keep the first DX9 bring-up isolated from the normal renderer selector: a
+// Windows build with RT64 disabled and OGRE_USE_DX9=1 gets the Direct3D 9
+// backend; every other no-RT64 build keeps the proven null renderer below.
+#include "dx9_renderer.inl"
+
+#else
+
 // Ogre Battle 64: Person of Lordly Caliber - null renderer.
 //
 // Implements ultramodern::renderer::RendererContext without a GPU. Used by the
@@ -167,3 +176,5 @@ const char* ogre_gfx_stats() {
 }
 
 }  // extern "C"
+
+#endif  // defined(_WIN32) && defined(OGRE_USE_DX9)
