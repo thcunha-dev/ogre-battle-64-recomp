@@ -7,6 +7,7 @@ on:
     paths:
       - 'app/src/dx9_renderer.inl'
       - 'app/src/dx9_renderer_stage3.inl'
+      - 'app/src/dx9_renderer_stage4.inl'
       - 'app/src/dx9_texture.hpp'
       - 'app/src/dx9_rdp_state.hpp'
       - 'app/src/dx9_shader.hpp'
@@ -84,7 +85,7 @@ jobs:
           test -s /tmp/dx9_renderer.o
           test -s /tmp/gbi.o
           test -s /tmp/dx9_core.o
-          echo "DX9 stage3 renderer, texture/state/shader runtime core and shared GBI walker compile for Windows x86-64."
+          echo "DX9 stage4 renderer, texture/state/shader runtime core and shared GBI walker compile for Windows x86-64."
 
       - name: Verify D3D9-only renderer object
         shell: bash
