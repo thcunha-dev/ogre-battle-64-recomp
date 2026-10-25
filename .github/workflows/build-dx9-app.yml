@@ -6,7 +6,9 @@ on:
       - dx9-lowend-410m
     paths:
       - 'app/src/dx9_renderer.inl'
+      - 'app/src/dx9_renderer_stage3.inl'
       - 'app/src/dx9_texture.hpp'
+      - 'app/src/dx9_rdp_ps.hlsl'
       - 'app/src/null_renderer.cpp'
       - 'app/src/renderer.hpp'
       - 'app/src/gbi.cpp'
@@ -80,7 +82,7 @@ jobs:
           test -s /tmp/dx9_renderer.o
           test -s /tmp/gbi.o
           test -s /tmp/dx9_texture.o
-          echo "DX9 renderer, texture decoder and shared GBI walker compile for Windows x86-64."
+          echo "DX9 stage3 renderer, texture decoder and shared GBI walker compile for Windows x86-64."
 
       - name: Verify D3D9-only renderer object
         shell: bash
@@ -93,3 +95,37 @@ jobs:
             echo '::error::DX9 renderer object references a modern graphics API.'
             exit 1
           fi
+
+  shader-sm3:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout public source
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Compile RDP pixel shader as ps_3_0
+        shell: pwsh
+        run: |
+          $roots = @(
+            "${env:ProgramFiles(x86)}\Windows Kits\10\bin",
+            "${env:ProgramFiles(x86)}\Windows Kits\8.1\bin"
+          ) | Where-Object { Test-Path $_ }
+          $fxc = $roots | ForEach-Object {
+            Get-ChildItem $_ -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue
+          } | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $fxc) {
+            Write-Error "fxc.exe was not found in the installed Windows SDKs."
+            exit 1
+          }
+          Write-Host "Using $($fxc.FullName)"
+          $out = Join-Path $env:RUNNER_TEMP 'dx9_rdp_ps.cso'
+          $asm = Join-Path $env:RUNNER_TEMP 'dx9_rdp_ps.asm'
+          & $fxc.FullName /nologo /T ps_3_0 /E main /O3 /Fo $out /Fc $asm app/src/dx9_rdp_ps.hlsl
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $out)) { exit 1 }
+          $bytes = (Get-Item $out).Length
+          Write-Host "ps_3_0 bytecode: $bytes bytes"
+          if ($bytes -le 0 -or $bytes -gt 65536) {
+            Write-Error "Unexpected SM3 shader bytecode size: $bytes"
+            exit 1
+          }
