@@ -7,6 +7,7 @@ on:
     paths:
       - 'tools/audit_knight_of_danika.py'
       - 'tools/audit_danika_class_layout.py'
+      - 'tools/audit_danika_class_aliases.py'
       - 'tools/scan_danika_battle_lookup.py'
       - 'tools/trace_danika_asset_bridge.py'
       - 'tools/scan_danika_gfx_candidates.py'
@@ -52,6 +53,9 @@ jobs:
 
       - name: Verify true class-record alignment
         run: python3 tools/audit_danika_class_layout.py | tee danika-class-layout-report.txt
+
+      - name: Audit class alias field
+        run: python3 tools/audit_danika_class_aliases.py | tee danika-class-aliases.txt
 
       - name: Scan battle lookup candidates
         run: |
@@ -139,6 +143,7 @@ jobs:
           name: danika-research-reports
           path: |
             danika-class-layout-report.txt
+            danika-class-aliases.txt
             danika-battle-lookup-report.txt
             danika-asset-bridge-report.txt
             danika-gfx-candidate-report.txt
