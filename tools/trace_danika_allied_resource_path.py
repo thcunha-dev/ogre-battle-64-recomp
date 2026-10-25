@@ -95,7 +95,6 @@ def main() -> int:
         "",
     ]
 
-    # Deep class-taint trace in the real renderer.
     rel, s, e, lines = defs["func_801AD6C4"]
     tainted = set()
     events = []
@@ -110,8 +109,6 @@ def main() -> int:
             class_seed_count += 1
             events.append((n, "CLASS_SEED", line.strip(), sorted(tainted)))
         elif alt:
-            # +0x4B is retained as an observed descriptor byte but not accepted
-            # as identity unless independently proven mutable/class-derived.
             events.append((n, "ALT_DESCRIPTOR_BYTE", line.strip(), sorted(tainted)))
 
         cm = CALL_RE.search(line)
@@ -129,7 +126,6 @@ def main() -> int:
             if SHIFT_RE.search(line): tags.append("INDEX_SHIFT")
             events.append((n, ";".join(tags), line.strip(), sorted(tainted)))
 
-        # Lightweight GPR taint propagation.
         if regs:
             dest = regs[0]
             if op in PROP_OPS:
@@ -139,8 +135,6 @@ def main() -> int:
                 elif dest in tainted:
                     tainted.remove(dest)
             elif op in LOAD_OPS:
-                # A load through a class-tainted address/index remains tainted;
-                # a normal load overwrites the destination.
                 base_tainted = any(r in tainted for r in regs[1:])
                 if base_tainted:
                     tainted.add(dest)
@@ -149,9 +143,6 @@ def main() -> int:
             elif op == "lui" and dest in tainted:
                 tainted.remove(dest)
 
-        # Calls clobber v0/v1.  Mark v0 as a derived candidate when a call is
-        # made with a class-tainted argument; this catches class accessors and
-        # resource helpers without pretending to know their semantics.
         if cm:
             arg_tainted = any(r in tainted for r in ("a0","a1","a2","a3"))
             if arg_tainted:
@@ -171,8 +162,6 @@ def main() -> int:
     for n, tag, line, taint in events:
         out.append(f"{n}: [{tag}] {line}  # taint={','.join(taint)}")
 
-    # Emit full wrapper/producer snapshots and immediate callers, so a narrow
-    # hook can be chosen without broad class-table mutation.
     for target in ("func_801B3868", "func_801AE794"):
         rel, s, e, lines = defs[target]
         out += ["", f"Full {target} {rel}:{s}-{e}", "-" * 72]
@@ -203,7 +192,30 @@ def main() -> int:
         "Enemy Danika, unknown side, non-0x71 classes, and global Dragoon resources must remain untouched.",
     ]
     OUT.write_text("\n".join(out)+"\n", encoding="utf-8")
-    print(f"Danika allied resource path: PASS (class_seeds={class_seed_count}, events={len(events)})")
+
+    # CI-visible shortlist. This deliberately prints only events where class
+    # taint reaches control flow, a table/address load, a symbol, or a call.
+    # That makes the next hook decision reviewable without downloading artifacts.
+    high_signal = []
+    for event in events:
+        n, tag, line, taint = event
+        if "CLASS_SEED" in tag:
+            high_signal.append(event)
+            continue
+        if "CLASS_TAINT" in tag and any(key in tag for key in (
+            "CALL=", "SYMS=", "TAINTED_ADDRESS_LOAD", "BRANCH/COMPARE", "INDEX_SHIFT"
+        )):
+            high_signal.append(event)
+        elif "CLASS_TAINTED_CALL_RETURN" in tag:
+            high_signal.append(event)
+
+    print(f"Danika allied resource path: PASS (class_seeds={class_seed_count}, events={len(events)}, high_signal={len(high_signal)})")
+    print("HIGH_SIGNAL_BEGIN")
+    for n, tag, line, taint in high_signal[:120]:
+        print(f"{n}: [{tag}] {line} # taint={','.join(taint)}")
+    if len(high_signal) > 120:
+        print(f"... {len(high_signal)-120} additional high-signal events in {OUT.name}")
+    print("HIGH_SIGNAL_END")
     print("report=" + OUT.name)
     return 0
 
