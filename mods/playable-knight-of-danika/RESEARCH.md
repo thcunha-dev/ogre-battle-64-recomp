@@ -26,21 +26,19 @@ Verified Rev-A ROM SHA-1: `d26b14bee422a09581ce438d45ba9fec9783fbb8`.
 
 ## Full 0x48-byte record extraction
 
-The CI reverse-engineering probe now parses all 72 bytes for all three records directly from `asm/data/5C230.data.s` and produces byte and 16-bit diffs.
+The CI reverse-engineering probe parses all 72 bytes for all three records directly from `asm/data/5C230.data.s` and produces byte and 16-bit diffs.
 
 Important structural observations:
 
-- Dragoon `0x14` and hidden Dragoon `0x9C` share the first resource-like words at offsets `+0x00`, `+0x02` and `+0x06`: `0x0017`, `0x00B4`, `0x00E0`.
+- Dragoon `0x14` and hidden Dragoon `0x9C` share the first identifier-like words at offsets `+0x00`, `+0x02` and `+0x06`: `0x0017`, `0x00B4`, `0x00E0`.
 - Knight of Danika `0x71` differs at those same positions: `0x0023`, `0x00BD`, `0x00E6`.
 - Offsets `+0x08..+0x0E` are largely identical across all three records.
-- The alias/key byte at record offset `+0x17` is `0x00` for Dragoon, `0x00` for Danika and `0x14` for hidden Dragoon. This is significant because the class accessor family explicitly reads that byte before deciding which record supplies the requested field.
+- The alias/key byte at record offset `+0x17` is `0x00` for Dragoon, `0x00` for Danika and `0x14` for hidden Dragoon. The class accessor family explicitly reads that byte before deciding which record supplies a requested field.
 - The three records diverge heavily after `+0x18`; those fields must not be copied wholesale from Dragoon to Danika.
 
-These observations prove that Danika has its own class/resource identity and that a safe restoration should not replace the entire `0x71` record with the Dragoon record.
+These observations prove that Danika has its own class identity and that a safe restoration must not replace the entire `0x71` record with the Dragoon record.
 
 ## Class-field accessor family
-
-Repository-wide scanning found the executable direct references to the class-table base in `asm/40E80.s`.
 
 ### `func_8016DFA8`
 
@@ -52,31 +50,28 @@ This function:
 4. compares that key to the second selector;
 5. returns the u16 at class-record offset `+0x00` from either the first or second record.
 
-Sibling accessors repeat the same selection pattern for sequential record fields, e.g. `func_8016DFFC` reads offset `+0x02`, and the following family continues through later fields.
+Sibling accessors repeat the same selection pattern for sequential record fields, e.g. `func_8016DFFC` reads offset `+0x02`.
 
 ### `func_8016E52C`
 
-This larger routine performs the same `class_id * 0x48` + `+0x17` alias/key resolution inline and fills several sequential u16 parameters from class-record offsets beginning at `+0x00`, `+0x02`, `+0x04`, etc.
+This larger routine performs the same `class_id * 0x48` + `+0x17` alias/key resolution inline and fills several sequential values from class-record offsets.
 
-The probe found exactly **four calls** to `func_8016E52C`, all inside `func_8017FC48`.
+The probe found exactly four calls to `func_8016E52C`, all inside `func_8017FC48`.
 
-This is the first proven bridge from the class table into the higher-level resource-selection path.
+## False lead eliminated: `func_8017FC48` is a text formatter
 
-## Candidate asset-selection bridge: `func_8017FC48`
+The deeper bridge tracer conclusively rules out `func_8017FC48` as the battle graphics loader.
 
-`func_8017FC48` occupies `asm/40E80.s` around RAM `0x8017FC48` and is now a primary investigation target.
+Evidence:
 
-Static scan facts:
+- The function parses an input byte stream from `$s6` and writes a zero-terminated output byte stream through `$s1`.
+- It recognizes control sequences including values such as `0x8194`/`0x8196` and dispatches formatting substitutions.
+- `func_80093460`, used in the same tail path, is a `strlen`-style byte counter: it advances until a zero byte and returns the length.
+- `func_8009C550` is a `strcpy`-style routine: it copies bytes from `$a1` to `$a0` until the zero terminator.
+- The shared path at `.L80180564` calls `func_8017FB18`, which resolves data from the selected `0x01DE....` bank and writes the resulting bytes into the output string before parsing resumes.
+- The supposed resource constants also appear together in a data table near `0x80190E74`, consistent with a bank/table of text sources rather than a class battle-renderer dispatch table.
 
-- 672 assembly lines/instructions/labels in the function body.
-- 12 unique `jal` targets.
-- four calls to `func_8016E52C`.
-- one call to `func_8016E490` immediately after one expanded class-field set.
-- 40 materializations of constants in the `0x01DE....` range.
-- 62 references to runtime globals in the `D_8019....` range.
-- after several `func_8016E52C` calls, the first resolved byte from the temporary output is used as an argument while a `0x01DE....` constant is prepared on another argument register before control converges on a shared path.
-
-Examples of repeatedly selected constants include:
+Therefore the following values are now classified as **text/string-resource bank addresses in this path**, not sprite pointers:
 
 - `0x01DE6446`
 - `0x01DE5B60`
@@ -85,13 +80,29 @@ Examples of repeatedly selected constants include:
 - `0x01DE2E4E`
 - `0x01DE4258`
 
-These values are **not yet labelled sprite addresses**. They are proven resource-like constants in the class-data consumer path, but their exact asset role still requires downstream caller/loader proof.
+This is useful negative evidence: it closes a large false path and prevents a dangerous patch to class fields based on UI/text behavior.
 
-## Why `0x9C` matters
+The class accessor calls inside `func_8017FC48` are consequently evidence about class-driven text/menu formatting only. They do **not** prove that the same early record fields are graphics IDs.
 
-Hidden Dragoon `0x9C` has `+0x17 = 0x14`. The accessor logic explicitly checks this key against an alternate class selector. Combined with the fact that `0x14` and `0x9C` share the early resource-like u16 values, this provides a concrete example of a class variant that can resolve through another class's resource fields.
+## Why `0x9C` still matters
 
-That behavior is useful as a model for understanding how allied/enemy variants may share or override resource identities, but it is **not** permission to set Danika's `+0x17` to `0x14` blindly. Doing so could redirect more than battle graphics.
+Hidden Dragoon `0x9C` has `+0x17 = 0x14`, while `0x14` and `0x9C` share several early record values. This remains a concrete example of aliasing between class records, but its graphics meaning is not established.
+
+Do not set Danika's `+0x17` to `0x14` blindly. That byte redirects multiple class-field accessors and can alter text, menu and other non-graphics behavior.
+
+## New graphics-search target
+
+The investigation now pivots away from the text formatter and toward the actual battle entity/resource setup path.
+
+Priority evidence to trace:
+
+1. consumers of the early class-record u16 values at offsets `+0x00`, `+0x02`, `+0x04`, `+0x06` outside text/UI code;
+2. code that reads a battle unit's class byte and subsequently touches DMA/ROM loading, decompression, texture/sprite/animation data, display lists, palettes, or battle entity setup;
+3. player/enemy side or orientation decisions made near those loaders;
+4. any class-indexed tables where `0x14`, `0x71` and `0x9C` select different graphics metadata;
+5. a path where the original enemy/front Danika resource can be preserved while only the allied/rear lookup receives a class-specific override.
+
+The first three u16 pairs remain high-value candidates because `0x14` and `0x9C` match while `0x71` differs, but they are now deliberately called **identifier-like class fields**, not graphics IDs, until a downstream loader proves their semantics.
 
 ## Historical behavior to reproduce/fix
 
@@ -101,7 +112,7 @@ This suggests party storage and basic class data are not the primary blocker. Th
 
 ## Restoration strategy
 
-1. Continue downstream tracing from `func_8017FC48` to identify the exact loader/renderer semantics of the `0x01DE....` constants.
+1. Locate the actual battle graphics/resource setup path; `func_8017FC48` is explicitly excluded.
 2. Prove the player-side lookup behavior for `0x14`, `0x71`, and `0x9C` before applying any graphics patch.
 3. Preserve the original Knight of Danika enemy/front resource path unchanged.
 4. Build the missing allied/rear resource set for `0x71` using playable Dragoon `0x14` as the pose/animation skeleton only where compatible.
@@ -112,10 +123,11 @@ This suggests party storage and basic class data are not the primary blocker. Th
 ## Automated evidence
 
 - `tools/audit_knight_of_danika.py` locks the class IDs, table base/stride, computed addresses and Rev-A contract.
-- `tools/scan_danika_battle_lookup.py` scans direct/split address references, extracts complete target records, diffs fields, traces class-accessor callers and summarizes the `func_8017FC48` bridge.
-- `.github/workflows/danika-research.yml` runs both tools on the mod branch and uploads `danika-battle-lookup-report` as an artifact.
+- `tools/scan_danika_battle_lookup.py` extracts complete target records and traces the class accessor family.
+- `tools/trace_danika_asset_bridge.py` proved that `func_8017FC48` is a text/control-code formatting path and performs a caller/definition census around it.
+- `.github/workflows/danika-research.yml` runs the research tools and uploads both reports.
 
-Latest proven research run for the class-to-resource bridge: GitHub Actions run `40166130725`, successful at commit `2293e7c9b33f642fc0f688c902c22772669edb72`; report artifact `12588711601`.
+Latest successful exclusion/bridge run: GitHub Actions run `40166324483` at commit `b7a7a5a8235f721b13b63559b5e0c2c040e9258a`; research artifact `12588147857`.
 
 ## Safety rules
 
@@ -124,13 +136,16 @@ Latest proven research run for the class-to-resource bridge: GitHub Actions run 
 - Do not assume class records contain direct graphics pointers until proven from code/data flow.
 - Do not copy the entire Dragoon class record over Danika.
 - Do not change Danika's `+0x17` alias/key merely because hidden Dragoon uses `0x14`; prove side effects first.
+- Do not patch the `0x01DE....` string-resource banks as graphics.
 - Prefer a class-specific player-side override over broad renderer changes.
 - Any unsupported path must fail closed to vanilla/fallback behavior rather than dereferencing guessed pointers.
 
 ## Current milestone
 
-The project has moved beyond class-ID discovery into a proven class-to-resource-selection chain:
+Class identities and the complete class records are mapped, the alias/accessor behavior is proven, and the first large candidate consumer has been definitively classified as text rather than graphics.
 
-`class record (0x48 bytes)` -> `+0x17 alias/key resolution` -> `func_8016E52C` -> `func_8017FC48` -> downstream resource/load path.
+Closed false path:
 
-Next blocking discovery: label the downstream consumer of the `0x01DE....` constants and identify which branch corresponds specifically to allied/rear battle presentation. Only then should the first graphics override be implemented.
+`class record` -> `class accessors` -> `func_8017FC48` -> `0x01DE....` **text/string resources**
+
+Next blocking discovery: locate the independent battle graphics loader/entity setup path and prove where class and battle side choose the front/rear visual resource set. Only then should the first graphics override be implemented.
