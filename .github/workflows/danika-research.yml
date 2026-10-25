@@ -30,6 +30,7 @@ on:
       - 'tools/trace_danika_visual_descriptor_init.py'
       - 'tools/trace_danika_visual_asset_selector.py'
       - 'tools/test_danika_gate_contract.py'
+      - 'tools/test_danika_visual_override.py'
       - 'mods/playable-knight-of-danika/**'
       - '.github/workflows/danika-research.yml'
   workflow_dispatch:
@@ -120,6 +121,9 @@ jobs:
 
       - name: Lock fail-closed allied gate
         run: python3 tools/test_danika_gate_contract.py
+
+      - name: Lock visual override safety
+        run: python3 tools/test_danika_visual_override.py
 
       - name: Upload reverse-engineering reports
         uses: actions/upload-artifact@v4
