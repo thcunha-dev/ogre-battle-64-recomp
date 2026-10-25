@@ -1,0 +1,219 @@
+name: Integrate DX9 D16 depth path
+
+on:
+  push:
+    branches:
+      - dx9-lowend-410m
+    paths:
+      - '.github/workflows/dx9-integrate-depth.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dx9-lowend-410m
+          fetch-depth: 0
+
+      - name: Add low-end D16 depth path
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          geom = Path('app/src/dx9_geometry.hpp')
+          s = geom.read_text(encoding='utf-8')
+          if 'float depth = 0.5f;' not in s:
+              old = '    float x = 0, y = 0, z = 0, rhw = 1;\n'
+              assert old in s
+              s = s.replace(old, old + '    float depth = 0.5f;  // D3D9 post-transform depth [0,1]\n', 1)
+              old = '    if (!std::isfinite(nx) || !std::isfinite(ny) || !std::isfinite(nz)) return out;\n'
+              assert old in s
+              s = s.replace(old, old + '    out.depth = std::clamp(nz * 0.5f + 0.5f, 0.0f, 1.0f);\n', 1)
+              geom.write_text(s, encoding='utf-8')
+
+          p = Path('app/src/dx9_renderer_stage5.inl')
+          s = p.read_text(encoding='utf-8')
+
+          if '~DX9Renderer() override' not in s:
+              needle = '''    DX9Renderer(uint8_t* rdram, ultramodern::renderer::WindowHandle window_handle)
+                  : DX9RendererStage4(rdram, window_handle) {
+                  if (valid()) {
+                      OGRE_MILESTONE("RENDERER", "DX9 stage5 F3DEX2 + S2DEX2 geometry layer enabled");
+                  }
+              }
+          '''.replace('          ', '')
+              assert needle in s
+              insert = needle + '''
+              ~DX9Renderer() override {
+                  release_depth_surface();
+              }
+
+              void update_screen() override {
+                  DX9RendererStage4::update_screen();
+                  // The next VI frame starts with a fresh hardware depth buffer.
+                  // This avoids carrying stale D3D depth across N64 frames while
+                  // keeping depth intact across multiple display lists in one frame.
+                  depth_clear_pending_ = true;
+              }
+          '''.replace('          ', '')
+              s = s.replace(needle, insert, 1)
+
+          if 'bool ensure_depth_surface(' not in s:
+              needle = '    bool begin_rdp_target(RdpState& st, int bottom, Dx9Framebuffer*& fb,\n                          IDirect3DSurface9*& old) {\n'
+              assert needle in s
+              helpers = '''    void release_depth_surface() {
+                  if (depth_surface_) {
+                      depth_surface_->Release();
+                      depth_surface_ = nullptr;
+                  }
+                  depth_width_ = depth_height_ = 0;
+              }
+
+              bool ensure_depth_surface(int width, int height) {
+                  if (!device_ || width <= 0 || height <= 0) return false;
+                  if (depth_surface_ && depth_width_ == width && depth_height_ == height) return true;
+                  release_depth_surface();
+                  HRESULT hr = device_->CreateDepthStencilSurface(
+                      static_cast<UINT>(width), static_cast<UINT>(height), D3DFMT_D16,
+                      D3DMULTISAMPLE_NONE, 0, TRUE, &depth_surface_, nullptr);
+                  if (FAILED(hr) || !depth_surface_) {
+                      // D16 is the preferred old-GPU format. D24X8 is only a
+                      // compatibility fallback for drivers that reject D16.
+                      hr = device_->CreateDepthStencilSurface(
+                          static_cast<UINT>(width), static_cast<UINT>(height), D3DFMT_D24X8,
+                          D3DMULTISAMPLE_NONE, 0, TRUE, &depth_surface_, nullptr);
+                  }
+                  if (FAILED(hr) || !depth_surface_) {
+                      if (!depth_failure_logged_) {
+                          depth_failure_logged_ = true;
+                          OGRE_MILESTONE("DX9-Z", "depth surface unavailable; geometry continues without Z");
+                      }
+                      return false;
+                  }
+                  depth_width_ = width;
+                  depth_height_ = height;
+                  depth_clear_pending_ = true;
+                  return true;
+              }
+
+              bool reset_device_if_needed() {
+                  if (!device_) return false;
+                  const HRESULT coop = device_->TestCooperativeLevel();
+                  UINT w = backbuffer_width_, h = backbuffer_height_;
+                  const bool have_size = client_size(w, h);
+                  const bool resize = have_size && (w != backbuffer_width_ || h != backbuffer_height_);
+                  if (coop == D3DERR_DEVICENOTRESET || resize) release_depth_surface();
+                  return DX9RendererStage4::reset_device_if_needed();
+              }
+
+          '''.replace('          ', '')
+              s = s.replace(needle, helpers + '    bool begin_rdp_target(RdpState& st, int bottom, Dx9Framebuffer*& fb,\n                          IDirect3DSurface9*& old, bool want_depth = false) {\n', 1)
+
+              old = '''        device_->SetViewport(&vp);
+                  if (st.scissor_enabled) {
+          '''.replace('          ', '')
+              assert old in s
+              new = '''        device_->SetViewport(&vp);
+                  if (want_depth && ensure_depth_surface(fb->width, fb->height)) {
+                      device_->SetDepthStencilSurface(depth_surface_);
+                      if (depth_clear_pending_) {
+                          device_->Clear(0, nullptr, D3DCLEAR_ZBUFFER, 0, 1.0f, 0);
+                          depth_clear_pending_ = false;
+                      }
+                  } else {
+                      device_->SetDepthStencilSurface(nullptr);
+                  }
+                  if (st.scissor_enabled) {
+          '''.replace('          ', '')
+              s = s.replace(old, new, 1)
+
+              old = '''        device_->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
+                  if (old) {
+          '''.replace('          ', '')
+              assert old in s
+              new = '''        device_->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
+                  device_->SetRenderState(D3DRS_ZENABLE, FALSE);
+                  device_->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+                  device_->SetDepthStencilSurface(nullptr);
+                  if (old) {
+          '''.replace('          ', '')
+              s = s.replace(old, new, 1)
+
+          # Triangle target requests a depth surface; S2DEX2 keeps the default false.
+          old = '        if (!begin_rdp_target(st, fb->height, target, old)) {\n'
+          if old in s:
+              s = s.replace(old, '        if (!begin_rdp_target(st, fb->height, target, old, true)) {\n', 1)
+
+          if 'const bool zbuffer_geometry' not in s:
+              needle = '''        if (!bind_rdp_program(st, cyc, tile0, tg0, tg1)) {
+                  end_rdp_target(old);
+                  ++skipped_triangle_count_;
+                  return;
+              }
+
+          '''.replace('          ', '')
+              assert needle in s
+              depth_state = needle + '''        // F3DEX2 G_ZBUFFER is geometry-mode bit 0. RDP render-mode
+              // bits Z_CMP/Z_UPD are 0x10/0x20 in OTHERMODE_L. Keep the
+              // expensive depth path completely disabled for 2D/UI work.
+              const bool zbuffer_geometry = (geom.geometry_mode & 0x00000001u) != 0;
+              const bool z_compare = (st.othermode_l & 0x00000010u) != 0;
+              const bool z_update = (st.othermode_l & 0x00000020u) != 0;
+              const bool use_depth = zbuffer_geometry && depth_surface_ && (z_compare || z_update);
+              device_->SetRenderState(D3DRS_ZENABLE, use_depth ? TRUE : FALSE);
+              device_->SetRenderState(D3DRS_ZWRITEENABLE, (use_depth && z_update) ? TRUE : FALSE);
+              device_->SetRenderState(D3DRS_ZFUNC, z_compare ? D3DCMP_LESSEQUAL : D3DCMP_ALWAYS);
+
+          '''.replace('          ', '')
+              s = s.replace(needle, depth_state, 1)
+
+          # Feed actual transformed depth to both triangle vertex formats.
+          s = s.replace('out[i] = {tv[i].x - 0.5f, tv[i].y - 0.5f, 0.0f, tv[i].rhw, u, v};',
+                        'out[i] = {tv[i].x - 0.5f, tv[i].y - 0.5f, tv[i].depth, tv[i].rhw, u, v};')
+          s = s.replace('                0.0f,\n                tv[i].rhw,',
+                        '                tv[i].depth,\n                tv[i].rhw,')
+
+          if 'IDirect3DSurface9* depth_surface_' not in s:
+              needle = '    bool s2dex_half0_logged_ = false;\n'
+              assert needle in s
+              s = s.replace(needle, needle + '''    IDirect3DSurface9* depth_surface_ = nullptr;
+              int depth_width_ = 0, depth_height_ = 0;
+              bool depth_clear_pending_ = true;
+              bool depth_failure_logged_ = false;
+          '''.replace('          ', ''), 1)
+
+          p.write_text(s, encoding='utf-8')
+
+          # Structural guards: depth must be present only in geometry path.
+          text = p.read_text(encoding='utf-8')
+          assert 'CreateDepthStencilSurface' in text
+          assert 'D3DFMT_D16' in text
+          assert 'begin_rdp_target(st, fb->height, target, old, true)' in text
+          assert 'zbuffer_geometry' in text
+          assert 'tv[i].depth' in text
+          PY
+          git diff --check
+
+      - name: Commit depth path
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/dx9_geometry.hpp app/src/dx9_renderer_stage5.inl
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'dx9: add low-end D16 depth path for F3DEX2 geometry'
+          git push origin HEAD:dx9-lowend-410m
+
+      - name: Dispatch DX9 validation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build-dx9-app.yml --ref dx9-lowend-410m
