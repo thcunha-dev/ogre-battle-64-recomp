@@ -14,6 +14,29 @@ Static reverse engineering has now proven the battle visual path:
 
 The remaining safe requirement is to correlate real battle records with participants whose ownership is known from gameplay. Once that correlation is proven, the final mod can substitute only the allied Danika visual selector while leaving enemy Danika untouched.
 
+## Dormant final visual resolver
+
+The selector-only resolver for the future playable patch is already implemented in `danika_visual_override.h` and is intentionally dormant. Its only positive path is:
+
+`class 0x71 + proven allied side + valid allied-Dragoon selector -> use donor visual selector`
+
+Every other case returns the original selector unchanged. In particular:
+
+- unknown side -> vanilla;
+- enemy Danika -> vanilla;
+- any class other than `0x71` -> vanilla;
+- donor selector `0` or `0xFFFF` -> vanilla;
+- the class word itself is never rewritten.
+
+The resolver is exercised by a native C truth-table test and is also compiled and linked by the MIPS cross-toolchain into the diagnostic ELF through `danika_visual_contract.c`. That contract object has no runtime hook or patch and exists only to prove target-ABI compatibility before live mutation is enabled. Packaging asserts that the diagnostic ELF still contains the single read-only `func_80072944` hook and no `.recomp_patch` section.
+
+Therefore the remaining activation inputs are now exactly two independently proven values from real battle data:
+
+1. a reliable allied/enemy discriminator for a live participant;
+2. the visual selector used by a known player-side normal Dragoon.
+
+Until both are proven, the runtime override remains disabled.
+
 ## What the probe logs
 
 Whenever a new battle table/resource group becomes active, every plausible participant record is emitted once as a snapshot:
