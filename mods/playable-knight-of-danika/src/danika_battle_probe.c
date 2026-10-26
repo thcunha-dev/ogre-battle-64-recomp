@@ -31,6 +31,8 @@
 
 RECOMP_IMPORT("*", void recomp_log(const char* message));
 
+void danika_bankj_probe_tick(void);
+
 #define RDRAM_LO 0x80000000u
 #define RDRAM_HI 0x80800000u
 
@@ -330,8 +332,9 @@ void danika_battle_probe_tick(void) {
     unsigned int slot;
     unsigned int new_context = 0u;
 
-    // Participant capture is independent from the renderer table and remains
-    // useful even during frames where the visual group has not been installed.
+    // Both auxiliary probes are read-only.  The bank-J sampler may let us
+    // recover the otherwise gitignored sync instructions directly from RDRAM.
+    danika_bankj_probe_tick();
     scan_live_participants();
 
     if (!valid_range(table, 2u)) {
