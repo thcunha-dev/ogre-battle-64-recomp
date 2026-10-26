@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """Trace candidates for Ogre Battle 64's manual Change Class UI.
 
-Read-only static analysis.  We already proved func_8016EA54/func_8016F13C consume
-class-transition metadata, but that path may be automatic progression rather
-than the player's Change Class menu.  This scanner finds functions that combine
-live-character class access (+0x12) with class-table access, then scores likely
-manual-selection/list-building routines and prints the full body of the strongest
-candidates plus the caller chain around func_80184D90.
+Read-only static analysis.  The proven func_8016EA54/func_8016F13C chain is a
+class-transition/progression path, not yet proof of the player's manual Change
+Class UI.  This scanner ranks functions that combine character-class access with
+class-table access while explicitly de-prioritising text/control-code parsers.
 """
 from __future__ import annotations
 from pathlib import Path
@@ -22,6 +20,7 @@ CLASS_SYM = re.compile(r"\bD_80187C(?:34|38|39|57|58|62|64|66|68|75|76|77|78|79|
 CHAR_CLASS = re.compile(r"\b(?:lbu|lb|sb)\s+[^\n]*0x12\(\$[a-z0-9]+\)")
 LOOP_BOUND = re.compile(r"\b(?:sltiu?|ori|addiu)\s+[^\n]*(?:0xFF|0xFE|0x100|0xA0|0x9F)\b", re.I)
 STORE_BYTE = re.compile(r"\bsb\s+[^\n]+")
+TEXTISH = re.compile(r"(?:0x303[0-9]|0x313[0-9]|0x323[0-9]|0x8194|0x8196|0x0D|0x0A)", re.I)
 
 
 def all_functions(path: Path):
@@ -44,9 +43,7 @@ def all_functions(path: Path):
 
 
 def main():
-    funcs={}
-    callers={}
-    candidates=[]
+    funcs={}; callers={}; candidates=[]
     for path in sorted(ASM_ROOT.rglob("*.s")):
         try: blocks=all_functions(path)
         except OSError: continue
@@ -59,19 +56,21 @@ def main():
             if not syms: continue
             has_char=bool(CHAR_CLASS.search(text))
             has_bound=bool(LOOP_BOUND.search(text))
-            stores=len(STORE_BYTE.findall(text))
-            calls=len(CALL.findall(text))
+            stores=len(STORE_BYTE.findall(text)); calls=len(CALL.findall(text))
+            textish=len(TEXTISH.findall(text))
             score=0
             if has_char: score += 5
             if has_bound: score += 4
             if len(syms) >= 2: score += 2
             if stores: score += 1
             if calls >= 3: score += 1
-            candidates.append((score,path,name,start,end,syms,has_char,has_bound,stores,calls))
+            if textish >= 6: score -= 8
+            candidates.append((score,path,name,start,end,syms,has_char,has_bound,stores,calls,textish))
 
     print("Knight of Danika manual Change Class candidate trace")
     print("====================================================")
     print("automatic_transition_path=func_8016EA54/func_8016F13C")
+    print("known_text_parser_false_positive=func_8017FC48")
     print("goal=find_manual_class_list_or_selection_path")
     print()
 
@@ -89,23 +88,25 @@ def main():
     candidates.sort(key=lambda x:(-x[0], str(x[1]), x[3]))
     print("RANKED_CLASS_UI_CANDIDATES")
     for row in candidates[:30]:
-        score,path,name,start,end,syms,has_char,has_bound,stores,calls=row
-        print(f"CAND score={score:02d} {path.relative_to(ROOT)}:{start}-{end} function={name} char_class={int(has_char)} broad_bound={int(has_bound)} stores={stores} calls={calls} syms={','.join(syms)}")
+        score,path,name,start,end,syms,has_char,has_bound,stores,calls,textish=row
+        print(f"CAND score={score:02d} {path.relative_to(ROOT)}:{start}-{end} function={name} char_class={int(has_char)} broad_bound={int(has_bound)} stores={stores} calls={calls} textish={textish} syms={','.join(syms)}")
     print()
 
-    strongest=[r for r in candidates if r[0] >= 7][:12]
+    strongest=[r for r in candidates if r[0] >= 7 and r[2] != "func_8017FC48"][:10]
     print("STRONG_CANDIDATE_BODIES")
     for row in strongest:
         _,path,name,start,end,*_=row
         _,_,_,body,_=funcs[name]
         print(f"--- {name} {path.relative_to(ROOT)}:{start}-{end} ---")
-        for line in body:
-            print(line)
+        for line in body: print(line)
         print()
 
     assert "func_80184D90" in funcs
     assert "func_8016F13C" in funcs
-    assert any(c[2] == "func_80184D90" for c in candidates), "caller should touch class-table data"
+    assert "func_8017FC48" in funcs
+    # The caller itself need not touch the table: its call into F13C is the
+    # important fact.  The old assertion incorrectly required a direct table ref.
+    assert any(cn == "func_80184D90" for _,cn,_,_ in callers.get("func_8016F13C", []))
     print("manual class-menu candidate trace: PASS")
 
 if __name__ == "__main__":
