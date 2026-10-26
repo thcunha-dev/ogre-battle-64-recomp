@@ -1,0 +1,35 @@
+name: Knight of Danika Join Analysis
+
+on:
+  push:
+    branches:
+      - mod/playable-knight-of-danika
+    paths:
+      - 'mods/playable-knight-of-danika/src/danika_join_probe.c'
+      - 'mods/playable-knight-of-danika/src/danika_bankj_probe.c'
+      - 'tools/analyze_danika_join_log.py'
+      - 'tools/test_analyze_danika_join_log.py'
+      - 'tools/test_danika_battle_probe.py'
+      - '.github/workflows/danika-join-analysis.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  join-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify read-only ownership bridge
+        run: python3 tools/test_danika_battle_probe.py
+
+      - name: Verify descriptor participant analyzer
+        run: python3 tools/test_analyze_danika_join_log.py
+
+      - name: Enforce fail-closed analyzer language
+        run: |
+          grep -F 'same_index_roster_alignment=REJECTED' tools/analyze_danika_join_log.py
+          grep -F 'same_index_roster_alignment=INSUFFICIENT' tools/analyze_danika_join_log.py
+          grep -F 'safety=alignment evidence only' tools/analyze_danika_join_log.py
