@@ -13,6 +13,7 @@ on:
       - 'tools/trace_danika_selected_character_menu.py'
       - 'tools/trace_danika_class_helper_callers.py'
       - 'tools/trace_danika_menu_state_writers.py'
+      - 'tools/trace_danika_class_eligibility_helpers.py'
       - 'asm/**'
       - '.github/workflows/danika-class-change-trace.yml'
 
@@ -23,37 +24,26 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Trace native class-change flow
-        run: |
-          python3 tools/trace_danika_class_change_flow.py | tee /tmp/danika-class-change-flow.txt
-
+        run: python3 tools/trace_danika_class_change_flow.py | tee /tmp/danika-class-change-flow.txt
       - name: Trace manual class menu candidates
-        run: |
-          python3 tools/trace_danika_manual_class_menu.py | tee /tmp/danika-manual-class-menu.txt
-
+        run: python3 tools/trace_danika_manual_class_menu.py | tee /tmp/danika-manual-class-menu.txt
       - name: Trace class-id commit writes
-        run: |
-          python3 tools/trace_danika_class_commit_writes.py | tee /tmp/danika-class-commit-writes.txt
-
+        run: python3 tools/trace_danika_class_commit_writes.py | tee /tmp/danika-class-commit-writes.txt
       - name: Trace roster to class-menu bridge
-        run: |
-          python3 tools/trace_danika_roster_menu_bridge.py | tee /tmp/danika-roster-menu-bridge.txt
-
+        run: python3 tools/trace_danika_roster_menu_bridge.py | tee /tmp/danika-roster-menu-bridge.txt
       - name: Trace selected-character class-menu path
-        run: |
-          python3 tools/trace_danika_selected_character_menu.py | tee /tmp/danika-selected-character-menu.txt
-
+        run: python3 tools/trace_danika_selected_character_menu.py | tee /tmp/danika-selected-character-menu.txt
       - name: Map class helper callers
-        run: |
-          python3 tools/trace_danika_class_helper_callers.py | tee /tmp/danika-class-helper-callers.txt
-
+        run: python3 tools/trace_danika_class_helper_callers.py | tee /tmp/danika-class-helper-callers.txt
       - name: Trace menu state writers
-        run: |
-          python3 tools/trace_danika_menu_state_writers.py | tee /tmp/danika-menu-state-writers.txt
+        run: python3 tools/trace_danika_menu_state_writers.py | tee /tmp/danika-menu-state-writers.txt
+      - name: Trace class eligibility helpers
+        run: python3 tools/trace_danika_class_eligibility_helpers.py | tee /tmp/danika-class-eligibility-helpers.txt
 
       - name: Publish decisive traces in job summary
         run: |
           {
-            for f in danika-class-change-flow danika-manual-class-menu danika-class-commit-writes danika-roster-menu-bridge danika-selected-character-menu danika-class-helper-callers danika-menu-state-writers; do
+            for f in danika-class-change-flow danika-manual-class-menu danika-class-commit-writes danika-roster-menu-bridge danika-selected-character-menu danika-class-helper-callers danika-menu-state-writers danika-class-eligibility-helpers; do
               echo "## $f"
               echo '```text'
               cat "/tmp/$f.txt"
@@ -65,13 +55,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: danika-class-change-flow
-          path: |
-            /tmp/danika-class-change-flow.txt
-            /tmp/danika-manual-class-menu.txt
-            /tmp/danika-class-commit-writes.txt
-            /tmp/danika-roster-menu-bridge.txt
-            /tmp/danika-selected-character-menu.txt
-            /tmp/danika-class-helper-callers.txt
-            /tmp/danika-menu-state-writers.txt
+          path: /tmp/danika-*.txt
           if-no-files-found: error
           retention-days: 14
