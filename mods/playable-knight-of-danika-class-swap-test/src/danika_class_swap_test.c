@@ -10,7 +10,11 @@
 //     exactly playable Dragoon 0x14;
 //   * only writes Knight of Danika 0x71;
 //   * never scans or writes live enemy/battle participant memory;
-//   * executes at most once per process run.
+//   * once one Dragoon is converted, no later writes occur for the process.
+//
+// The hook intentionally retries while no Dragoon is present. This avoids a
+// false negative if func_80072944 runs before the save/roster has finished
+// loading. The retry path is read-only and logs the waiting state only once.
 //
 // Because this changes persistent roster RAM, DO NOT save over an important
 // save file while this test mod is enabled. Use a disposable/copy save.
@@ -27,7 +31,8 @@ RECOMP_IMPORT("*", void recomp_log(const char* message));
 #define DRAGOON_CLASS_ID  0x14u
 #define DANIKA_CLASS_ID   0x71u
 
-static unsigned char s_attempted;
+static unsigned char s_done;
+static unsigned char s_logged_waiting;
 
 static unsigned char rd8(unsigned int address) {
     return *(volatile const unsigned char*)address;
@@ -67,10 +72,9 @@ RECOMP_HOOK("func_80072944")
 void danika_class_swap_test_tick(void) {
     unsigned int i;
 
-    if (s_attempted) {
+    if (s_done) {
         return;
     }
-    s_attempted = 1u;
 
     for (i = 0u; i < CHAR_COUNT; i++) {
         unsigned int class_addr = CHAR_TABLE + i * CHAR_STRIDE + CHAR_CLASS;
@@ -78,10 +82,14 @@ void danika_class_swap_test_tick(void) {
 
         if (class_id == DRAGOON_CLASS_ID) {
             wr8(class_addr, (unsigned char)DANIKA_CLASS_ID);
+            s_done = 1u;
             log_result("DANIKA_CLASS_SWAP 14->71", i);
             return;
         }
     }
 
-    log_result("DANIKA_CLASS_SWAP no_dragoon_found", CHAR_COUNT);
+    if (!s_logged_waiting) {
+        s_logged_waiting = 1u;
+        log_result("DANIKA_CLASS_SWAP waiting_for_dragoon", CHAR_COUNT);
+    }
 }
