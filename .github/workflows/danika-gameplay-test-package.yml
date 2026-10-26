@@ -16,15 +16,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify isolated gameplay write scope
+      - name: Verify isolated gameplay and battle-visual write scope
         run: |
           set -eux
           src=mods/playable-knight-of-danika-gameplay-test/src/danika_gameplay_test.c
           grep -q 'CHAR_TABLE       0x80193BE0u' "$src"
+          grep -q 'LIVE_BATTLE_PTR  0x801CE8DCu' "$src"
+          grep -q 'BATTLE_RECORD_TABLE_PTR 0x801BA6D8u' "$src"
+          grep -q 'BATTLE_RESOURCE_GROUP   0x801BA72Du' "$src"
           grep -q 'FIGHTER_CLASS_ID 0x02u' "$src"
+          grep -q 'KNIGHT_CLASS_ID  0x05u' "$src"
+          grep -q 'DRAGOON_CLASS_ID 0x14u' "$src"
           grep -q 'DANIKA_CLASS_ID  0x71u' "$src"
-          grep -q 'CHAR_CLASS       0x12u' "$src"
-          ! grep -q '0x801CE8DC' "$src"
+          grep -q 'REC_SELECTOR            0x00u' "$src"
+          grep -q 'REC_CLASS               0x02u' "$src"
+          grep -q 'wr16(danika_record + REC_SELECTOR' "$src"
+          ! grep -q 'wr16(danika_record + REC_CLASS' "$src"
+          ! grep -q 'wr8(part +' "$src"
+          ! grep -q 'wr16(part +' "$src"
+          ! grep -q 'wr32' "$src"
 
       - name: Install build dependencies
         run: |
