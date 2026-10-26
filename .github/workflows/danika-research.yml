@@ -128,6 +128,9 @@ jobs:
       - name: Lock read-only battle probe safety
         run: python3 tools/test_danika_battle_probe.py
 
+      - name: Test battle probe log analyzer
+        run: python3 tools/test_analyze_danika_probe_log.py
+
       - name: Syntax-check battle probe
         run: gcc -std=c99 -fsyntax-only -Wall -Wextra -I mods/playable-knight-of-danika/include mods/playable-knight-of-danika/src/danika_battle_probe.c
 
