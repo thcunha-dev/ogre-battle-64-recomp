@@ -79,21 +79,14 @@ jobs:
           mod=mods/playable-knight-of-danika
           mkdir -p "$mod/build" build/mods mods/reference
           common='-mips2 -march=mips2 -mno-check-zero-division -mabi=32 -O2 -G0 -mno-abicalls -mno-odd-spreg -fno-builtin -ffreestanding -fno-pic -fno-pie -Wall -Wextra -Wno-unused-parameter'
-          mips-linux-gnu-gcc $common -nostdinc \
-            -I "$mod/include" -c "$mod/src/danika_battle_probe.c" \
-            -o "$mod/build/danika_battle_probe.o"
-          mips-linux-gnu-gcc $common -nostdinc \
-            -I "$mod/include" -c "$mod/src/danika_bankj_probe.c" \
-            -o "$mod/build/danika_bankj_probe.o"
-          mips-linux-gnu-gcc $common -nostdinc \
-            -I "$mod/include" -c "$mod/src/danika_bankc_probe.c" \
-            -o "$mod/build/danika_bankc_probe.o"
-          mips-linux-gnu-gcc $common -nostdinc \
-            -I "$mod/include" -c "$mod/src/danika_bankah_probe.c" \
-            -o "$mod/build/danika_bankah_probe.o"
-          mips-linux-gnu-gcc $common \
-            -I "$mod" -c "$mod/src/danika_visual_contract.c" \
-            -o "$mod/build/danika_visual_contract.o"
+          mips-linux-gnu-gcc $common -nostdinc -I "$mod/include" -c "$mod/src/danika_battle_probe.c" -o "$mod/build/danika_battle_probe.o"
+          mips-linux-gnu-gcc $common -nostdinc -I "$mod/include" -c "$mod/src/danika_bankj_probe.c" -o "$mod/build/danika_bankj_probe.o"
+          mips-linux-gnu-gcc $common -nostdinc -I "$mod/include" -c "$mod/src/danika_bankc_probe.c" -o "$mod/build/danika_bankc_probe.o"
+          mips-linux-gnu-gcc $common -nostdinc -I "$mod/include" -c "$mod/src/danika_bankah_probe.c" -o "$mod/build/danika_bankah_probe.o"
+          mips-linux-gnu-gcc $common -nostdinc -I "$mod/include" -c "$mod/src/danika_join_probe.c" -o "$mod/build/danika_join_probe.o"
+          mips-linux-gnu-gcc $common -I "$mod" -c "$mod/src/danika_visual_contract.c" -o "$mod/build/danika_visual_contract.o"
+          mips-linux-gnu-nm "$mod/build/danika_join_probe.o" | tee /tmp/danika-join-probe-symbols.txt
+          grep -q ' T danika_join_probe_tick$' /tmp/danika-join-probe-symbols.txt
           mips-linux-gnu-nm "$mod/build/danika_bankj_probe.o" | tee /tmp/danika-bankj-probe-symbols.txt
           grep -q ' T danika_bankj_probe_tick$' /tmp/danika-bankj-probe-symbols.txt
           mips-linux-gnu-nm "$mod/build/danika_bankc_probe.o" | tee /tmp/danika-bankc-probe-symbols.txt
@@ -102,13 +95,13 @@ jobs:
           grep -q ' T danika_bankah_after_dma$' /tmp/danika-bankah-probe-symbols.txt
           mips-linux-gnu-nm "$mod/build/danika_visual_contract.o" | tee /tmp/danika-visual-contract-symbols.txt
           grep -q ' T danika_mips_visual_contract$' /tmp/danika-visual-contract-symbols.txt
-          mips-linux-gnu-ld -nostdlib -T "$mod/mod.ld" \
-            --unresolved-symbols=ignore-all --emit-relocs -e 0 \
+          mips-linux-gnu-ld -nostdlib -T "$mod/mod.ld" --unresolved-symbols=ignore-all --emit-relocs -e 0 \
             -o "$mod/build/mod.elf" \
             "$mod/build/danika_battle_probe.o" \
             "$mod/build/danika_bankj_probe.o" \
             "$mod/build/danika_bankc_probe.o" \
             "$mod/build/danika_bankah_probe.o" \
+            "$mod/build/danika_join_probe.o" \
             "$mod/build/danika_visual_contract.o"
           test -s "$mod/build/mod.elf"
           mips-linux-gnu-readelf -SW "$mod/build/mod.elf" | tee /tmp/danika-probe-sections.txt
@@ -116,6 +109,7 @@ jobs:
           grep -q '.recomp_hook.func_80072944' /tmp/danika-probe-sections.txt
           grep -q '.recomp_hook_return.func_8009DA50' /tmp/danika-probe-sections.txt
           ! grep -q '.recomp_patch' /tmp/danika-probe-sections.txt
+          grep -q ' T danika_join_probe_tick$' /tmp/danika-probe-symbols.txt
           grep -q ' T danika_bankj_probe_tick$' /tmp/danika-probe-symbols.txt
           grep -q ' T danika_bankc_probe_tick$' /tmp/danika-probe-symbols.txt
           grep -q ' T danika_bankah_after_dma$' /tmp/danika-probe-symbols.txt
