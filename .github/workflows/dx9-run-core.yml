@@ -3,7 +3,9 @@ name: Apply DX9 core patch
 on:
   push:
     branches: [dx9-lowend-410m]
-    paths: ['.github/workflows/dx9-run-core.yml']
+    paths:
+      - '.github/workflows/dx9-run-core.yml'
+      - '.github/scripts/apply_dx9_core.py'
 
 permissions:
   contents: write
@@ -26,5 +28,9 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add app/CMakeLists.txt dx9/CMakeLists.txt app/src/dx9_geometry.hpp app/src/dx9_renderer_stage6.inl
-          git commit -m 'dx9: make renderer first-class and finish MODIFYVTX'
+          if git diff --cached --quiet; then
+            echo 'DX9 core already integrated.'
+            exit 0
+          fi
+          git commit -m 'dx9: integrate current low-end renderer core'
           git push origin HEAD:dx9-lowend-410m
