@@ -1,4 +1,4 @@
-# trigger: integrate core from validated patch payload
+# trigger: integrate core from validated patch payload v2
 name: Run DX9 core integration
 
 on:
@@ -21,9 +21,8 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          PATCH_B64="$(sed -n 's/^          PATCH_B64: //p' .github/workflows/dx9-integrate-core.yml)"
-          test -n "$PATCH_B64"
-          printf '%s' "$PATCH_B64" | base64 -d > /tmp/dx9_patch.py
+          sed -n 's/^          PATCH_B64: //p' .github/workflows/dx9-integrate-core.yml | tr -d '[:space:]' | base64 -d > /tmp/dx9_patch.py
+          test -s /tmp/dx9_patch.py
           python3 /tmp/dx9_patch.py
           git diff --check
           git config user.name 'github-actions[bot]'
