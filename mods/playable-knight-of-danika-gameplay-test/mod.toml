@@ -1,0 +1,25 @@
+[manifest]
+id = "ogre_danika_gameplay_test"
+version = "0.1.0"
+display_name = "Knight of Danika - Allied Gameplay Test"
+description = """
+Developer-only gameplay smoke test. Converts the first generic allied Fighter
+(class 0x02) in the player roster to Knight of Danika (0x71) so map, unit and
+battle behavior can be tested before native Change Class integration. It does
+not touch enemy battle memory. Use only with a disposable/copy save and do not
+save over an important file while enabled.
+"""
+short_description = "Dev-only allied Fighter 0x02 -> Knight of Danika 0x71 gameplay test."
+authors = [ "Ogre Battle 64 BR" ]
+game_id = "ogrebattle64"
+minimum_recomp_version = "0.1.0"
+dependencies = [ ]
+native_libraries = [ ]
+enabled_by_default = false
+
+[inputs]
+elf_path = "build/mod.elf"
+mod_filename = "knight-of-danika-gameplay-test"
+func_reference_syms_file = "../reference/dump.toml"
+data_reference_syms_files = [ ]
+additional_files = [ "TESTING.md" ]
