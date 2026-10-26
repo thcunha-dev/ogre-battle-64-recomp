@@ -9,7 +9,9 @@ This tool does NOT label an unknown field as a weapon field merely because its
 value differs.  It extracts the three aligned class records, identifies fields
 where player Dragoon 0x14 and hidden Dragoon 0x9C agree but Danika 0x71 differs,
 and correlates those offsets with the known D_80187Cxx accessor family and its
-callers.  The resulting report is evidence for targeted follow-up, not a patch.
+callers.  Fields whose non-visual semantics are already proven are explicitly
+rejected from the actionable weapon set.  The report is evidence for targeted
+follow-up, not a patch.
 """
 
 from __future__ import annotations
@@ -28,6 +30,18 @@ DRAGOON = 0x14
 DANIKA = 0x71
 HIDDEN_DRAGOON = 0x9C
 OUT = ROOT / "danika-weapon-compat-report.txt"
+
+# Proven by classify_danika_tail_semantics.py.  These are gameplay/class
+# transition metadata and must never be inherited merely to obtain Dragoon's
+# weapon or rear pose.
+REJECTED_NONVISUAL = {
+    0x41: "class-transition candidate",
+    0x42: "class-transition threshold/candidate metadata",
+    0x43: "class-transition candidate",
+    0x44: "class-transition threshold/candidate metadata",
+    0x45: "class alias/reference metadata",
+    0x46: "companion gameplay metadata",
+}
 
 ADDR_RE = re.compile(r"/\*\s*[0-9A-Fa-f]+\s+([0-9A-Fa-f]{8})\s*\*/\s*\.(byte|short|word)\s+(.+?)\s*$")
 HEX_RE = re.compile(r"0x([0-9A-Fa-f]+)")
@@ -117,6 +131,10 @@ def u16_be(rec: list[int], off: int) -> int:
     return (rec[off] << 8) | rec[off + 1]
 
 
+def rejected_u16(off: int) -> bool:
+    return off in REJECTED_NONVISUAL or (off + 1) in REJECTED_NONVISUAL
+
+
 def main() -> int:
     mem = parse_data_bytes()
     dragoon = record(mem, DRAGOON)
@@ -137,6 +155,10 @@ def main() -> int:
         if u16_be(dragoon, off) == u16_be(hidden, off)
         and u16_be(danika, off) != u16_be(dragoon, off)
     ]
+    actionable_bytes = [off for off in byte_candidates if off not in REJECTED_NONVISUAL]
+    actionable_words = [off for off in word_candidates if not rejected_u16(off)]
+    rejected_bytes = [off for off in byte_candidates if off in REJECTED_NONVISUAL]
+    rejected_words = [off for off in word_candidates if rejected_u16(off)]
 
     lines: list[str] = []
     lines += [
@@ -152,28 +174,44 @@ def main() -> int:
         "- Dragoon is the compatibility baseline for greatsword pose/animation/equipment paths.",
         "- Danika identity/palette/front graphics remain Danika-specific.",
         "- Matching Dragoon values are candidates only; unknown fields are never copied blindly.",
+        "- Proven class-transition/alias metadata is rejected before ranking weapon candidates.",
         "",
         "Byte offsets where player Dragoon == hidden Dragoon != Danika",
         "-----------------------------------------------------------",
     ]
     for off in byte_candidates:
+        suffix = ""
+        if off in REJECTED_NONVISUAL:
+            suffix = f"  REJECTED_NONVISUAL={REJECTED_NONVISUAL[off]}"
         lines.append(
-            f"+0x{off:02X}: dragoon=0x{dragoon[off]:02X} danika=0x{danika[off]:02X} hidden=0x{hidden[off]:02X}"
+            f"+0x{off:02X}: dragoon=0x{dragoon[off]:02X} danika=0x{danika[off]:02X} hidden=0x{hidden[off]:02X}{suffix}"
         )
 
     lines += ["", "Aligned u16 candidates", "----------------------"]
     for off in word_candidates:
+        suffix = "  REJECTED_NONVISUAL" if rejected_u16(off) else ""
         lines.append(
             f"+0x{off:02X}: dragoon=0x{u16_be(dragoon,off):04X} "
-            f"danika=0x{u16_be(danika,off):04X} hidden=0x{u16_be(hidden,off):04X}"
+            f"danika=0x{u16_be(danika,off):04X} hidden=0x{u16_be(hidden,off):04X}{suffix}"
         )
 
-    lines += ["", "Accessor correlation", "--------------------"]
+    lines += [
+        "",
+        "Actionable unknown candidates after semantic rejection",
+        "------------------------------------------------------",
+        "byte_offsets=" + (",".join(f"+0x{x:02X}" for x in actionable_bytes) or "none"),
+        "u16_offsets=" + (",".join(f"+0x{x:02X}" for x in actionable_words) or "none"),
+        f"rejected_known_nonvisual_bytes={len(rejected_bytes)}",
+        f"rejected_known_nonvisual_u16={len(rejected_words)}",
+    ]
+
+    lines += ["", "Accessor correlation (actionable unknowns only)", "----------------------------------------------"]
+    actionable_byte_set = set(actionable_bytes)
+    actionable_word_set = set(actionable_words)
     for func, offs in sorted(access.items()):
-        hit = sorted(set(offs) & set(byte_candidates))
+        hit = sorted(set(offs) & actionable_byte_set)
         if not hit:
-            # A 16-bit accessor may be anchored at the first byte of a word candidate.
-            hit = sorted(o for o in offs if o in word_candidates)
+            hit = sorted(o for o in offs if o in actionable_word_set)
         if not hit:
             continue
         cs = callers.get(func, [])
@@ -192,6 +230,7 @@ def main() -> int:
         "Safety contract",
         "---------------",
         "A future greatsword patch may copy/redirect only fields whose semantics are proven by downstream code.",
+        "Known class-transition/alias fields +0x41..+0x46 are never weapon-fix candidates.",
         "No whole-record replacement of class 0x71 with class 0x14 is permitted.",
         "No global Dragoon resource may be overwritten.",
         "Enemy/front Danika behavior must remain vanilla.",
@@ -206,9 +245,17 @@ def main() -> int:
     assert BASE + HIDDEN_DRAGOON * STRIDE == 0x8018A814
     assert byte_candidates, "expected at least one Dragoon-shared candidate"
     assert word_candidates, "expected at least one aligned u16 Dragoon-shared candidate"
+    assert actionable_bytes, "semantic rejection unexpectedly removed every byte candidate"
+    assert actionable_words, "semantic rejection unexpectedly removed every u16 candidate"
+    assert all(off not in actionable_bytes for off in REJECTED_NONVISUAL)
+    assert all(not rejected_u16(off) for off in actionable_words)
 
     print(report, end="")
-    print(f"Danika/Dragoon weapon compatibility scan: PASS ({len(byte_candidates)} byte, {len(word_candidates)} u16 candidates)")
+    print(
+        "Danika/Dragoon weapon compatibility scan: PASS "
+        f"({len(actionable_bytes)} actionable byte, {len(actionable_words)} actionable u16; "
+        f"rejected {len(rejected_bytes)} byte/{len(rejected_words)} u16 known-nonvisual)"
+    )
     print(f"report={OUT.name}")
     return 0
 
