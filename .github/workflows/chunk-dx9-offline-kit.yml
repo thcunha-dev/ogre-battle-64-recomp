@@ -1,0 +1,76 @@
+name: Chunk DX9 offline kit
+
+on:
+  push:
+    branches: [dx9-lowend-410m]
+    paths:
+      - '.github/workflows/chunk-dx9-offline-kit.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  chunk:
+    runs-on: ubuntu-24.04
+    env:
+      SOURCE_ARTIFACT_ID: '12692033646'
+    steps:
+      - name: Download existing ROM-free kit artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          curl -fL --retry 3 \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            -o ogre-dx9-offline-build-kit.zip \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${SOURCE_ARTIFACT_ID}/zip"
+          sha256sum ogre-dx9-offline-build-kit.zip
+          test "$(sha256sum ogre-dx9-offline-build-kit.zip | awk '{print $1}')" = \
+            '8189cea9f36b77e87e9069f5473e0b35b00dfad8dc65f671da444ce303580637'
+          mkdir chunks
+          split -b 80M -d -a 2 ogre-dx9-offline-build-kit.zip chunks/kit.part-
+          ls -lh chunks
+          test -f chunks/kit.part-00
+          test -f chunks/kit.part-04
+          test ! -f chunks/kit.part-05
+
+      - name: Upload chunk 00
+        uses: actions/upload-artifact@v4
+        with:
+          name: dx9-offline-kit-chunk-00
+          path: chunks/kit.part-00
+          compression-level: 0
+          retention-days: 7
+      - name: Upload chunk 01
+        uses: actions/upload-artifact@v4
+        with:
+          name: dx9-offline-kit-chunk-01
+          path: chunks/kit.part-01
+          compression-level: 0
+          retention-days: 7
+      - name: Upload chunk 02
+        uses: actions/upload-artifact@v4
+        with:
+          name: dx9-offline-kit-chunk-02
+          path: chunks/kit.part-02
+          compression-level: 0
+          retention-days: 7
+      - name: Upload chunk 03
+        uses: actions/upload-artifact@v4
+        with:
+          name: dx9-offline-kit-chunk-03
+          path: chunks/kit.part-03
+          compression-level: 0
+          retention-days: 7
+      - name: Upload chunk 04
+        uses: actions/upload-artifact@v4
+        with:
+          name: dx9-offline-kit-chunk-04
+          path: chunks/kit.part-04
+          compression-level: 0
+          retention-days: 7
