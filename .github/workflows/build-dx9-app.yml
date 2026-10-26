@@ -50,6 +50,9 @@ jobs:
           grep -q 'option(OGRE_USE_DX9' app/CMakeLists.txt
           grep -q 'set(OGRE_RENDERER_SOURCES src/dx9_renderer.cpp)' app/CMakeLists.txt
           grep -q 'target_link_libraries(ogrebattle64 PRIVATE d3d9)' app/CMakeLists.txt
+          grep -q 'kCullFront = 0x00001000u' app/src/dx9_geometry.hpp
+          grep -q 'triangle_trivially_rejected(tv\[0\]' app/src/dx9_renderer_stage6.inl
+          grep -q 'triangle_culled(geom, tv\[0\]' app/src/dx9_renderer_stage6.inl
           if grep -Eqi 'target_link_libraries\([^)]*(d3d12|dxgi|vulkan)' dx9/CMakeLists.txt; then
             echo '::error::DX9 wrapper links a modern renderer dependency.'
             exit 1
@@ -107,7 +110,7 @@ jobs:
           test -s /tmp/dx9_renderer.o
           test -s /tmp/gbi.o
           test -s /tmp/dx9_core.o
-          echo "Standalone DX9 stage6 renderer and texture/state/shader/geometry/S2DEX2/D16-depth cores compile for Windows x86-64."
+          echo "Standalone DX9 stage6 renderer + F3DEX2 culling + texture/state/shader/S2DEX2/D16-depth cores compile for Windows x86-64."
 
       - name: Verify D3D9-only renderer object
         shell: bash
