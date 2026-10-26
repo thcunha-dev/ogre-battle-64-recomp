@@ -16,17 +16,13 @@ jobs:
         with:
           ref: dx9-lowend-410m
           fetch-depth: 0
-      - name: Apply reviewed patch
+      - name: Apply deterministic DX9 integration
         shell: bash
         run: |
           set -euxo pipefail
-          git apply --check .github/patches/dx9-core-firstclass.patch
-          git apply .github/patches/dx9-core-firstclass.patch
+          python3 -m py_compile .github/scripts/apply_dx9_core.py
+          python3 .github/scripts/apply_dx9_core.py
           git diff --check
-          grep -q 'option(OGRE_USE_DX9' app/CMakeLists.txt
-          grep -q 'set(OGRE_RENDERER_SOURCES src/dx9_renderer.cpp)' app/CMakeLists.txt
-          grep -q 'case gbi::OP_MODIFYVTX:' app/src/dx9_renderer_stage6.inl
-          grep -q 'inline bool modify_vertex(' app/src/dx9_geometry.hpp
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add app/CMakeLists.txt dx9/CMakeLists.txt app/src/dx9_geometry.hpp app/src/dx9_renderer_stage6.inl
