@@ -85,8 +85,8 @@ def main() -> int:
     size = end_exclusive - start_addr
     if start_addr != 0x8009DA50:
         raise SystemExit(f"{TARGET}: unexpected start 0x{start_addr:08X}")
-    if size != 0xA4:
-        raise SystemExit(f"{TARGET}: unexpected size 0x{size:X}, expected 0xA4")
+    if size != 0x9C:
+        raise SystemExit(f"{TARGET}: unexpected size 0x{size:X}, expected 0x9C")
 
     callers = []
     for func in funcs.values():
