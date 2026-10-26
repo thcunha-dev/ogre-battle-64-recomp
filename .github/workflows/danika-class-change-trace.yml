@@ -12,6 +12,7 @@ on:
       - 'tools/trace_danika_roster_menu_bridge.py'
       - 'tools/trace_danika_selected_character_menu.py'
       - 'tools/trace_danika_class_helper_callers.py'
+      - 'tools/trace_danika_menu_state_writers.py'
       - 'asm/**'
       - '.github/workflows/danika-class-change-trace.yml'
 
@@ -45,38 +46,20 @@ jobs:
         run: |
           python3 tools/trace_danika_class_helper_callers.py | tee /tmp/danika-class-helper-callers.txt
 
+      - name: Trace menu state writers
+        run: |
+          python3 tools/trace_danika_menu_state_writers.py | tee /tmp/danika-menu-state-writers.txt
+
       - name: Publish decisive traces in job summary
         run: |
           {
-            echo '## Knight of Danika native class-change flow'
-            echo '```text'
-            cat /tmp/danika-class-change-flow.txt
-            echo '```'
-            echo
-            echo '## Knight of Danika manual Change Class candidates'
-            echo '```text'
-            cat /tmp/danika-manual-class-menu.txt
-            echo '```'
-            echo
-            echo '## Knight of Danika class-id commit writes'
-            echo '```text'
-            cat /tmp/danika-class-commit-writes.txt
-            echo '```'
-            echo
-            echo '## Knight of Danika roster -> class-menu bridge'
-            echo '```text'
-            cat /tmp/danika-roster-menu-bridge.txt
-            echo '```'
-            echo
-            echo '## Knight of Danika selected-character menu path'
-            echo '```text'
-            cat /tmp/danika-selected-character-menu.txt
-            echo '```'
-            echo
-            echo '## Knight of Danika class-helper callers'
-            echo '```text'
-            cat /tmp/danika-class-helper-callers.txt
-            echo '```'
+            for f in danika-class-change-flow danika-manual-class-menu danika-class-commit-writes danika-roster-menu-bridge danika-selected-character-menu danika-class-helper-callers danika-menu-state-writers; do
+              echo "## $f"
+              echo '```text'
+              cat "/tmp/$f.txt"
+              echo '```'
+              echo
+            done
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
@@ -89,5 +72,6 @@ jobs:
             /tmp/danika-roster-menu-bridge.txt
             /tmp/danika-selected-character-menu.txt
             /tmp/danika-class-helper-callers.txt
+            /tmp/danika-menu-state-writers.txt
           if-no-files-found: error
           retention-days: 14
