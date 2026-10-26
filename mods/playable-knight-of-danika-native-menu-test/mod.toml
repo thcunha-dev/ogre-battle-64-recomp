@@ -1,0 +1,24 @@
+[manifest]
+id = "ogre_danika_native_menu_test"
+version = "0.1.0"
+display_name = "Knight of Danika - Native Change Class Test"
+description = """
+Developer-only test for the playable Knight of Danika project. It temporarily
+injects class 0x71 into one Dragoon 0x14 native transition candidate slot in RAM.
+It does not edit persistent roster records, saves, or enemy battle participants.
+Disable after testing.
+"""
+short_description = "Dev-only native Change Class candidate injection for Danika 0x71."
+authors = [ "Ogre Battle 64 BR" ]
+game_id = "ogrebattle64"
+minimum_recomp_version = "0.1.0"
+dependencies = [ ]
+native_libraries = [ ]
+enabled_by_default = false
+
+[inputs]
+elf_path = "build/mod.elf"
+mod_filename = "knight-of-danika-native-menu-test"
+func_reference_syms_file = "../reference/dump.toml"
+data_reference_syms_files = [ ]
+additional_files = [ "TESTING.md" ]
