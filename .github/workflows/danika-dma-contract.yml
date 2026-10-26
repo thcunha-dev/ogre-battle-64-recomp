@@ -1,0 +1,38 @@
+name: Knight of Danika DMA Contract
+
+on:
+  push:
+    branches:
+      - mod/playable-knight-of-danika
+    paths:
+      - 'tools/trace_danika_dma_contract.py'
+      - 'asm/1060.s'
+      - 'mods/playable-knight-of-danika/src/danika_bankah_probe.c'
+      - '.github/workflows/danika-dma-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dma-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Trace func_8009DA50 ABI
+        run: python3 tools/trace_danika_dma_contract.py
+
+      - name: Verify bank-AH hook remains return-only and read-only
+        run: |
+          grep -F 'RECOMP_HOOK_RETURN("func_8009DA50")' mods/playable-knight-of-danika/src/danika_bankah_probe.c
+          ! grep -E 'RECOMP_PATCH|RECOMP_FORCE_PATCH|\bwr(8|16|32)\b' mods/playable-knight-of-danika/src/danika_bankah_probe.c
+
+      - name: Upload DMA contract report
+        uses: actions/upload-artifact@v4
+        with:
+          name: danika-dma-contract
+          path: danika-dma-contract.txt
+          if-no-files-found: error
+          retention-days: 14
