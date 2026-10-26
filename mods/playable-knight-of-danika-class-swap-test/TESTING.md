@@ -7,8 +7,8 @@ enabled.
 
 ## What it changes
 
-On the first base-game frame after the mod loads, it scans the proven persistent
-player roster:
+The mod repeatedly scans the proven persistent player roster until the save has
+loaded far enough to expose an allied Dragoon:
 
 - roster base: `0x80193BE0`
 - record stride: `0x38`
@@ -16,7 +16,8 @@ player roster:
 - maximum entries: 100
 
 The first entry whose class byte is exactly playable Dragoon `0x14` is changed
-to Knight of Danika `0x71`. No other class is eligible.
+to Knight of Danika `0x71`. No other class is eligible. After one successful
+conversion, the mod performs no further writes for that process run.
 
 The test does **not** scan or write the live enemy participant table. The enemy
 Knight of Danika is therefore outside the write path by construction.
@@ -34,7 +35,8 @@ is enabled.
 2. Have at least one allied Dragoon (`0x14`) in the persistent roster.
 3. Disable the read-only Danika battle-probe mod for this first smoke test.
 4. Enable only `Knight of Danika - Allied Class Swap Test`.
-5. Launch/load the copied save.
+5. Launch/load the copied save. The test will keep waiting read-only until a
+   Dragoon appears in the loaded player roster.
 6. Open the roster/unit screen and locate the Dragoon that was first in roster
    order. Its class should now resolve as class `0x71` / Knight of Danika.
 7. Put that unit into a formation and enter a battle.
@@ -48,13 +50,13 @@ is enabled.
 
 ## Expected log
 
-When a Dragoon is found:
+While no Dragoon is available yet, this is emitted only once:
+
+`DANIKA_CLASS_SWAP waiting_for_dragoon`
+
+When the first Dragoon is found:
 
 `DANIKA_CLASS_SWAP 14->71 i=XX`
-
-If no Dragoon exists in the player roster:
-
-`DANIKA_CLASS_SWAP no_dragoon_found`
 
 ## Acceptance criteria for this milestone
 
