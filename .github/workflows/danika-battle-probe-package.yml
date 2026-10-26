@@ -16,6 +16,8 @@ on:
       - 'tools/test_analyze_danika_probe_log.py'
       - 'tools/analyze_danika_bankj_dump.py'
       - 'tools/test_analyze_danika_bankj_dump.py'
+      - 'tools/analyze_danika_bankc_dump.py'
+      - 'tools/test_analyze_danika_bankc_dump.py'
       - 'tools/test_danika_battle_probe.py'
       - 'tools/test_danika_visual_override.py'
       - 'tools/test_danika_visual_override.c'
@@ -35,6 +37,9 @@ jobs:
 
       - name: Verify bank J dump analyzer
         run: python3 tools/test_analyze_danika_bankj_dump.py
+
+      - name: Verify bank C dump analyzer
+        run: python3 tools/test_analyze_danika_bankc_dump.py
 
       - name: Verify dormant visual resolver contract
         run: |
@@ -144,5 +149,6 @@ jobs:
             mods/playable-knight-of-danika/BATTLE-PROBE.md
             tools/analyze_danika_probe_log.py
             tools/analyze_danika_bankj_dump.py
+            tools/analyze_danika_bankc_dump.py
           if-no-files-found: error
           retention-days: 14
