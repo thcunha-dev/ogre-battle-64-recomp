@@ -22,11 +22,11 @@ assert "volatile const unsigned char*" in text
 assert "volatile const unsigned short*" in text
 assert "volatile const unsigned int*" in text
 
-# Lock the proven battle-record path and the fields needed for live correlation.
+# Lock the proven battle-record path and the fields needed for visual correlation.
 for token in (
-    "0x801BA6D8u",  # D_801BA6D8 battle record table pointer
-    "0x801BA72Du",  # current multi-mode resource group
-    "0x1Au",        # record stride
+    "0x801BA6D8u",
+    "0x801BA72Du",
+    "0x1Au",
     "REC_SELECTOR 0x00u",
     "REC_CLASS    0x02u",
     "REC_FLAGS    0x0Cu",
@@ -34,23 +34,49 @@ for token in (
 ):
     assert token in text, f"missing battle probe contract token: {token}"
 
+# Lock the independently verified live participant / persistent-roster bridge.
+for token in (
+    "LIVE_BATTLE_PTR 0x801CE8DCu",
+    "CHAR_TABLE      0x80193BE0u",
+    "CHAR_STRIDE     0x38u",
+    "CHAR_CLASS      0x12u",
+    "CHAR_COUNT      100u",
+    "PART_STRIDE     0xF8u",
+    "PART_OFF        0x1C4u",
+    "PART_VALID      0x20Cu",
+    "PART_LEVEL      0x31u",
+    "PART_EXP        0x32u",
+    "PART_CHARIDX    0xF6u",
+    "PART_MAX        20u",
+):
+    assert token in text, f"missing live participant contract token: {token}"
+
 # Unknown/invalid memory state must fail closed before dereferencing derived data.
-assert text.count("valid_range(") >= 5
+assert text.count("valid_range(") >= 8
 assert "if (!valid_range(table, 2u))" in text
 assert "if (!valid_range(offset_addr, 2u))" in text
 assert "if (!valid_range(group_base, BATTLE_RECORD_STRIDE))" in text
 assert "if (!valid_range(record, BATTLE_RECORD_STRIDE))" in text
+assert "if (!valid_range(valid_addr, 4u) || !valid_range(part, PART_STRIDE))" in text
+assert "if (roster < CHAR_COUNT)" in text
+assert "if (valid_range(class_addr, 1u))" in text
 
 # Diagnostics are bounded/change-driven rather than unbounded per-frame spam.
 assert "BATTLE_RECORD_MAX       24u" in text
+assert "PART_MAX        20u" in text
 assert "s_signature" in text and "s_seen" in text
+assert "s_part_signature" in text and "s_part_seen" in text
 assert "if (!s_seen[slot] || s_signature[slot] != signature)" in text
+assert "if (!s_part_seen[index] || s_part_signature[index] != signature)" in text
 assert "plausible_record" in text
 assert "selector == 0u || selector == INVALID_SELECTOR" in text
-assert "class_id != 0u && class_id != 0xFFu" in text
+assert "class_id != 0u && class_id != INVALID_CLASS" in text
 assert "DANIKA_SNAPSHOT" in text
 assert "DANIKA_PROBE" in text
+assert "DANIKA_PART_SNAPSHOT" in text
+assert '"DANIKA_PART"' in text
 assert "new_context ? \"DANIKA_SNAPSHOT\" : \"DANIKA_PROBE\"" in text
+assert "new_context ? \"DANIKA_PART_SNAPSHOT\" : \"DANIKA_PART\"" in text
 
 # Packaging must be visibly diagnostic and disabled by default.
 assert 'id = "ogre_danika_battle_probe"' in toml
@@ -69,4 +95,4 @@ assert "must be reproduced before" in plain_doc
 assert "final ownership gate" in plain_doc
 
 print("Danika battle probe safety: PASS")
-print("hook=func_80072944; writes=none; patch=none; bounded_snapshot_change_logs=yes")
+print("hook=func_80072944; writes=none; patch=none; visual+participant snapshots=bounded")
