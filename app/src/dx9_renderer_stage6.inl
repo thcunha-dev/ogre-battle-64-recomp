@@ -97,9 +97,10 @@ class DX9Renderer final : public DX9RendererStage4 {
 
         if (frame <= 8 || (frame % 300) == 0) {
             OGRE_MILESTONE("DX9-DL",
-                           "stage6 dl=%u fills=%u copyRects=%u shaderRects=%u tris=%u skippedTris=%u s2d=%u skippedS2d=%u zimg=0x%06X zAttach=%u zClear=%u zFallback=%u texUploads=%u",
+                           "stage6 dl=%u fills=%u copyRects=%u shaderRects=%u tris=%u skippedTris=%u culled=%u clipReject=%u s2d=%u skippedS2d=%u zimg=0x%06X zAttach=%u zClear=%u zFallback=%u texUploads=%u",
                            frame, fill_count_, copy_texrect_count_, shader_texrect_count_,
-                           triangle_count_, skipped_triangle_count_, s2dex_rect_count_,
+                           triangle_count_, skipped_triangle_count_, culled_triangle_count_,
+                           clip_rejected_triangle_count_, s2dex_rect_count_,
                            skipped_s2dex_rect_count_, last_zimg_address_, depth_attach_count_,
                            depth_clear_count_, depth_fallback_count_, texture_upload_count_);
         }
@@ -590,6 +591,16 @@ class DX9Renderer final : public DX9RendererStage4 {
         if (!tv[0].valid || !tv[1].valid || !tv[2].valid) {
             ++skipped_triangle_count_; return;
         }
+        if (dx9geom::triangle_trivially_rejected(tv[0], tv[1], tv[2])) {
+            ++clip_rejected_triangle_count_;
+            ++skipped_triangle_count_;
+            return;
+        }
+        if (dx9geom::triangle_culled(geom, tv[0], tv[1], tv[2])) {
+            ++culled_triangle_count_;
+            ++skipped_triangle_count_;
+            return;
+        }
 
         const int tile0 = st.tex.active_tile & 7, tile1 = (tile0 + 1) & 7;
         const bool have0 = geom.texture_on && ensure_tile(st, tile0);
@@ -662,6 +673,8 @@ class DX9Renderer final : public DX9RendererStage4 {
     uint32_t last_zimg_address_ = 0;
     unsigned triangle_count_ = 0;
     unsigned skipped_triangle_count_ = 0;
+    unsigned culled_triangle_count_ = 0;
+    unsigned clip_rejected_triangle_count_ = 0;
     unsigned modifyvtx_count_ = 0;
     unsigned unsupported_modifyvtx_count_ = 0;
     unsigned s2dex_rect_count_ = 0;
