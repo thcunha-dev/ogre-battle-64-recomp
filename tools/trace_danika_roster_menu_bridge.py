@@ -2,9 +2,9 @@
 """Find the player-roster -> native class-menu bridge for playable Danika.
 
 A real Change Class path must eventually operate on a player character and
-consult class metadata.  This read-only tracer therefore ranks assembly
-functions by direct roster/global refs, character +0x12 class-byte access,
-class-table refs/helpers, and call-graph proximity between those groups.
+consult class metadata. This read-only tracer ranks assembly functions by
+roster/global refs, character +0x12 class-byte access, class-table refs/helpers,
+and call-graph proximity, then emits the strongest menu-family bodies.
 """
 from pathlib import Path
 import re
@@ -18,6 +18,11 @@ ROSTER=re.compile(r'\bD_80193(?:BE0|[A-Fa-f0-9]{3})\b')
 CLASS_TABLE=re.compile(r'\bD_80187C[A-Fa-f0-9]{2}\b')
 CLASS_BYTE=re.compile(r'\b(?:lbu|lb|sb)\s+[^\n]*0x12\(\$[a-z0-9]+\)',re.I)
 CLASS_HELPER=re.compile(r'\bfunc_8016(?:D[0-9A-Fa-f]{3}|E[0-9A-Fa-f]{3}|F[0-9A-Fa-f]{3})\b')
+FOCUS=[
+ 'func_80170974','func_80171BB4','func_80171EF8','func_80172A48','func_801730DC',
+ 'func_8016BA6C','func_8016B774','func_8016B198','func_8016AF90',
+ 'func_8017FC48','func_801805F0','func_80180814'
+]
 
 
 def blocks(path):
@@ -60,8 +65,6 @@ def main():
         direct.append((score,name,f))
     direct.sort(key=lambda x:(-x[0],x[1]))
 
-    # Add graph bridges: a roster-side function that calls a class-side
-    # function (or one hop away) is far more interesting than either alone.
     bridges=[]
     for name,f in funcs.items():
         roster_side=bool(f['roster']) or f['class_byte']
@@ -98,23 +101,20 @@ def main():
         print(f'CAND score={score:02d} {f["path"].relative_to(ROOT)}:{f["s"]}-{f["e"]} function={name} roster={",".join(f["roster"]) or "-"} class_byte={int(f["class_byte"])} class_syms={",".join(f["class_syms"]) or "-"} helpers={",".join(f["helpers"]) or "-"}')
     print()
 
-    # Emit bodies only for high-signal direct candidates and bridge sources.
-    names=[]
-    names += [name for score,name,f in direct if score>=13][:15]
-    names += [src for src,_,_ in bridges[:15]]
-    uniq=[]
-    for n in names:
-        if n not in uniq: uniq.append(n)
-    print('DECISIVE_BODIES')
-    for name in uniq[:20]:
-        f=funcs[name]
+    print('FOCUSED_MENU_FAMILY')
+    for name in FOCUS:
+        f=funcs.get(name)
+        if not f:
+            print(f'--- {name} MISSING ---')
+            continue
         print(f'--- {name} {f["path"].relative_to(ROOT)}:{f["s"]}-{f["e"]} ---')
-        print('CALLERS ' + ','.join(callers.get(name,[])[:20]))
+        print('CALLERS ' + ','.join(callers.get(name,[])[:30]))
         print('CALLEES ' + ','.join(f['calls']))
+        print(f'META roster={",".join(f["roster"]) or "-"} class_byte={int(f["class_byte"])} class_syms={",".join(f["class_syms"]) or "-"} helpers={",".join(f["helpers"]) or "-"}')
         for line in f['body']: print(line)
         print()
 
-    assert 'func_80184D90' in funcs
+    assert all(n in funcs for n in FOCUS)
     assert any('D_80193BE0' in f['roster'] for f in funcs.values())
     assert any(f['class_syms'] for f in funcs.values())
     print(f'bridge_count={len(seen)}')
