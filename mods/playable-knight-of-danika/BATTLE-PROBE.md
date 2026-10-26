@@ -55,7 +55,13 @@ The analyzer reports:
 - field variance for `f04`, `f06`, `f08`, `f0A`, `flags`, `f0E` and `f10`;
 - initial snapshots separately from later record changes.
 
-The analyzer deliberately **does not infer allied/enemy ownership**. A visible, known player-side participant still has to be correlated with one record before an ownership signature can be promoted into the final gate.
+If visible gameplay lets you identify exact records, pass them explicitly. Locations use hexadecimal `G:SLOT` and options are repeatable:
+
+`python3 tools/analyze_danika_probe_log.py ogrebattle64.log --ally 03:00 --ally 03:01 --enemy 03:04 -o danika-analysis.txt`
+
+With labels, the analyzer additionally reports a known allied Dragoon selector and a known enemy Danika selector when present. It searches for ownership-field candidates only when the **same class** appears in both labeled sides. This prevents a Dragoon-vs-Danika class difference from being mistaken for an ally/enemy flag.
+
+Even a reported `CANDIDATE` is only a correlation from that capture and must be reproduced before it is accepted as the final ownership gate.
 
 ## Minimum capture that will unlock the next patch
 
@@ -63,7 +69,8 @@ The analyzer deliberately **does not infer allied/enemy ownership**. A visible, 
 2. Keep the port log from battle entry through the first attack.
 3. Ideally capture a battle containing a normal Dragoon (`id=14`) on the player's side. That reveals the donor `sel` we need for the temporary playable-Danika rear pose.
 4. Capture the original enemy Knight of Danika (`id=71`) if available. This establishes the enemy/front signature that the final patch must never replace.
-5. Later, place a test Danika in a player unit and capture the same fields. Comparing the records will identify the independently proven allied-side discriminator.
+5. For ownership proof, the strongest capture contains at least one class present on **both** sides. Label those two `g:slot` locations with `--ally` and `--enemy`; the analyzer can then eliminate class-specific fields and isolate side-correlated candidates.
+6. Later, place a test Danika in a player unit and capture the same fields. Comparing the records will confirm the independently proven allied-side discriminator before the visual override is enabled.
 
 A short video of the battlefield together with the corresponding `DANIKA_SNAPSHOT` / `DANIKA_PROBE` lines is enough to map visible participants to records.
 
