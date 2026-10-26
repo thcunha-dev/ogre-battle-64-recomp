@@ -14,6 +14,8 @@
 
 RECOMP_IMPORT("*", void recomp_log(const char* message));
 
+void danika_bankc_probe_tick(void);
+
 #define RDRAM_LO 0x80000000u
 #define RDRAM_HI 0x80800000u
 #define LIVE_BATTLE_PTR 0x801CE8DCu
@@ -119,8 +121,14 @@ static void log_window(const char* name, unsigned int address,
 }
 
 void danika_bankj_probe_tick(void) {
-    unsigned int base = rd32(LIVE_BATTLE_PTR);
+    unsigned int base;
 
+    // Bank C is resident during the normal battle and contains the EXP filters
+    // that may directly encode side/team eligibility. It is sampled by the same
+    // read-only auxiliary chain, before the result bank replaces the arena.
+    danika_bankc_probe_tick();
+
+    base = rd32(LIVE_BATTLE_PTR);
     if (base < RDRAM_LO || base >= RDRAM_HI) {
         s_dumped_for_base = 0u;
         return;
