@@ -58,12 +58,13 @@ assert 'display_name = "Knight of Danika - Battle Probe"' in toml
 assert "enabled_by_default = false" in toml
 assert 'additional_files = [ "BATTLE-PROBE.md" ]' in toml
 
-# Documentation must preserve the hard safety constraints even as Markdown evolves.
+# Documentation must preserve semantic safety constraints, independent of wording/Markdown.
 assert "class `0x71`" in doc
 assert "must remain `0x71`" in doc
 assert "enemy Danika" in doc
 assert "read-only" in plain_doc.lower()
-assert "does not infer allied/enemy ownership" in plain_doc
+assert "same class" in plain_doc.lower()
+assert "mistaken for an ally/enemy flag" in plain_doc
 assert "must be reproduced before" in plain_doc
 assert "final ownership gate" in plain_doc
 
