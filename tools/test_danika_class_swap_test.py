@@ -16,8 +16,10 @@ required = [
     'RECOMP_HOOK("func_80072944")',
     "if (class_id == DRAGOON_CLASS_ID)",
     "wr8(class_addr, (unsigned char)DANIKA_CLASS_ID);",
-    "if (s_attempted)",
-    "s_attempted = 1u;",
+    "if (s_done)",
+    "s_done = 1u;",
+    "if (!s_logged_waiting)",
+    "DANIKA_CLASS_SWAP waiting_for_dragoon",
 ]
 
 for token in required:
@@ -47,7 +49,12 @@ assert not re.search(r"\*\s*\(volatile\s+(?:unsigned\s+)?(?:short|int)\s*\*\).*?
 # record's +0x12 byte after an exact 0x14 guard.
 guard = text.index("if (class_id == DRAGOON_CLASS_ID)")
 write = text.index("wr8(class_addr, (unsigned char)DANIKA_CLASS_ID);")
-assert guard < write
+done = text.index("s_done = 1u;", write)
+assert guard < write < done
 assert "CHAR_TABLE + i * CHAR_STRIDE + CHAR_CLASS" in text
+
+# A missing Dragoon must remain a read-only retry state, not permanently disable
+# the test before the save has loaded.
+assert "s_done = 1u;" not in text[text.index("if (!s_logged_waiting)"):]
 
 print("Danika allied class-swap test safety contract: OK")
