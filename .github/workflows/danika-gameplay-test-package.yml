@@ -93,10 +93,10 @@ jobs:
           ]
 
           [[section]]
-          name = ".battle_visual_overlay"
-          rom = 0x001E4C44
-          vram = 0x801AE794
-          size = 0x758
+          name = ".streamedC"
+          rom = 0x001CE040
+          vram = 0x80197B90
+          size = 0x20500
           functions = [
             { name = "func_801AE794", vram = 0x801AE794, size = 0x758 },
           ]
