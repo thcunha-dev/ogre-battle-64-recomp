@@ -106,14 +106,15 @@ static void log_context(unsigned int table, unsigned int group) {
     recomp_log(line);
 }
 
-static void log_record(unsigned int group, unsigned int slot,
+static void log_record(const char* prefix, unsigned int group, unsigned int slot,
                        unsigned int record) {
     char line[192];
     unsigned int pos = 0u;
     unsigned int selector = rd16(record + REC_SELECTOR);
     unsigned int class_word = rd16(record + REC_CLASS);
 
-    append_text(line, &pos, "DANIKA_PROBE g=");
+    append_text(line, &pos, prefix);
+    append_text(line, &pos, " g=");
     append_hex(line, &pos, group, 2u);
     append_text(line, &pos, " slot=");
     append_hex(line, &pos, slot, 2u);
@@ -152,6 +153,16 @@ static unsigned int record_signature(unsigned int record) {
     return (a * 0x45D9F3Bu) ^ (b << 16) ^ (c * 0x119DE1F3u) ^ d;
 }
 
+static int plausible_record(unsigned int record) {
+    unsigned int selector = rd16(record + REC_SELECTOR);
+    unsigned int class_id = rd16(record + REC_CLASS) & 0xFFu;
+
+    if (selector == 0u || selector == INVALID_SELECTOR) {
+        return 0;
+    }
+    return class_id != 0u && class_id != 0xFFu;
+}
+
 static void clear_seen(void) {
     unsigned int i;
     for (i = 0u; i < BATTLE_RECORD_MAX; i++) {
@@ -168,6 +179,7 @@ void danika_battle_probe_tick(void) {
     unsigned int group_base;
     signed short group_offset;
     unsigned int slot;
+    unsigned int new_context = 0u;
 
     if (!valid_range(table, 2u)) {
         if (s_last_table != 0u) {
@@ -195,6 +207,7 @@ void danika_battle_probe_tick(void) {
         s_last_group = group;
         clear_seen();
         log_context(table, group);
+        new_context = 1u;
     }
 
     for (slot = 0u; slot < BATTLE_RECORD_MAX; slot++) {
@@ -211,11 +224,16 @@ void danika_battle_probe_tick(void) {
             break;
         }
 
+        if (!plausible_record(record)) {
+            continue;
+        }
+
         signature = record_signature(record);
         if (!s_seen[slot] || s_signature[slot] != signature) {
             s_seen[slot] = 1u;
             s_signature[slot] = signature;
-            log_record(group, slot, record);
+            log_record(new_context ? "DANIKA_SNAPSHOT" : "DANIKA_PROBE",
+                       group, slot, record);
         }
     }
 }
