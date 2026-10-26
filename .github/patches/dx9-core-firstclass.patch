@@ -1,0 +1,102 @@
+diff --git a/app/CMakeLists.txt b/app/CMakeLists.txt
+--- a/app/CMakeLists.txt
++++ b/app/CMakeLists.txt
+@@ -1,5 +1,14 @@
+ option(OGRE_USE_RT64 "Build with the RT64 renderer (native builds only)" ON)
++option(OGRE_USE_DX9 "Build with the Direct3D 9 low-end renderer (Windows only)" OFF)
+ 
+ if (EMSCRIPTEN)
+     set(OGRE_USE_RT64 OFF)
++    set(OGRE_USE_DX9 OFF)
+ endif()
++
++if (OGRE_USE_DX9 AND NOT WIN32)
++    message(FATAL_ERROR "OGRE_USE_DX9 is Windows-only")
++endif()
++if (OGRE_USE_DX9 AND OGRE_USE_RT64)
++    message(FATAL_ERROR "OGRE_USE_DX9 and OGRE_USE_RT64 are mutually exclusive")
++endif()
+diff --git a/app/CMakeLists.txt b/app/CMakeLists.txt
+--- a/app/CMakeLists.txt
++++ b/app/CMakeLists.txt
+@@ -1,3 +1,6 @@
+ # --- Renderer ----------------------------------------------------------------
+-if (OGRE_USE_RT64)
++if (OGRE_USE_DX9)
++    # Native D3D9 path for old/weak Windows GPUs; RT64 is not compiled.
++    set(OGRE_RENDERER_SOURCES src/dx9_renderer.cpp)
++elseif (OGRE_USE_RT64)
+     # Static build, expecting an SDL window outside of Windows (same options as
+diff --git a/app/CMakeLists.txt b/app/CMakeLists.txt
+--- a/app/CMakeLists.txt
++++ b/app/CMakeLists.txt
+@@ -1,5 +1,9 @@
+ if (OGRE_USE_RT64)
+     target_compile_definitions(ogrebattle64 PRIVATE OGRE_USE_RT64=1)
+ endif()
++if (OGRE_USE_DX9)
++    target_compile_definitions(ogrebattle64 PRIVATE OGRE_USE_DX9=1)
++    target_link_libraries(ogrebattle64 PRIVATE d3d9)
++endif()
+ 
+ if (NOT EMSCRIPTEN)
+diff --git a/dx9/CMakeLists.txt b/dx9/CMakeLists.txt
+--- a/dx9/CMakeLists.txt
++++ b/dx9/CMakeLists.txt
+@@ -1,2 +1,3 @@
+ set(OGRE_USE_RT64 OFF CACHE BOOL "RT64 is disabled in the Direct3D 9 low-end build" FORCE)
++set(OGRE_USE_DX9 ON CACHE BOOL "Direct3D 9 low-end renderer" FORCE)
+ add_compile_definitions(OGRE_USE_DX9=1)
+diff --git a/app/src/dx9_geometry.hpp b/app/src/dx9_geometry.hpp
+--- a/app/src/dx9_geometry.hpp
++++ b/app/src/dx9_geometry.hpp
+@@ -1 +1,24 @@
++// F3DEX2 G_MODIFYVTX mutates the RSP vertex cache after G_VTX.
++// RGBA and ST map directly to fields retained by this geometry core.
++// XYSCREEN/ZSCREEN require post-transform cache state and are deliberately
++// rejected instead of approximated incorrectly.
++inline bool modify_vertex(State& st, int index, uint8_t where, uint32_t value) {
++    if (index < 0 || index >= kMaxVertices) return false;
++    RawVertex& v = st.vertices[index];
++    switch (where) {
++        case 0x10: // G_MWO_POINT_RGBA
++            v.r = static_cast<uint8_t>(value >> 24);
++            v.g = static_cast<uint8_t>(value >> 16);
++            v.b = static_cast<uint8_t>(value >> 8);
++            v.a = static_cast<uint8_t>(value);
++            return true;
++        case 0x14: // G_MWO_POINT_ST
++            v.s = static_cast<int16_t>(value >> 16);
++            v.t = static_cast<int16_t>(value & 0xFFFFu);
++            return true;
++        default:
++            return false;
++    }
++}
++
+ inline void set_viewport(State& st, const uint8_t* rdram, uint32_t address) {
+diff --git a/app/src/dx9_renderer_stage6.inl b/app/src/dx9_renderer_stage6.inl
+--- a/app/src/dx9_renderer_stage6.inl
++++ b/app/src/dx9_renderer_stage6.inl
+@@ -1,3 +1,12 @@
++                case gbi::OP_MODIFYVTX: {
++                    const uint8_t where = static_cast<uint8_t>((c.w0 >> 16) & 0xFFu);
++                    const int index = static_cast<int>((c.w0 & 0xFFFFu) >> 1);
++                    if (dx9geom::modify_vertex(ctx.geom, index, where, c.w1))
++                        ++modifyvtx_count_;
++                    else
++                        ++unsupported_modifyvtx_count_;
++                    break;
++                }
+                 case gbi::OP_TRI1:
+                     draw_triangle_word(st, ctx.geom, c.w0);
+                     break;
+diff --git a/app/src/dx9_renderer_stage6.inl b/app/src/dx9_renderer_stage6.inl
+--- a/app/src/dx9_renderer_stage6.inl
++++ b/app/src/dx9_renderer_stage6.inl
+@@ -1,3 +1,5 @@
+     unsigned triangle_count_ = 0;
+     unsigned skipped_triangle_count_ = 0;
++    unsigned modifyvtx_count_ = 0;
++    unsigned unsupported_modifyvtx_count_ = 0;
+     unsigned s2dex_rect_count_ = 0;
