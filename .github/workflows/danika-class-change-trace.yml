@@ -8,6 +8,7 @@ on:
     paths:
       - 'tools/trace_danika_class_change_flow.py'
       - 'tools/trace_danika_manual_class_menu.py'
+      - 'tools/trace_danika_class_commit_writes.py'
       - 'asm/**'
       - '.github/workflows/danika-class-change-trace.yml'
 
@@ -25,6 +26,10 @@ jobs:
         run: |
           python3 tools/trace_danika_manual_class_menu.py | tee /tmp/danika-manual-class-menu.txt
 
+      - name: Trace class-id commit writes
+        run: |
+          python3 tools/trace_danika_class_commit_writes.py | tee /tmp/danika-class-commit-writes.txt
+
       - name: Publish decisive traces in job summary
         run: |
           {
@@ -37,6 +42,11 @@ jobs:
             echo '```text'
             cat /tmp/danika-manual-class-menu.txt
             echo '```'
+            echo
+            echo '## Knight of Danika class-id commit writes'
+            echo '```text'
+            cat /tmp/danika-class-commit-writes.txt
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
@@ -45,5 +55,6 @@ jobs:
           path: |
             /tmp/danika-class-change-flow.txt
             /tmp/danika-manual-class-menu.txt
+            /tmp/danika-class-commit-writes.txt
           if-no-files-found: error
           retention-days: 14
