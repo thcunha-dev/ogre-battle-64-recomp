@@ -1,0 +1,37 @@
+name: Knight of Danika Class Change Trace
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - mod/playable-knight-of-danika
+    paths:
+      - 'tools/trace_danika_class_change_flow.py'
+      - 'asm/**'
+      - '.github/workflows/danika-class-change-trace.yml'
+
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trace native class-change flow
+        run: |
+          python3 tools/trace_danika_class_change_flow.py | tee /tmp/danika-class-change-flow.txt
+
+      - name: Publish decisive trace in job summary
+        run: |
+          {
+            echo '## Knight of Danika native class-change flow'
+            echo '```text'
+            cat /tmp/danika-class-change-flow.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: danika-class-change-flow
+          path: /tmp/danika-class-change-flow.txt
+          if-no-files-found: error
+          retention-days: 14
