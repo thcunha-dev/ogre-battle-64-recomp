@@ -7,23 +7,32 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "mods/playable-knight-of-danika/src/danika_battle_probe.c"
 BANKJ = ROOT / "mods/playable-knight-of-danika/src/danika_bankj_probe.c"
 BANKC = ROOT / "mods/playable-knight-of-danika/src/danika_bankc_probe.c"
+BANKAH = ROOT / "mods/playable-knight-of-danika/src/danika_bankah_probe.c"
 DOC = ROOT / "mods/playable-knight-of-danika/BATTLE-PROBE.md"
 TOML = ROOT / "mods/playable-knight-of-danika/mod.toml"
 
 text = SRC.read_text(encoding="utf-8")
 bankj = BANKJ.read_text(encoding="utf-8")
 bankc = BANKC.read_text(encoding="utf-8")
+bankah = BANKAH.read_text(encoding="utf-8")
 doc = DOC.read_text(encoding="utf-8")
 toml = TOML.read_text(encoding="utf-8")
 plain_doc = doc.replace("**", "")
 
 assert 'RECOMP_HOOK("func_80072944")' in text
 assert len(re.findall(r"RECOMP_HOOK\s*\(", text)) == 1
-for source_name, source in (("battle probe", text), ("bank-J probe", bankj), ("bank-C probe", bankc)):
+assert 'RECOMP_HOOK_RETURN("func_8009DA50")' in bankah
+assert len(re.findall(r"RECOMP_HOOK_RETURN\s*\(", bankah)) == 1
+for source_name, source in (
+    ("battle probe", text),
+    ("bank-J probe", bankj),
+    ("bank-C probe", bankc),
+    ("bank-AH probe", bankah),
+):
     assert not re.search(r"RECOMP_(?:PATCH|FORCE_PATCH)\s*\(", source), source_name
     assert not re.search(r"\bwr(?:8|16|32)\s*\(", source), f"{source_name} must not write RAM"
-assert not re.search(r"RECOMP_HOOK\s*\(", bankj)
-assert not re.search(r"RECOMP_HOOK\s*\(", bankc)
+assert not re.search(r"RECOMP_HOOK(?:_RETURN)?\s*\(", bankj)
+assert not re.search(r"RECOMP_HOOK(?:_RETURN)?\s*\(", bankc)
 assert "danika_bankj_probe_tick();" in text
 assert "danika_bankc_probe_tick();" in bankj
 
@@ -65,6 +74,18 @@ for address in ("func_801C9008", "func_801C8BA4", "func_801C8E50", "func_801C8EB
 assert "s_dumped_for_base == base" in bankc
 assert "window_has_signal" in bankc
 
+for token in (
+    "BANKAH_ROM_START 0x0023A370u", "BANKAH_RAM_START 0x801D0860u",
+    "BANKAH_SIZE      0x00000E80u", "BANKAH_CODE_SIZE 0x00000E70u",
+    "BANKAH_DUMP_CHUNK 16u", '"DANIKA_BANKAH addr="',
+    '"DANIKA_BANKAH_CAPTURE rom=0023A370 ram=801D0860 size=00000E80"',
+):
+    assert token in bankah, f"missing bank-AH probe contract token: {token}"
+assert "rom != BANKAH_ROM_START || ram != BANKAH_RAM_START" in bankah
+assert "size != BANKAH_SIZE" in bankah
+assert "s_dumped != 0u" in bankah
+assert "window_has_signal(BANKAH_RAM_START, BANKAH_CODE_SIZE)" in bankah
+
 assert text.count("valid_range(") >= 8
 assert "if (!valid_range(table, 2u))" in text
 assert "if (!valid_range(offset_addr, 2u))" in text
@@ -75,6 +96,7 @@ assert "if (roster < CHAR_COUNT)" in text
 assert "if (valid_range(class_addr, 1u))" in text
 assert "if (!valid_range(address, size))" in bankj
 assert "if (!valid_range(address, size))" in bankc
+assert "if (!valid_range(BANKAH_RAM_START, BANKAH_SIZE)" in bankah
 
 assert "BATTLE_RECORD_MAX       24u" in text
 assert "PART_MAX        20u" in text
@@ -98,4 +120,4 @@ assert "must be reproduced before" in plain_doc
 assert "final ownership gate" in plain_doc
 
 print("Danika battle probe safety: PASS")
-print("hook=func_80072944; writes=none; patch=none; visual+participant+bankC+bankJ snapshots=bounded")
+print("hooks=frame+exact-DMA-return; writes=none; patch=none; visual+participant+bankAH+bankC+bankJ snapshots=bounded")
