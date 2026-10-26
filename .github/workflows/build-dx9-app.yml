@@ -6,11 +6,13 @@ on:
       - dx9-lowend-410m
     paths:
       - 'dx9/CMakeLists.txt'
+      - 'app/CMakeLists.txt'
       - 'app/src/dx9_renderer.cpp'
       - 'app/src/dx9_renderer.inl'
       - 'app/src/dx9_renderer_stage3.inl'
       - 'app/src/dx9_renderer_stage4.inl'
       - 'app/src/dx9_renderer_stage5.inl'
+      - 'app/src/dx9_renderer_stage6.inl'
       - 'app/src/dx9_geometry.hpp'
       - 'app/src/dx9_s2dex.hpp'
       - 'app/src/dx9_texture.hpp'
@@ -39,14 +41,16 @@ jobs:
         with:
           submodules: false
 
-      - name: Validate low-end CMake wrapper contract
+      - name: Validate first-class low-end CMake contract
         shell: bash
         run: |
           set -euxo pipefail
           grep -q 'set(OGRE_USE_RT64 OFF' dx9/CMakeLists.txt
-          grep -q 'add_compile_definitions(OGRE_USE_DX9=1)' dx9/CMakeLists.txt
-          grep -q 'target_link_libraries(ogrebattle64 PRIVATE d3d9)' dx9/CMakeLists.txt
-          if grep -Eqi 'target_link_libraries\([^)]*(d3d12|dxgi|vulkan|rt64)' dx9/CMakeLists.txt; then
+          grep -q 'set(OGRE_USE_DX9 ON' dx9/CMakeLists.txt
+          grep -q 'option(OGRE_USE_DX9' app/CMakeLists.txt
+          grep -q 'set(OGRE_RENDERER_SOURCES src/dx9_renderer.cpp)' app/CMakeLists.txt
+          grep -q 'target_link_libraries(ogrebattle64 PRIVATE d3d9)' app/CMakeLists.txt
+          if grep -Eqi 'target_link_libraries\([^)]*(d3d12|dxgi|vulkan)' dx9/CMakeLists.txt; then
             echo '::error::DX9 wrapper links a modern renderer dependency.'
             exit 1
           fi
@@ -103,7 +107,7 @@ jobs:
           test -s /tmp/dx9_renderer.o
           test -s /tmp/gbi.o
           test -s /tmp/dx9_core.o
-          echo "Standalone DX9 stage5 renderer and texture/state/shader/geometry/S2DEX2/D16-depth cores compile for Windows x86-64."
+          echo "Standalone DX9 stage6 renderer and texture/state/shader/geometry/S2DEX2/D16-depth cores compile for Windows x86-64."
 
       - name: Verify D3D9-only renderer object
         shell: bash
