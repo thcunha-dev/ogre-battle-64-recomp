@@ -1,4 +1,4 @@
-name: Package Knight of Danika Playable Candidate
+name: Package Knight of Danika Playable
 
 on:
   workflow_dispatch:
@@ -16,23 +16,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify stable alias architecture
+      - name: Verify pre-model visual architecture
         run: |
           set -eux
           src=mods/playable-knight-of-danika-gameplay-test/src/danika_gameplay_test.c
           grep -q 'CHAR_TABLE              0x80193BE0u' "$src"
-          grep -q 'CLASS_TABLE             0x80187C34u' "$src"
-          grep -q 'CLASS_ALIAS             0x45u' "$src"
-          grep -q 'DRAGOON_CLASS_ID        0x14u' "$src"
           grep -q 'DANIKA_CLASS_ID         0x71u' "$src"
-          grep -q 'PLAYABLE_DANIKA_ID      0x9Cu' "$src"
-          grep -q 'wr8(alias_addr, (unsigned char)DANIKA_CLASS_ID)' "$src"
-          grep -q 'wr8(addr, (unsigned char)PLAYABLE_DANIKA_ID)' "$src"
+          grep -q 'BATTLE_TABLE_PTR        0x801BA6D8u' "$src"
+          grep -q 'BATTLE_GROUP            0x801BA72Du' "$src"
+          grep -q 'RECORD_STRIDE           0x1Au' "$src"
+          grep -q 'RECORD_SELECTOR         0x00u' "$src"
+          grep -q 'RECORD_CLASS            0x02u' "$src"
+          grep -q '0x3Eu, 0x25u, 0x04u, 0x35u, 0x34u, 0x39u, 0x0Eu, 0x00u' "$src"
           grep -q 'RECOMP_HOOK("func_80072944")' "$src"
+          grep -q 'RECOMP_HOOK("func_80093380")' "$src"
+          grep -q 'wr8(addr, (unsigned char)DANIKA_CLASS_ID)' "$src"
+          grep -q 'wr16(record + RECORD_SELECTOR, selector)' "$src"
+          grep -q 'selector_in_set(soldier' "$src"
+          ! grep -q 'PLAYABLE_DANIKA_ID' "$src"
+          ! grep -q 'DRAGOON_CLASS_ID' "$src"
+          ! grep -q 'KNIGHT_CLASS_ID' "$src"
           ! grep -q 'RECOMP_HOOK("func_801' "$src"
           ! grep -q '0x801CE8DC' "$src"
-          ! grep -q '0x801BA6D8' "$src"
-          ! grep -q 'wr16' "$src"
+          ! grep -q 'wr16(record + RECORD_CLASS' "$src"
           ! grep -q 'wr32' "$src"
 
       - name: Verify preinstalled build tools
@@ -75,10 +81,11 @@ jobs:
           test -s "$mod/build/mod.elf"
           readelf -SW "$mod/build/mod.elf" | tee /tmp/danika-gameplay-sections.txt
           grep -q '.recomp_hook.func_80072944' /tmp/danika-gameplay-sections.txt
+          grep -q '.recomp_hook.func_80093380' /tmp/danika-gameplay-sections.txt
           ! grep -q '.recomp_hook.func_801' /tmp/danika-gameplay-sections.txt
           ! grep -q '.recomp_patch' /tmp/danika-gameplay-sections.txt
 
-      - name: Write proven resident function reference
+      - name: Write proven resident function references
         run: |
           cat >mods/reference/dump.toml <<'EOF'
           [[section]]
@@ -88,6 +95,7 @@ jobs:
           size = 0x3E150
           functions = [
             { name = "func_80072944", vram = 0x80072944, size = 0x38 },
+            { name = "func_80093380", vram = 0x80093380, size = 0xA0 },
           ]
           EOF
 
@@ -96,7 +104,7 @@ jobs:
           set -eux
           tool=/tmp/N64Recomp/build/RecompModTool
           mod=mods/playable-knight-of-danika-gameplay-test
-          nrm=build/mods/knight-of-danika-playable-candidate.nrm
+          nrm=build/mods/knight-of-danika-playable.nrm
           "$tool" "$mod/mod.toml" build/mods
           test -s "$nrm"
           unzip -t "$nrm"
@@ -105,14 +113,14 @@ jobs:
           grep -qx 'mod_binary.bin' /tmp/danika-gameplay-files.txt
           grep -qx 'mod_syms.bin' /tmp/danika-gameplay-files.txt
           grep -qx 'TESTING.md' /tmp/danika-gameplay-files.txt
-          sha256sum "$nrm" | tee build/mods/knight-of-danika-playable-candidate.sha256
+          sha256sum "$nrm" | tee build/mods/knight-of-danika-playable.sha256
 
       - uses: actions/upload-artifact@v4
         with:
-          name: knight-of-danika-playable-candidate
+          name: knight-of-danika-playable
           path: |
-            build/mods/knight-of-danika-playable-candidate.nrm
-            build/mods/knight-of-danika-playable-candidate.sha256
+            build/mods/knight-of-danika-playable.nrm
+            build/mods/knight-of-danika-playable.sha256
             mods/playable-knight-of-danika-gameplay-test/TESTING.md
           if-no-files-found: error
           retention-days: 14
