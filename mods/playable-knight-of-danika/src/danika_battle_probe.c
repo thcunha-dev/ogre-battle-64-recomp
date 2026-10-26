@@ -1,7 +1,7 @@
 // Knight of Danika battle probe - read-only runtime diagnostics.
 //
 // Purpose: observe both the battle visual records consumed by func_801B3D1C
-// and the independently verified live battle-participant structure.  The two
+// and the independently verified live battle-participant structure. The two
 // snapshots let the offline analyzer correlate persistent-roster classes with
 // visual selectors without guessing an allied/enemy bit.
 //
@@ -21,6 +21,12 @@
 //     participant +0x32 EXP
 //     participant +0xF6 persistent roster index
 //   persistent roster = 0x80193BE0 + index*0x38; class is +0x12
+//
+// The compact DANIKA_PART line is complemented by DANIKA_PART_RAW chunks that
+// cover the full 0xF8 participant payload whenever an identity-oriented
+// signature changes. This is intentionally read-only and lets offline tooling
+// search for a real side/team/owner discriminator instead of guessing one from
+// the known roster index or render flags.
 //
 // Safety contract: this file never writes game memory. It does not patch or
 // replace any game function. The only hook is the already-established base
@@ -64,6 +70,7 @@ void danika_bankj_probe_tick(void);
 #define PART_TAIL       0xF0u
 #define PART_CHARIDX    0xF6u
 #define PART_MAX        20u
+#define PART_RAW_CHUNK  16u
 
 #define INVALID_SELECTOR 0xFFFFu
 #define INVALID_CLASS    0xFFu
@@ -217,6 +224,28 @@ static void log_participant(const char* prefix, unsigned int index,
     recomp_log(line);
 }
 
+static void log_participant_raw(unsigned int index, unsigned int part) {
+    unsigned int offset;
+
+    for (offset = 0u; offset < PART_STRIDE; offset += PART_RAW_CHUNK) {
+        char line[192];
+        unsigned int pos = 0u;
+        unsigned int count = PART_STRIDE - offset;
+        if (count > PART_RAW_CHUNK) {
+            count = PART_RAW_CHUNK;
+        }
+
+        append_text(line, &pos, "DANIKA_PART_RAW i=");
+        append_hex(line, &pos, index, 2u);
+        append_text(line, &pos, " off=");
+        append_hex(line, &pos, offset, 2u);
+        append_text(line, &pos, " bytes=");
+        append_bytes(line, &pos, part + offset, count);
+        line[pos] = '\0';
+        recomp_log(line);
+    }
+}
+
 static unsigned int record_signature(unsigned int record) {
     unsigned int a = rd16(record + REC_SELECTOR);
     unsigned int b = rd16(record + REC_CLASS);
@@ -233,8 +262,11 @@ static unsigned int participant_signature(unsigned int part, unsigned int roster
     unsigned int sig = (roster << 24) ^ (roster_class << 16);
     unsigned int i;
 
-    // Identity-oriented fingerprint.  EXP/level are intentionally excluded so
+    // Identity-oriented fingerprint. EXP/level are intentionally excluded so
     // normal attacks/result progression do not spam logs every frame.
+    for (i = 0u; i < 16u; i++) {
+        sig = (sig * 33u) ^ rd8(part + i);
+    }
     for (i = 0u; i < 8u; i++) {
         sig = (sig * 33u) ^ rd8(part + PART_TAIL + i);
     }
@@ -318,6 +350,7 @@ static void scan_live_participants(void) {
             s_part_signature[index] = signature;
             log_participant(new_context ? "DANIKA_PART_SNAPSHOT" : "DANIKA_PART",
                             index, part, roster, roster_class);
+            log_participant_raw(index, part);
         }
     }
 }
@@ -332,7 +365,7 @@ void danika_battle_probe_tick(void) {
     unsigned int slot;
     unsigned int new_context = 0u;
 
-    // Both auxiliary probes are read-only.  The bank-J sampler may let us
+    // Both auxiliary probes are read-only. The bank-J sampler may let us
     // recover the otherwise gitignored sync instructions directly from RDRAM.
     danika_bankj_probe_tick();
     scan_live_participants();
