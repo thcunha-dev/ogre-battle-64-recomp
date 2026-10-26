@@ -1,0 +1,33 @@
+name: Run DX9 core integration
+
+on:
+  push:
+    branches: [dx9-lowend-410m]
+    paths: ['.github/workflows/dx9-run-core.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dx9-lowend-410m
+          fetch-depth: 0
+      - name: Apply stored core patch
+        shell: bash
+        run: |
+          set -euxo pipefail
+          PATCH_B64="$(sed -n 's/^          PATCH_B64: //p' .github/workflows/dx9-integrate-core.yml)"
+          test -n "$PATCH_B64"
+          printf '%s' "$PATCH_B64" | base64 -d > /tmp/dx9_patch.py
+          python3 /tmp/dx9_patch.py
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/CMakeLists.txt dx9/CMakeLists.txt app/src/dx9_geometry.hpp app/src/dx9_renderer_stage6.inl .github/workflows/build-dx9-app.yml
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'dx9: make renderer first-class and finish MODIFYVTX'
+          git push origin HEAD:dx9-lowend-410m
