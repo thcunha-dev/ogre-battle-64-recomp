@@ -1,3 +1,4 @@
+# trigger: integrate core from validated patch payload
 name: Run DX9 core integration
 
 on:
