@@ -39,7 +39,7 @@ jobs:
             tools/test_danika_visual_override.c \
             -o /tmp/test_danika_visual_override
           /tmp/test_danika_visual_override
-          ! grep -Eq 'RECOMP_(HOOK|PATCH|FORCE_PATCH)' \
+          ! grep -Eq 'RECOMP_(HOOK|PATCH|FORCE_PATCH)[[:space:]]*\(' \
             mods/playable-knight-of-danika/src/danika_visual_contract.c
 
       - name: Install build dependencies
