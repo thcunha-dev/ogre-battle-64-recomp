@@ -5,22 +5,30 @@ import re
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "mods/playable-knight-of-danika/src/danika_battle_probe.c"
+BANKJ = ROOT / "mods/playable-knight-of-danika/src/danika_bankj_probe.c"
 DOC = ROOT / "mods/playable-knight-of-danika/BATTLE-PROBE.md"
 TOML = ROOT / "mods/playable-knight-of-danika/mod.toml"
 
 text = SRC.read_text(encoding="utf-8")
+bankj = BANKJ.read_text(encoding="utf-8")
 doc = DOC.read_text(encoding="utf-8")
 toml = TOML.read_text(encoding="utf-8")
 plain_doc = doc.replace("**", "")
 
 # Stable hook only; no function replacement and no save/asset mutation surface.
 assert 'RECOMP_HOOK("func_80072944")' in text
-assert "RECOMP_PATCH" not in text
-assert "RECOMP_FORCE_PATCH" not in text
-assert not re.search(r"\bwr(?:8|16|32)\s*\(", text), "probe must not define/call RAM writers"
+assert text.count("RECOMP_HOOK(") == 1
+for source_name, source in (("battle probe", text), ("bank-J probe", bankj)):
+    assert "RECOMP_PATCH" not in source, source_name
+    assert "RECOMP_FORCE_PATCH" not in source, source_name
+    assert not re.search(r"\bwr(?:8|16|32)\s*\(", source), f"{source_name} must not write RAM"
+assert "RECOMP_HOOK(" not in bankj
+assert "danika_bankj_probe_tick();" in text
 assert "volatile const unsigned char*" in text
 assert "volatile const unsigned short*" in text
 assert "volatile const unsigned int*" in text
+assert "volatile const unsigned char*" in bankj
+assert "volatile const unsigned int*" in bankj
 
 # Lock the proven battle-record path and the fields needed for visual correlation.
 for token in (
@@ -51,6 +59,24 @@ for token in (
 ):
     assert token in text, f"missing live participant contract token: {token}"
 
+# Lock the two known bank-J sync targets.  The first size is exact because the
+# next known function starts at 0x801D8E90; the second is a deliberately bounded
+# diagnostic window, not a claimed function size.
+for token in (
+    "LIVE_BATTLE_PTR 0x801CE8DCu",
+    "BANKJ_SYNC_RECORD_TO_PART 0x801D8DC4u",
+    "BANKJ_SYNC_RECORD_TO_PART_SIZE 0xCCu",
+    "BANKJ_SYNC_PART_TO_RECORD 0x801D8E90u",
+    "BANKJ_SYNC_PART_TO_RECORD_SIZE 0x180u",
+    "BANKJ_DUMP_CHUNK 16u",
+    '"DANIKA_BANKJ name="',
+):
+    assert token in bankj, f"missing bank-J probe contract token: {token}"
+assert "s_dumped_for_base == base" in bankj
+assert "window_has_signal" in bankj
+assert "log_window(\"record_to_part\"" in bankj
+assert "log_window(\"part_to_record\"" in bankj
+
 # Unknown/invalid memory state must fail closed before dereferencing derived data.
 assert text.count("valid_range(") >= 8
 assert "if (!valid_range(table, 2u))" in text
@@ -60,6 +86,8 @@ assert "if (!valid_range(record, BATTLE_RECORD_STRIDE))" in text
 assert "if (!valid_range(valid_addr, 4u) || !valid_range(part, PART_STRIDE))" in text
 assert "if (roster < CHAR_COUNT)" in text
 assert "if (valid_range(class_addr, 1u))" in text
+assert "if (!valid_range(address, size))" in bankj
+assert "base < RDRAM_LO || base >= RDRAM_HI" in bankj
 
 # Diagnostics are bounded/change-driven rather than unbounded per-frame spam.
 assert "BATTLE_RECORD_MAX       24u" in text
@@ -95,4 +123,4 @@ assert "must be reproduced before" in plain_doc
 assert "final ownership gate" in plain_doc
 
 print("Danika battle probe safety: PASS")
-print("hook=func_80072944; writes=none; patch=none; visual+participant snapshots=bounded")
+print("hook=func_80072944; writes=none; patch=none; visual+participant+bankJ snapshots=bounded")
