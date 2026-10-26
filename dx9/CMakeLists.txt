@@ -18,6 +18,7 @@ if (NOT WIN32)
 endif()
 
 set(OGRE_USE_RT64 OFF CACHE BOOL "RT64 is disabled in the Direct3D 9 low-end build" FORCE)
+set(OGRE_USE_DX9 ON CACHE BOOL "Direct3D 9 low-end renderer" FORCE)
 add_compile_definitions(OGRE_USE_DX9=1)
 
 # The app owns all game/runtime/platform targets. CMAKE_CURRENT_SOURCE_DIR

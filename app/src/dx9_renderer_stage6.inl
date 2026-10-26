@@ -293,6 +293,15 @@ class DX9Renderer final : public DX9RendererStage4 {
                     dx9geom::load_vertices(ctx.geom, rdram_, addr, end - n, n);
                     break;
                 }
+                case gbi::OP_MODIFYVTX: {
+                    const uint8_t where = static_cast<uint8_t>((c.w0 >> 16) & 0xFFu);
+                    const int index = static_cast<int>((c.w0 & 0xFFFFu) >> 1);
+                    if (dx9geom::modify_vertex(ctx.geom, index, where, c.w1))
+                        ++modifyvtx_count_;
+                    else
+                        ++unsupported_modifyvtx_count_;
+                    break;
+                }
                 case gbi::OP_TRI1:
                     draw_triangle_word(st, ctx.geom, c.w0);
                     break;
@@ -653,6 +662,8 @@ class DX9Renderer final : public DX9RendererStage4 {
     uint32_t last_zimg_address_ = 0;
     unsigned triangle_count_ = 0;
     unsigned skipped_triangle_count_ = 0;
+    unsigned modifyvtx_count_ = 0;
+    unsigned unsupported_modifyvtx_count_ = 0;
     unsigned s2dex_rect_count_ = 0;
     unsigned skipped_s2dex_rect_count_ = 0;
     unsigned s2dex_log_count_ = 0;

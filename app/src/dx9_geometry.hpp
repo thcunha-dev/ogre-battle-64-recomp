@@ -110,6 +110,29 @@ inline void load_vertices(State& st, const uint8_t* rdram, uint32_t address,
     }
 }
 
+// F3DEX2 G_MODIFYVTX mutates the RSP vertex cache after G_VTX.
+// RGBA and ST map directly to fields retained by this geometry core.
+// XYSCREEN/ZSCREEN require post-transform cache state and are deliberately
+// rejected instead of approximated incorrectly.
+inline bool modify_vertex(State& st, int index, uint8_t where, uint32_t value) {
+    if (index < 0 || index >= kMaxVertices) return false;
+    RawVertex& v = st.vertices[index];
+    switch (where) {
+        case 0x10: // G_MWO_POINT_RGBA
+            v.r = static_cast<uint8_t>(value >> 24);
+            v.g = static_cast<uint8_t>(value >> 16);
+            v.b = static_cast<uint8_t>(value >> 8);
+            v.a = static_cast<uint8_t>(value);
+            return true;
+        case 0x14: // G_MWO_POINT_ST
+            v.s = static_cast<int16_t>(value >> 16);
+            v.t = static_cast<int16_t>(value & 0xFFFFu);
+            return true;
+        default:
+            return false;
+    }
+}
+
 inline void set_viewport(State& st, const uint8_t* rdram, uint32_t address) {
     if (!rdram || static_cast<uint64_t>(address) + 16u > gbi::kRdramSize) return;
     const uint8_t* p = rdram + address;

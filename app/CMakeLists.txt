@@ -103,9 +103,18 @@ endif()
 # where the wasm build uses the null renderer until a WebGL/WebGPU renderer
 # exists (see docs/WEB-PORT.md).
 option(OGRE_USE_RT64 "Build with the RT64 renderer (native builds only)" ON)
+option(OGRE_USE_DX9 "Build with the Direct3D 9 low-end renderer (Windows only)" OFF)
 
 if (EMSCRIPTEN)
     set(OGRE_USE_RT64 OFF)
+    set(OGRE_USE_DX9 OFF)
+endif()
+
+if (OGRE_USE_DX9 AND NOT WIN32)
+    message(FATAL_ERROR "OGRE_USE_DX9 is Windows-only")
+endif()
+if (OGRE_USE_DX9 AND OGRE_USE_RT64)
+    message(FATAL_ERROR "OGRE_USE_DX9 and OGRE_USE_RT64 are mutually exclusive")
 endif()
 
 # --- Static SDL2 from `make sdl2-static` -------------------------------------
@@ -170,7 +179,10 @@ if (TARGET librecomp AND OGRE_X86_SIMD_FLAGS)
 endif()
 
 # --- Renderer ----------------------------------------------------------------
-if (OGRE_USE_RT64)
+if (OGRE_USE_DX9)
+    # Native D3D9 path for old/weak Windows GPUs; RT64 is not compiled.
+    set(OGRE_RENDERER_SOURCES src/dx9_renderer.cpp)
+elseif (OGRE_USE_RT64)
     # Static build, expecting an SDL window outside of Windows (same options as
     # Zelda64Recomp). On Linux RT64_SDL_WINDOW_VULKAN creates a Vulkan surface from
     # the SDL window (the primary, most-tested backend path).
@@ -446,6 +458,10 @@ endif()
 # see the window-creation comment in src/sdl_platform.cpp.
 if (OGRE_USE_RT64)
     target_compile_definitions(ogrebattle64 PRIVATE OGRE_USE_RT64=1)
+endif()
+if (OGRE_USE_DX9)
+    target_compile_definitions(ogrebattle64 PRIVATE OGRE_USE_DX9=1)
+    target_link_libraries(ogrebattle64 PRIVATE d3d9)
 endif()
 
 if (NOT EMSCRIPTEN)
