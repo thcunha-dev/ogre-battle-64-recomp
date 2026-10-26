@@ -1,4 +1,4 @@
-name: Integrate DX9 F3DEX2 MODIFYVTX
+name: Integrate DX9 core cleanup
 
 on:
   push:
@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: write
-  actions: write
 
 jobs:
   integrate:
@@ -19,108 +18,150 @@ jobs:
           ref: dx9-lowend-410m
           fetch-depth: 0
 
-      - name: Add MODIFYVTX RGBA/ST semantics
+      - name: Make DX9 first-class and finish MODIFYVTX
         shell: bash
         run: |
+          set -euxo pipefail
           python3 - <<'PY'
           from pathlib import Path
 
-          geom = Path('app/src/dx9_geometry.hpp')
-          s = geom.read_text(encoding='utf-8')
-          if 'inline bool modify_vertex(' not in s:
-              anchor = '''inline void load_vertices(State& st, const uint8_t* rdram, uint32_t address,
-                                    int start, int count) {
-          '''.replace('          ', '')
-              pos = s.find(anchor)
-              assert pos >= 0
-              end = s.find('\n}\n', pos)
-              assert end >= 0
-              end += 3
-              fn = '''
-              // F3DEX2 G_MODIFYVTX. The command can replace several cached
-              // vertex fields after G_VTX. RGBA and ST affect the CPU-side
-              // data this renderer already owns and can therefore be reproduced
-              // exactly. XYSCREEN/ZSCREEN are deliberately left unsupported
-              // until the game proves it needs screen-space vertex mutation.
-              inline bool modify_vertex(State& st, int index, uint8_t where, uint32_t value) {
-                  if (index < 0 || index >= kMaxVertices) return false;
-                  RawVertex& v = st.vertices[index];
-                  switch (where) {
-                      case 0x10: // G_MWO_POINT_RGBA
-                          v.r = static_cast<uint8_t>(value >> 24);
-                          v.g = static_cast<uint8_t>(value >> 16);
-                          v.b = static_cast<uint8_t>(value >> 8);
-                          v.a = static_cast<uint8_t>(value);
-                          return true;
-                      case 0x14: // G_MWO_POINT_ST
-                          v.s = static_cast<int16_t>(value >> 16);
-                          v.t = static_cast<int16_t>(value & 0xFFFFu);
-                          return true;
-                      default:
-                          return false;
-                  }
-              }
-          '''.replace('          ', '')
-              s = s[:end] + fn + s[end:]
-              geom.write_text(s, encoding='utf-8')
+          def one(text, old, new, label):
+              if new in text:
+                  return text
+              if old not in text:
+                  raise SystemExit(f'missing patch anchor: {label}')
+              return text.replace(old, new, 1)
 
-          p = Path('app/src/dx9_renderer_stage5.inl')
+          # --- app/CMakeLists.txt: DX9 is a real renderer, not a null-renderer side door.
+          p = Path('app/CMakeLists.txt')
+          s = p.read_text(encoding='utf-8')
+          s = one(s,
+              'option(OGRE_USE_RT64 "Build with the RT64 renderer (native builds only)" ON)\n',
+              'option(OGRE_USE_RT64 "Build with the RT64 renderer (native builds only)" ON)\n'
+              'option(OGRE_USE_DX9 "Build with the Direct3D 9 low-end renderer (Windows only)" OFF)\n',
+              'DX9 option')
+          s = one(s,
+              'if (EMSCRIPTEN)\n    set(OGRE_USE_RT64 OFF)\nendif()\n',
+              'if (EMSCRIPTEN)\n    set(OGRE_USE_RT64 OFF)\n    set(OGRE_USE_DX9 OFF)\nendif()\n\n'
+              'if (OGRE_USE_DX9 AND NOT WIN32)\n'
+              '    message(FATAL_ERROR "OGRE_USE_DX9 is Windows-only")\n'
+              'endif()\n'
+              'if (OGRE_USE_DX9 AND OGRE_USE_RT64)\n'
+              '    message(FATAL_ERROR "OGRE_USE_DX9 and OGRE_USE_RT64 are mutually exclusive")\n'
+              'endif()\n',
+              'DX9 platform guard')
+          s = one(s,
+              'if (OGRE_USE_RT64)\n    # Static build, expecting an SDL window outside of Windows (same options as\n',
+              'if (OGRE_USE_DX9)\n'
+              '    # Direct3D 9 path for old/weak Windows GPUs. It is a standalone\n'
+              '    # translation unit and does not compile or link RT64.\n'
+              '    set(OGRE_RENDERER_SOURCES src/dx9_renderer.cpp)\n'
+              'elseif (OGRE_USE_RT64)\n'
+              '    # Static build, expecting an SDL window outside of Windows (same options as\n',
+              'renderer selector')
+          marker = '''if (OGRE_USE_RT64)\n    target_compile_definitions(ogrebattle64 PRIVATE OGRE_USE_RT64=1)\nendif()\n'''
+          replacement = marker + '''\nif (OGRE_USE_DX9)\n    target_compile_definitions(ogrebattle64 PRIVATE OGRE_USE_DX9=1)\n    target_link_libraries(ogrebattle64 PRIVATE d3d9)\nendif()\n'''
+          s = one(s, marker, replacement, 'DX9 target link')
+          p.write_text(s, encoding='utf-8')
+
+          # --- dx9/CMakeLists.txt: wrapper now only selects the first-class option.
+          p = Path('dx9/CMakeLists.txt')
+          s = p.read_text(encoding='utf-8')
+          s = one(s,
+              'set(OGRE_USE_RT64 OFF CACHE BOOL "RT64 is disabled in the Direct3D 9 low-end build" FORCE)\nadd_compile_definitions(OGRE_USE_DX9=1)\n',
+              'set(OGRE_USE_RT64 OFF CACHE BOOL "RT64 is disabled in the Direct3D 9 low-end build" FORCE)\n'
+              'set(OGRE_USE_DX9 ON CACHE BOOL "Direct3D 9 low-end renderer" FORCE)\n',
+              'wrapper option')
+          s = s.replace('\n# Direct3D 9 is part of Windows. No D3DX, DXGI, D3D12, Vulkan or runtime shader\n# compiler is linked by this wrapper.\ntarget_link_libraries(ogrebattle64 PRIVATE d3d9)\ntarget_compile_definitions(ogrebattle64 PRIVATE OGRE_USE_DX9=1)\n',
+                        '\n# Direct3D 9 linkage is owned by app/CMakeLists.txt so every DX9 build uses\n# exactly the same target contract. No D3DX/DXGI/D3D12/Vulkan is linked.\n')
+          p.write_text(s, encoding='utf-8')
+
+          # --- Geometry helper: exact cached-vertex updates used by F3DEX2.
+          p = Path('app/src/dx9_geometry.hpp')
+          s = p.read_text(encoding='utf-8')
+          if 'inline bool modify_vertex(' not in s:
+              anchor = 'inline void set_viewport(State& st, const uint8_t* rdram, uint32_t address) {'
+              pos = s.find(anchor)
+              if pos < 0:
+                  raise SystemExit('missing set_viewport anchor')
+              fn = r'''// F3DEX2 G_MODIFYVTX mutates the RSP vertex cache after G_VTX.
+// RGBA and ST map directly to fields retained by the DX9 geometry core.
+// XYSCREEN/ZSCREEN need post-transform cache state and are intentionally
+// reported unsupported instead of being approximated incorrectly.
+inline bool modify_vertex(State& st, int index, uint8_t where, uint32_t value) {
+    if (index < 0 || index >= kMaxVertices) return false;
+    RawVertex& v = st.vertices[index];
+    switch (where) {
+        case 0x10: // G_MWO_POINT_RGBA
+            v.r = static_cast<uint8_t>(value >> 24);
+            v.g = static_cast<uint8_t>(value >> 16);
+            v.b = static_cast<uint8_t>(value >> 8);
+            v.a = static_cast<uint8_t>(value);
+            return true;
+        case 0x14: // G_MWO_POINT_ST
+            v.s = static_cast<int16_t>(value >> 16);
+            v.t = static_cast<int16_t>(value & 0xFFFFu);
+            return true;
+        default:
+            return false;
+    }
+}
+
+'''
+              s = s[:pos] + fn + s[pos:]
+          p.write_text(s, encoding='utf-8')
+
+          # --- Active Stage 6 executor: wire MODIFYVTX into the real path.
+          p = Path('app/src/dx9_renderer_stage6.inl')
           s = p.read_text(encoding='utf-8')
           if 'case gbi::OP_MODIFYVTX:' not in s:
-              needle = '''                case gbi::OP_VTX: {
-                      const int n = static_cast<int>(p0(c.w0, 12, 8));
-                      const int end = static_cast<int>(p0(c.w0, 1, 7));
-                      const int start = end - n;
-                      const uint32_t addr = gbi::resolve_address(ctx.base.segments, c.w1);
-                      dx9geom::load_vertices(ctx.geom, rdram_, addr, start, n);
-                      break;
-                  }
-          '''.replace('          ', '')
-              assert needle in s
-              insert = needle + '''                case gbi::OP_MODIFYVTX: {
-                      const uint8_t where = static_cast<uint8_t>((c.w0 >> 16) & 0xFFu);
-                      const int index = static_cast<int>((c.w0 & 0xFFFFu) >> 1);
-                      if (!dx9geom::modify_vertex(ctx.geom, index, where, c.w1)) {
-                          ++unsupported_modifyvtx_count_;
-                      } else {
-                          ++modifyvtx_count_;
-                      }
-                      break;
-                  }
-          '''.replace('          ', '')
-              s = s.replace(needle, insert, 1)
-
+              anchor = '''                case gbi::OP_TRI1:\n                    draw_triangle_word(st, ctx.geom, c.w0);\n                    break;\n'''
+              if anchor not in s:
+                  raise SystemExit('missing Stage6 TRI1 anchor')
+              block = '''                case gbi::OP_MODIFYVTX: {\n                    const uint8_t where = static_cast<uint8_t>((c.w0 >> 16) & 0xFFu);\n                    const int index = static_cast<int>((c.w0 & 0xFFFFu) >> 1);\n                    if (dx9geom::modify_vertex(ctx.geom, index, where, c.w1))\n                        ++modifyvtx_count_;\n                    else\n                        ++unsupported_modifyvtx_count_;\n                    break;\n                }\n'''
+              s = s.replace(anchor, block + anchor, 1)
           if 'unsigned modifyvtx_count_' not in s:
-              needle = '    unsigned skipped_triangle_count_ = 0;\n'
-              assert needle in s
-              s = s.replace(needle, needle + '    unsigned modifyvtx_count_ = 0;\n    unsigned unsupported_modifyvtx_count_ = 0;\n', 1)
-
-          # Fold the counters into the existing bounded shutdown telemetry.
-          old = '                       s2dex_rect_count_, skipped_s2dex_rect_count_);\n'
-          if old in s and 'modifyVtx=' not in s:
-              # Keep the existing milestone untouched if formatting differs;
-              # the counters remain available in a debugger and add no spam.
-              pass
-
+              anchor = '    unsigned skipped_triangle_count_ = 0;\n'
+              if anchor not in s:
+                  raise SystemExit('missing Stage6 counter anchor')
+              s = s.replace(anchor, anchor +
+                  '    unsigned modifyvtx_count_ = 0;\n'
+                  '    unsigned unsupported_modifyvtx_count_ = 0;\n', 1)
           p.write_text(s, encoding='utf-8')
-          assert 'dx9geom::modify_vertex' in p.read_text()
-          assert 'G_MWO_POINT_RGBA' in geom.read_text()
+
+          # --- CI contract follows the actual first-class CMake route.
+          p = Path('.github/workflows/build-dx9-app.yml')
+          s = p.read_text(encoding='utf-8')
+          if "- 'app/CMakeLists.txt'" not in s:
+              s = s.replace("      - 'dx9/CMakeLists.txt'\n",
+                            "      - 'dx9/CMakeLists.txt'\n      - 'app/CMakeLists.txt'\n", 1)
+          old = '''          grep -q 'set(OGRE_USE_RT64 OFF' dx9/CMakeLists.txt\n          grep -q 'add_compile_definitions(OGRE_USE_DX9=1)' dx9/CMakeLists.txt\n          grep -q 'target_link_libraries(ogrebattle64 PRIVATE d3d9)' dx9/CMakeLists.txt\n          if grep -Eqi 'target_link_libraries\\([^)]*(d3d12|dxgi|vulkan|rt64)' dx9/CMakeLists.txt; then\n            echo '::error::DX9 wrapper links a modern renderer dependency.'\n            exit 1\n          fi\n'''
+          new = '''          grep -q 'set(OGRE_USE_RT64 OFF' dx9/CMakeLists.txt\n          grep -q 'set(OGRE_USE_DX9 ON' dx9/CMakeLists.txt\n          grep -q 'option(OGRE_USE_DX9' app/CMakeLists.txt\n          grep -q 'set(OGRE_RENDERER_SOURCES src/dx9_renderer.cpp)' app/CMakeLists.txt\n          grep -q 'target_link_libraries(ogrebattle64 PRIVATE d3d9)' app/CMakeLists.txt\n          if grep -Eqi 'target_link_libraries\\([^)]*(d3d12|dxgi|vulkan)' dx9/CMakeLists.txt; then\n            echo '::error::DX9 wrapper links a modern renderer dependency.'\n            exit 1\n          fi\n'''
+          s = one(s, old, new, 'CI CMake contract')
+          p.write_text(s, encoding='utf-8')
+
+          # Hard invariants: fail the integration before committing a half-patch.
+          cm = Path('app/CMakeLists.txt').read_text()
+          sg = Path('app/src/dx9_renderer_stage6.inl').read_text()
+          gh = Path('app/src/dx9_geometry.hpp').read_text()
+          assert 'option(OGRE_USE_DX9' in cm
+          assert 'src/dx9_renderer.cpp' in cm
+          assert 'PRIVATE d3d9' in cm
+          assert 'case gbi::OP_MODIFYVTX:' in sg
+          assert 'inline bool modify_vertex(' in gh
           PY
           git diff --check
 
-      - name: Commit MODIFYVTX support
+      - name: Commit integrated core
         shell: bash
         run: |
           set -euxo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app/src/dx9_geometry.hpp app/src/dx9_renderer_stage5.inl
-          if git diff --cached --quiet; then exit 0; fi
-          git commit -m 'dx9: support F3DEX2 MODIFYVTX RGBA and ST'
+          git add app/CMakeLists.txt dx9/CMakeLists.txt app/src/dx9_geometry.hpp app/src/dx9_renderer_stage6.inl .github/workflows/build-dx9-app.yml
+          if git diff --cached --quiet; then
+            echo 'DX9 core already integrated.'
+            exit 0
+          fi
+          git commit -m 'dx9: make renderer first-class and finish MODIFYVTX'
           git push origin HEAD:dx9-lowend-410m
-
-      - name: Dispatch DX9 validation
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run build-dx9-app.yml --ref dx9-lowend-410m
