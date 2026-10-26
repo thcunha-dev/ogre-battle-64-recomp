@@ -7,6 +7,7 @@ on:
       - mod/playable-knight-of-danika
     paths:
       - 'tools/trace_danika_class_change_flow.py'
+      - 'tools/trace_danika_manual_class_menu.py'
       - 'asm/**'
       - '.github/workflows/danika-class-change-trace.yml'
 
@@ -20,18 +21,29 @@ jobs:
         run: |
           python3 tools/trace_danika_class_change_flow.py | tee /tmp/danika-class-change-flow.txt
 
-      - name: Publish decisive trace in job summary
+      - name: Trace manual class menu candidates
+        run: |
+          python3 tools/trace_danika_manual_class_menu.py | tee /tmp/danika-manual-class-menu.txt
+
+      - name: Publish decisive traces in job summary
         run: |
           {
             echo '## Knight of Danika native class-change flow'
             echo '```text'
             cat /tmp/danika-class-change-flow.txt
             echo '```'
+            echo
+            echo '## Knight of Danika manual Change Class candidates'
+            echo '```text'
+            cat /tmp/danika-manual-class-menu.txt
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
           name: danika-class-change-flow
-          path: /tmp/danika-class-change-flow.txt
+          path: |
+            /tmp/danika-class-change-flow.txt
+            /tmp/danika-manual-class-menu.txt
           if-no-files-found: error
           retention-days: 14
