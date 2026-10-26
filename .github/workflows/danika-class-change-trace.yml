@@ -10,6 +10,7 @@ on:
       - 'tools/trace_danika_manual_class_menu.py'
       - 'tools/trace_danika_class_commit_writes.py'
       - 'tools/trace_danika_roster_menu_bridge.py'
+      - 'tools/trace_danika_selected_character_menu.py'
       - 'asm/**'
       - '.github/workflows/danika-class-change-trace.yml'
 
@@ -35,6 +36,10 @@ jobs:
         run: |
           python3 tools/trace_danika_roster_menu_bridge.py | tee /tmp/danika-roster-menu-bridge.txt
 
+      - name: Trace selected-character class-menu path
+        run: |
+          python3 tools/trace_danika_selected_character_menu.py | tee /tmp/danika-selected-character-menu.txt
+
       - name: Publish decisive traces in job summary
         run: |
           {
@@ -57,6 +62,11 @@ jobs:
             echo '```text'
             cat /tmp/danika-roster-menu-bridge.txt
             echo '```'
+            echo
+            echo '## Knight of Danika selected-character menu path'
+            echo '```text'
+            cat /tmp/danika-selected-character-menu.txt
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
@@ -67,5 +77,6 @@ jobs:
             /tmp/danika-manual-class-menu.txt
             /tmp/danika-class-commit-writes.txt
             /tmp/danika-roster-menu-bridge.txt
+            /tmp/danika-selected-character-menu.txt
           if-no-files-found: error
           retention-days: 14
