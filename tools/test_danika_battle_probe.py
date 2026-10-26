@@ -17,12 +17,11 @@ plain_doc = doc.replace("**", "")
 
 # Stable hook only; no function replacement and no save/asset mutation surface.
 assert 'RECOMP_HOOK("func_80072944")' in text
-assert text.count("RECOMP_HOOK(") == 1
+assert len(re.findall(r"RECOMP_HOOK\s*\(", text)) == 1
 for source_name, source in (("battle probe", text), ("bank-J probe", bankj)):
-    assert "RECOMP_PATCH" not in source, source_name
-    assert "RECOMP_FORCE_PATCH" not in source, source_name
+    assert not re.search(r"RECOMP_(?:PATCH|FORCE_PATCH)\s*\(", source), source_name
     assert not re.search(r"\bwr(?:8|16|32)\s*\(", source), f"{source_name} must not write RAM"
-assert "RECOMP_HOOK(" not in bankj
+assert not re.search(r"RECOMP_HOOK\s*\(", bankj)
 assert "danika_bankj_probe_tick();" in text
 assert "volatile const unsigned char*" in text
 assert "volatile const unsigned short*" in text
