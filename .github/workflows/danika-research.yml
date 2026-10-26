@@ -122,8 +122,16 @@ jobs:
       - name: Lock fail-closed allied gate
         run: python3 tools/test_danika_gate_contract.py
 
-      - name: Lock visual override safety
+      - name: Lock visual override source safety
         run: python3 tools/test_danika_visual_override.py
+
+      - name: Execute visual override truth table
+        run: |
+          gcc -std=c99 -Wall -Wextra -Werror \
+            -I mods/playable-knight-of-danika \
+            tools/test_danika_visual_override.c \
+            -o /tmp/test_danika_visual_override
+          /tmp/test_danika_visual_override
 
       - name: Lock read-only battle probe safety
         run: python3 tools/test_danika_battle_probe.py
