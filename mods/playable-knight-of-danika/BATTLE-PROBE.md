@@ -23,6 +23,8 @@ A second, independently verified path is now captured as well. The EXP-overflow 
 - participant `+0xF6`: persistent roster index;
 - persistent character table: `0x80193BE0`, stride `0x38`, class at `+0x12`.
 
+The persistent table has now also been proven structurally as a 100-record character roster: the game clears `0x15E0` bytes (`100 * 0x38`), initializes the same array, and later scans exactly `0x64` records at stride `0x38`. This makes `+0xF6` a strong persistent-character identity bridge. It still does **not** prove that every roster-backed participant is allied or that every enemy is unbacked.
+
 This gives the probe two independent views of the same battle: renderer records and roster-backed live participants. The remaining safe requirement is still to prove ownership before activating the final override. A roster link is strong identity evidence, but it is **not automatically an ally/enemy flag**.
 
 ## Dormant final visual resolver
@@ -123,21 +125,49 @@ With explicit labels, the analyzer reports known allied Dragoon and enemy Danika
 
 Even a reported ownership `CANDIDATE` is only a correlation from that capture and must be reproduced before it is accepted as the final ownership gate.
 
+## Bank J runtime recovery
+
+The decisive participant-to-roster synchronization code lives in streamed **bank J** (`bankRec10a`, ROM `0x213AE0`, VRAM base `0x801D0860`). Its generated assembly is not tracked in Git and normally requires the original ROM to regenerate. Two result-sync functions are already known from the working EXP-overflow restoration:
+
+- `0x801D8DC4` — record -> participant sync;
+- `0x801D8E90` — participant -> record sync.
+
+The probe now tries a read-only runtime recovery instead of guessing. When a live battle/result state exists and those windows contain nontrivial bytes, it emits each window once as `DANIKA_BANKJ` chunks, for example:
+
+`DANIKA_BANKJ name=part_to_record addr=801D8E90 off=0000 bytes=................................`
+
+No bank function is hooked or patched. The probe merely reads the RDRAM addresses. If the PC recomp does not retain original MIPS overlay bytes there, the capture will simply fail to look like plausible code and nothing is promoted.
+
+Analyze the same game log with:
+
+`python3 tools/analyze_danika_bankj_dump.py ogrebattle64.log -o danika-bankj-analysis.txt`
+
+The decoder:
+
+- reconstructs the two byte windows and rejects gaps/conflicts;
+- scores big-endian vs little-endian MIPS plausibility;
+- decodes relevant branch, arithmetic, load and store instructions;
+- highlights known participant/roster immediates such as `+0xF6`, `0x64`, `+0x12`, `+0x13`, `+0x35`, `0xF8`, `0x1C4` and `0x20C`;
+- does **not** call a `+0xF6` load an ownership proof by itself.
+
+The useful outcome is surrounding control flow that proves which participants are synchronized to the persistent roster. If the result code proves that only the player's side crosses that bridge, we can promote a roster-backed participant to `DANIKA_SIDE_ALLIED` with much stronger evidence than a visual-field correlation. Until then, `DanikaSide` remains `UNKNOWN` on roster backing alone.
+
 ## Minimum capture that will unlock the next patch
 
 1. Enable **Knight of Danika - Battle Probe** and enter a normal battle.
-2. Keep the port log from battle entry through the first attack.
-3. Prefer a battle with exactly one normal Dragoon on the player's side. The new participant/visual 1:1 bridge can often recover its donor selector automatically.
+2. Keep the port log from battle entry **through the result/EXP screen** so the streamed bank-J sync routines have a chance to become resident.
+3. Prefer a battle with exactly one normal Dragoon on the player's side. The participant/visual 1:1 bridge can often recover its donor selector automatically.
 4. Capture the original enemy Knight of Danika (`id=71`) if available so its vanilla visual signature is recorded.
-5. For ownership proof, the strongest capture still contains the same class on both sides. Explicit `--ally`/`--enemy` labels can then isolate same-class field differences without confusing class identity with side.
-6. A later player-side test Danika can be compared against the proven ownership discriminator before the dormant override is activated.
+5. Run both analyzers on the same log. The bank-J dump may prove ownership structurally; otherwise, a same-class ally/enemy capture remains the strongest fallback.
+6. For the fallback ownership proof, explicit `--ally`/`--enemy` labels can isolate same-class field differences without confusing class identity with side.
+7. A later player-side test Danika can be compared against the proven ownership discriminator before the dormant override is activated.
 
 A short video remains useful, but with the participant stream it is no longer required merely to identify every unique-class visual record by hand.
 
 ## Safety design
 
-The probe hooks only `func_80072944`, the established base per-frame hook. It performs bounds-checked reads from both the visual battle table and the independently verified live participant/roster structures and calls `recomp_log`. There are no volatile writes, `RECOMP_PATCH` functions, save hooks or asset replacements.
+The probe hooks only `func_80072944`, the established base per-frame hook. It performs bounds-checked reads from the visual battle table, the independently verified live participant/roster structures and the two bounded bank-J diagnostic windows, then calls `recomp_log`. There are no volatile writes, `RECOMP_PATCH` functions, save hooks or asset replacements.
 
-Visual logging is capped at 24 records. Participant logging is capped at 20 live slots and is snapshot/change-driven. Normal level/EXP progression is deliberately excluded from the participant identity signature so attacks do not create unbounded per-frame log spam.
+Visual logging is capped at 24 records. Participant logging is capped at 20 live slots and is snapshot/change-driven. The bank-J windows are emitted once per live battle-state base. Normal level/EXP progression is deliberately excluded from the participant identity signature so attacks do not create unbounded per-frame log spam.
 
 If a pointer or derived address is outside N64 RDRAM, the corresponding scan does nothing. Unknown state therefore fails closed.
