@@ -1,0 +1,157 @@
+name: Split DX9 offline kit
+
+on:
+  push:
+    branches: [dx9-lowend-410m]
+    paths:
+      - '.github/workflows/split-dx9-offline-kit.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  split:
+    runs-on: ubuntu-24.04
+    env:
+      SOURCE_ARTIFACT_ID: '12692033646'
+    steps:
+      - name: Download existing ROM-free build kit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          curl -fL --retry 3 \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            -o kit.zip \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${SOURCE_ARTIFACT_ID}/zip"
+          mkdir kit
+          unzip -q kit.zip -d kit
+          test -f kit/Makefile
+          test -x kit/tools/N64Recomp/build/N64Recomp
+          test -x kit/tools/N64Recomp/build/RSPRecomp
+          test -d kit/tools/N64ModernRuntime
+          test -x kit/tools/llvm-mingw/bin/x86_64-w64-mingw32-clang++
+          du -sh kit kit/tools/* | sort -h
+
+      - name: Pack source tree separately
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir pieces
+          tar -C kit -czf pieces/source-core.tar.gz \
+            --exclude='./tools/N64Recomp' \
+            --exclude='./tools/N64ModernRuntime' \
+            --exclude='./tools/llvm-mingw' \
+            --exclude='./tools/SDL2-static' \
+            --exclude='./tools/mips-binutils' \
+            --exclude='./tools/offline-wheelhouse' \
+            .
+          tar -C kit -czf pieces/recomp-runtime.tar.gz \
+            tools/N64Recomp tools/N64ModernRuntime
+          tar -C kit -cJf pieces/llvm-mingw.tar.xz tools/llvm-mingw
+          tar -C kit -czf pieces/host-tools.tar.gz \
+            tools/SDL2-static tools/mips-binutils tools/offline-wheelhouse tools/dx9-offline-env.sh
+          split -b 80M -d -a 2 pieces/recomp-runtime.tar.gz pieces/recomp-runtime.part-
+          split -b 80M -d -a 2 pieces/llvm-mingw.tar.xz pieces/llvm-mingw.part-
+          rm pieces/recomp-runtime.tar.gz pieces/llvm-mingw.tar.xz
+          ls -lh pieces
+          for f in pieces/*; do
+            size=$(stat -c %s "$f")
+            if [ "$size" -gt 90000000 ]; then
+              echo "::error::$f is too large ($size bytes)"
+              exit 1
+            fi
+          done
+
+      - name: Upload source core
+        uses: actions/upload-artifact@v4
+        with:
+          name: dx9-kit-source-core
+          path: pieces/source-core.tar.gz
+          compression-level: 0
+          retention-days: 7
+
+      - name: Upload host tools
+        uses: actions/upload-artifact@v4
+        with:
+          name: dx9-kit-host-tools
+          path: pieces/host-tools.tar.gz
+          compression-level: 0
+          retention-days: 7
+
+      - name: Upload recomp runtime part 00
+        uses: actions/upload-artifact@v4
+        with:
+          name: dx9-kit-recomp-runtime-00
+          path: pieces/recomp-runtime.part-00
+          compression-level: 0
+          retention-days: 7
+      - name: Upload recomp runtime part 01
+        uses: actions/upload-artifact@v4
+        with:
+          name: dx9-kit-recomp-runtime-01
+          path: pieces/recomp-runtime.part-01
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
+      - name: Upload recomp runtime part 02
+        uses: actions/upload-artifact@v4
+        with:
+          name: dx9-kit-recomp-runtime-02
+          path: pieces/recomp-runtime.part-02
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
+      - name: Upload recomp runtime part 03
+        uses: actions/upload-artifact@v4
+        with:
+          name: dx9-kit-recomp-runtime-03
+          path: pieces/recomp-runtime.part-03
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
+
+      - name: Upload LLVM-MinGW part 00
+        uses: actions/upload-artifact@v4
+        with:
+          name: dx9-kit-llvm-mingw-00
+          path: pieces/llvm-mingw.part-00
+          compression-level: 0
+          retention-days: 7
+      - name: Upload LLVM-MinGW part 01
+        uses: actions/upload-artifact@v4
+        with:
+          name: dx9-kit-llvm-mingw-01
+          path: pieces/llvm-mingw.part-01
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
+      - name: Upload LLVM-MinGW part 02
+        uses: actions/upload-artifact@v4
+        with:
+          name: dx9-kit-llvm-mingw-02
+          path: pieces/llvm-mingw.part-02
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
+      - name: Upload LLVM-MinGW part 03
+        uses: actions/upload-artifact@v4
+        with:
+          name: dx9-kit-llvm-mingw-03
+          path: pieces/llvm-mingw.part-03
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
+      - name: Upload LLVM-MinGW part 04
+        uses: actions/upload-artifact@v4
+        with:
+          name: dx9-kit-llvm-mingw-04
+          path: pieces/llvm-mingw.part-04
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
