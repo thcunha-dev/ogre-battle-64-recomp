@@ -1,0 +1,99 @@
+name: Package Knight of Danika Allied Gameplay Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - mod/playable-knight-of-danika
+    paths:
+      - 'mods/playable-knight-of-danika-gameplay-test/**'
+      - 'mods/playable-knight-of-danika/include/modding.h'
+      - '.github/workflows/danika-gameplay-test-package.yml'
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify isolated gameplay write scope
+        run: |
+          set -eux
+          src=mods/playable-knight-of-danika-gameplay-test/src/danika_gameplay_test.c
+          grep -q 'CHAR_TABLE       0x80193BE0u' "$src"
+          grep -q 'FIGHTER_CLASS_ID 0x02u' "$src"
+          grep -q 'DANIKA_CLASS_ID  0x71u' "$src"
+          grep -q 'CHAR_CLASS       0x12u' "$src"
+          ! grep -q '0x801CE8DC' "$src"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-mips-linux-gnu cmake ninja-build unzip
+
+      - name: Build pinned RecompModTool
+        run: |
+          set -eux
+          N64RECOMP_COMMIT=81213c1831fab2521a6a5459c67b63437d67e253
+          git clone https://github.com/N64Recomp/N64Recomp.git /tmp/N64Recomp
+          git -C /tmp/N64Recomp checkout "$N64RECOMP_COMMIT"
+          git -C /tmp/N64Recomp submodule update --init --recursive
+          cmake -S /tmp/N64Recomp -B /tmp/N64Recomp/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/N64Recomp/build --target RecompModTool
+
+      - name: Build MIPS test ELF
+        run: |
+          set -eux
+          mod=mods/playable-knight-of-danika-gameplay-test
+          mkdir -p "$mod/build" build/mods mods/reference
+          common='-mips2 -march=mips2 -mno-check-zero-division -mabi=32 -O2 -G0 -mno-abicalls -mno-odd-spreg -fno-builtin -ffreestanding -fno-pic -fno-pie -Wall -Wextra -Wno-unused-parameter'
+          mips-linux-gnu-gcc $common -nostdinc \
+            -I mods/playable-knight-of-danika/include \
+            -c "$mod/src/danika_gameplay_test.c" \
+            -o "$mod/build/danika_gameplay_test.o"
+          mips-linux-gnu-ld -nostdlib -T "$mod/mod.ld" \
+            --unresolved-symbols=ignore-all --emit-relocs -e 0 \
+            -o "$mod/build/mod.elf" "$mod/build/danika_gameplay_test.o"
+          test -s "$mod/build/mod.elf"
+          mips-linux-gnu-readelf -SW "$mod/build/mod.elf" | tee /tmp/danika-gameplay-sections.txt
+          grep -q '.recomp_hook.func_80072944' /tmp/danika-gameplay-sections.txt
+          ! grep -q '.recomp_patch' /tmp/danika-gameplay-sections.txt
+
+      - name: Write minimal Rev-A function references
+        run: |
+          cat >mods/reference/dump.toml <<'EOF'
+          [[section]]
+          name = ".main"
+          rom = 0x00001060
+          vram = 0x80070C60
+          size = 0x3E150
+          functions = [
+            { name = "func_80072944", vram = 0x80072944, size = 0x38 },
+          ]
+          EOF
+
+      - name: Package NRM
+        run: |
+          set -eux
+          tool=/tmp/N64Recomp/build/RecompModTool
+          mod=mods/playable-knight-of-danika-gameplay-test
+          nrm=build/mods/knight-of-danika-gameplay-test.nrm
+          "$tool" "$mod/mod.toml" build/mods
+          test -s "$nrm"
+          unzip -t "$nrm"
+          unzip -Z1 "$nrm" | tee /tmp/danika-gameplay-files.txt
+          grep -qx 'mod.json' /tmp/danika-gameplay-files.txt
+          grep -qx 'mod_binary.bin' /tmp/danika-gameplay-files.txt
+          grep -qx 'mod_syms.bin' /tmp/danika-gameplay-files.txt
+          grep -qx 'TESTING.md' /tmp/danika-gameplay-files.txt
+          sha256sum "$nrm" | tee build/mods/knight-of-danika-gameplay-test.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: knight-of-danika-gameplay-test
+          path: |
+            build/mods/knight-of-danika-gameplay-test.nrm
+            build/mods/knight-of-danika-gameplay-test.sha256
+            mods/playable-knight-of-danika-gameplay-test/TESTING.md
+          if-no-files-found: error
+          retention-days: 14
