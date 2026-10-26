@@ -44,6 +44,9 @@ jobs:
       - name: Trace live character records into battle
         run: python3 tools/trace_danika_character_to_battle.py
 
+      - name: Prove persistent roster provenance
+        run: python3 tools/trace_danika_roster_provenance.py
+
       - name: Dissect world-to-battle entry bridge
         run: python3 tools/trace_danika_battle_entry_bridge.py
 
@@ -142,8 +145,13 @@ jobs:
       - name: Test battle probe log analyzer
         run: python3 tools/test_analyze_danika_probe_log.py
 
-      - name: Syntax-check battle probe
-        run: gcc -std=c99 -fsyntax-only -Wall -Wextra -I mods/playable-knight-of-danika/include mods/playable-knight-of-danika/src/danika_battle_probe.c
+      - name: Test bank J dump analyzer
+        run: python3 tools/test_analyze_danika_bankj_dump.py
+
+      - name: Syntax-check battle probes
+        run: |
+          gcc -std=c99 -fsyntax-only -Wall -Wextra -I mods/playable-knight-of-danika/include mods/playable-knight-of-danika/src/danika_battle_probe.c
+          gcc -std=c99 -fsyntax-only -Wall -Wextra -I mods/playable-knight-of-danika/include mods/playable-knight-of-danika/src/danika_bankj_probe.c
 
       - name: Upload reverse-engineering reports
         uses: actions/upload-artifact@v4
@@ -157,6 +165,7 @@ jobs:
             danika-external-class-visual-tables.txt
             danika-class-dispatch.txt
             danika-character-to-battle.txt
+            danika-roster-provenance.txt
             danika-battle-entry-bridge.txt
             danika-battle-lookup-report.txt
             danika-asset-bridge-report.txt
