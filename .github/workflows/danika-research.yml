@@ -92,6 +92,9 @@ jobs:
       - name: Trace live battle participant bridge
         run: python3 tools/trace_danika_participant_link.py
 
+      - name: Trace live participant ownership candidates
+        run: python3 tools/trace_danika_live_participant_owner.py
+
       - name: Trace renderer facing argument
         run: python3 tools/trace_danika_renderer_facing.py
 
@@ -170,6 +173,7 @@ jobs:
             danika-descriptor-class-provenance.txt
             danika-descriptor-class-semantics.txt
             danika-participant-link.txt
+            danika-live-participant-owner.txt
             danika-renderer-facing-trace.txt
             danika-classword-flags.txt
             danika-allied-resource-path.txt
