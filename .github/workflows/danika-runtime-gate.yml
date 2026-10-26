@@ -8,6 +8,8 @@ on:
       - 'mods/playable-knight-of-danika/danika_gate.h'
       - 'mods/playable-knight-of-danika/danika_visual_override.h'
       - 'mods/playable-knight-of-danika/danika_runtime_gate.h'
+      - 'tools/analyze_danika_ownership.py'
+      - 'tools/test_analyze_danika_ownership.py'
       - 'tools/test_danika_runtime_gate.c'
       - '.github/workflows/danika-runtime-gate.yml'
   workflow_dispatch:
@@ -27,10 +29,22 @@ jobs:
             tools/test_danika_runtime_gate.c \
             -o /tmp/test_danika_runtime_gate
           /tmp/test_danika_runtime_gate
+      - name: Run ownership analyzer tests
+        run: |
+          python3 tools/analyze_danika_ownership.py --self-test
+          PYTHONPATH=tools python3 tools/test_analyze_danika_ownership.py
       - name: Enforce no runtime memory access in pure gate
         run: |
           ! grep -Eq 'RECOMP_(HOOK|PATCH|FORCE_PATCH)|0x80[0-9A-Fa-f]{6}|volatile|\bwr(8|16|32)\b' \
             mods/playable-knight-of-danika/danika_runtime_gate.h
           grep -F 'DANIKA_SIDE_UNKNOWN' mods/playable-knight-of-danika/danika_runtime_gate.h
-          grep -F 'participant_is_persistent_player_roster' mods/playable-knight-of-danika/danika_runtime_gate.h
+          grep -F 'persistent_roster_link_proven' mods/playable-knight-of-danika/danika_runtime_gate.h
+          grep -F 'ownership_proven' mods/playable-knight-of-danika/danika_runtime_gate.h
+          grep -F 'proven_side' mods/playable-knight-of-danika/danika_runtime_gate.h
           grep -F 'allied_dragoon_selector_proven' mods/playable-knight-of-danika/danika_runtime_gate.h
+          grep -F 'danika_runtime_override_ready' mods/playable-knight-of-danika/danika_runtime_gate.h
+      - name: Enforce enemy and unknown fail-closed tests
+        run: |
+          grep -F 'ev.proven_side = DANIKA_SIDE_ENEMY' tools/test_danika_runtime_gate.c
+          grep -F 'ev.proven_side = DANIKA_SIDE_UNKNOWN' tools/test_danika_runtime_gate.c
+          grep -F 'ev.ownership_proven = false' tools/test_danika_runtime_gate.c
