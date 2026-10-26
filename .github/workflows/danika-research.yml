@@ -161,6 +161,19 @@ jobs:
           gcc -std=c99 -fsyntax-only -Wall -Wextra -I mods/playable-knight-of-danika/include mods/playable-knight-of-danika/src/danika_bankc_probe.c
           gcc -std=c99 -fsyntax-only -Wall -Wextra -I mods/playable-knight-of-danika/include mods/playable-knight-of-danika/src/danika_bankah_probe.c
 
+      - name: Print decisive Danika hook evidence
+        run: |
+          echo '=== DYNAMIC VISUAL LOADER ==='
+          sed -n '/## func_801AD368/,/## func_801AE794/p' danika-dynamic-visual-loader.txt | head -n 220
+          echo '=== VISUAL DESCRIPTOR INIT HIGH SIGNAL ==='
+          sed -n '/High-signal lines in initializer/,/Full initializer/p' danika-visual-descriptor-init.txt | head -n 180
+          echo '=== ALLIED RESOURCE PATH ==='
+          grep -Ei '801AD368|801AD13C|class|selector|descriptor|combat|allied|owner|side|candidate|proven|reject' danika-allied-resource-path.txt | head -n 180 || true
+          echo '=== LIVE OWNERSHIP STATIC TRACE ==='
+          grep -Ei 'ownership|roster_f6|participant|candidate|branch|side|team|UNKNOWN|score=' danika-live-participant-owner.txt | head -n 220 || true
+          echo '=== TAIL SEMANTICS GUARDRAIL ==='
+          grep -Ei 'transition|gameplay|visual|reject|0x41|0x42|0x43|0x44|0x45|0x46' danika-tail-semantics.txt | head -n 140 || true
+
       - name: Upload reverse-engineering reports
         uses: actions/upload-artifact@v4
         with:
