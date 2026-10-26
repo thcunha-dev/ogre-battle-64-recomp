@@ -52,9 +52,20 @@ for token in (
     "CHAR_STRIDE     0x38u", "CHAR_CLASS      0x12u", "CHAR_COUNT      100u",
     "PART_STRIDE     0xF8u", "PART_OFF        0x1C4u", "PART_VALID      0x20Cu",
     "PART_LEVEL      0x31u", "PART_EXP        0x32u", "PART_CHARIDX    0xF6u",
-    "PART_MAX        20u",
+    "PART_MAX        20u", "PART_RAW_CHUNK  16u",
 ):
     assert token in text, f"missing live participant contract token: {token}"
+
+# Full-payload ownership instrumentation must stay bounded, change-driven and read-only.
+assert '"DANIKA_PART_RAW i="' in text
+assert 'append_text(line, &pos, " off=")' in text
+assert 'append_text(line, &pos, " bytes=")' in text
+assert "for (offset = 0u; offset < PART_STRIDE; offset += PART_RAW_CHUNK)" in text
+assert "count = PART_STRIDE - offset" in text
+assert "log_participant_raw(index, part);" in text
+assert text.index("log_participant_raw(index, part);") > text.index(
+    "if (!s_part_seen[index] || s_part_signature[index] != signature)"
+)
 
 for token in (
     "DESC_BASE_PTR   0x801BA690u", "DESC_COUNT      0x801BA694u",
@@ -123,6 +134,7 @@ assert "if (!s_seen[slot] || s_signature[slot] != signature)" in text
 assert "if (!s_part_seen[index] || s_part_signature[index] != signature)" in text
 assert "DANIKA_SNAPSHOT" in text and "DANIKA_PROBE" in text
 assert "DANIKA_PART_SNAPSHOT" in text and '"DANIKA_PART"' in text
+assert "DANIKA_PART_RAW" in text
 assert "DANIKA_JOIN" in join
 
 assert 'id = "ogre_danika_battle_probe"' in toml
@@ -140,4 +152,4 @@ assert "must be reproduced before" in plain_doc
 assert "final ownership gate" in plain_doc
 
 print("Danika battle probe safety: PASS")
-print("hooks=frame+exact-DMA-return; writes=none; patch=none; visual+participant+join+bankAH+bankC+bankJ snapshots=bounded")
+print("hooks=frame+exact-DMA-return; writes=none; patch=none; full 0xF8 participant RAW + visual/join/bank snapshots=bounded")
