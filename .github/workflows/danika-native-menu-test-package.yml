@@ -20,11 +20,19 @@ jobs:
         run: |
           set -eux
           src=mods/playable-knight-of-danika-native-menu-test/src/danika_native_menu_test.c
-          grep -q 'DRAGOON_TRANSITION_SLOT_4 0x80188218u' "$src"
-          grep -q 'EXPECTED_ORIGINAL_CLASS   0x11u' "$src"
+          grep -q 'DRAGOON_CLASS_SLOT_A      0x80188215u' "$src"
+          grep -q 'DRAGOON_THRESHOLD_A       0x80188216u' "$src"
+          grep -q 'DRAGOON_CLASS_SLOT_B      0x80188217u' "$src"
+          grep -q 'DRAGOON_THRESHOLD_B       0x80188218u' "$src"
+          grep -q 'EXPECTED_CLASS_A          0x02u' "$src"
+          grep -q 'EXPECTED_THRESHOLD_A      0x06u' "$src"
+          grep -q 'EXPECTED_CLASS_B          0x05u' "$src"
+          grep -q 'EXPECTED_THRESHOLD_B      0x11u' "$src"
           grep -q 'DANIKA_CLASS_ID           0x71u' "$src"
           ! grep -q '0x80193BE0' "$src"
           ! grep -q '0x801CE8DC' "$src"
+          ! grep -q 'wr8(DRAGOON_THRESHOLD_A' "$src"
+          ! grep -q 'wr8(DRAGOON_THRESHOLD_B' "$src"
 
       - name: Install build dependencies
         run: |
