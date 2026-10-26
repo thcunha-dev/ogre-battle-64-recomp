@@ -41,11 +41,14 @@ jobs:
         run: |
           set -eux
           command -v clang
-          command -v ld.lld
-          command -v llvm-readelf || command -v readelf
+          command -v rustc
+          command -v readelf
           command -v cmake
           command -v ninja
           command -v unzip
+          RUST_LLD="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/rust-lld"
+          test -x "$RUST_LLD"
+          "$RUST_LLD" -flavor gnu --version
 
       - name: Build pinned RecompModTool
         run: |
@@ -67,12 +70,12 @@ jobs:
             -I mods/playable-knight-of-danika/include \
             -c "$mod/src/danika_gameplay_test.c" \
             -o "$mod/build/danika_gameplay_test.o"
-          ld.lld -m elf32btsmip -nostdlib -T "$mod/mod.ld" \
+          RUST_LLD="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/rust-lld"
+          "$RUST_LLD" -flavor gnu -m elf32btsmip -nostdlib -T "$mod/mod.ld" \
             --unresolved-symbols=ignore-all --emit-relocs -e 0 \
             -o "$mod/build/mod.elf" "$mod/build/danika_gameplay_test.o"
           test -s "$mod/build/mod.elf"
-          if command -v llvm-readelf >/dev/null; then READELF=llvm-readelf; else READELF=readelf; fi
-          "$READELF" -SW "$mod/build/mod.elf" | tee /tmp/danika-gameplay-sections.txt
+          readelf -SW "$mod/build/mod.elf" | tee /tmp/danika-gameplay-sections.txt
           grep -q '.recomp_hook.func_80072944' /tmp/danika-gameplay-sections.txt
           grep -q '.recomp_hook.func_801AE794' /tmp/danika-gameplay-sections.txt
           ! grep -q '.recomp_patch' /tmp/danika-gameplay-sections.txt
