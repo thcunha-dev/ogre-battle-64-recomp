@@ -15,6 +15,7 @@
 RECOMP_IMPORT("*", void recomp_log(const char* message));
 
 void danika_bankc_probe_tick(void);
+void danika_join_probe_tick(void);
 
 #define RDRAM_LO 0x80000000u
 #define RDRAM_HI 0x80800000u
@@ -124,9 +125,11 @@ void danika_bankj_probe_tick(void) {
     unsigned int base;
 
     // Bank C is resident during the normal battle and contains the EXP filters
-    // that may directly encode side/team eligibility. It is sampled by the same
-    // read-only auxiliary chain, before the result bank replaces the arena.
+    // that may directly encode side/team eligibility. The descriptor/participant
+    // join probe runs in this same read-only chain and does not assume alignment;
+    // it only records evidence needed to prove or reject it.
     danika_bankc_probe_tick();
+    danika_join_probe_tick();
 
     base = rd32(LIVE_BATTLE_PTR);
     if (base < RDRAM_LO || base >= RDRAM_HI) {
