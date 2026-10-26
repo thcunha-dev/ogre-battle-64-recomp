@@ -198,7 +198,8 @@ def main() -> int:
         "Unsupported or unresolved weapon paths must fail closed rather than dereference guessed data.",
     ]
 
-    OUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    report = "\n".join(lines) + "\n"
+    OUT.write_text(report, encoding="utf-8")
 
     assert BASE + DRAGOON * STRIDE == 0x801881D4
     assert BASE + DANIKA * STRIDE == 0x80189BFC
@@ -206,6 +207,7 @@ def main() -> int:
     assert byte_candidates, "expected at least one Dragoon-shared candidate"
     assert word_candidates, "expected at least one aligned u16 Dragoon-shared candidate"
 
+    print(report, end="")
     print(f"Danika/Dragoon weapon compatibility scan: PASS ({len(byte_candidates)} byte, {len(word_candidates)} u16 candidates)")
     print(f"report={OUT.name}")
     return 0
