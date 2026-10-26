@@ -131,7 +131,7 @@ jobs:
           size = 0x3E150
           functions = [
             { name = "func_80072944", vram = 0x80072944, size = 0x38 },
-            { name = "func_8009DA50", vram = 0x8009DA50, size = 0xA4 },
+            { name = "func_8009DA50", vram = 0x8009DA50, size = 0x9C },
           ]
           EOF
 
