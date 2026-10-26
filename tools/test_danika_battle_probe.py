@@ -8,6 +8,7 @@ SRC = ROOT / "mods/playable-knight-of-danika/src/danika_battle_probe.c"
 BANKJ = ROOT / "mods/playable-knight-of-danika/src/danika_bankj_probe.c"
 BANKC = ROOT / "mods/playable-knight-of-danika/src/danika_bankc_probe.c"
 BANKAH = ROOT / "mods/playable-knight-of-danika/src/danika_bankah_probe.c"
+JOIN = ROOT / "mods/playable-knight-of-danika/src/danika_join_probe.c"
 DOC = ROOT / "mods/playable-knight-of-danika/BATTLE-PROBE.md"
 TOML = ROOT / "mods/playable-knight-of-danika/mod.toml"
 
@@ -15,6 +16,7 @@ text = SRC.read_text(encoding="utf-8")
 bankj = BANKJ.read_text(encoding="utf-8")
 bankc = BANKC.read_text(encoding="utf-8")
 bankah = BANKAH.read_text(encoding="utf-8")
+join = JOIN.read_text(encoding="utf-8")
 doc = DOC.read_text(encoding="utf-8")
 toml = TOML.read_text(encoding="utf-8")
 plain_doc = doc.replace("**", "")
@@ -28,13 +30,16 @@ for source_name, source in (
     ("bank-J probe", bankj),
     ("bank-C probe", bankc),
     ("bank-AH probe", bankah),
+    ("descriptor/participant join probe", join),
 ):
     assert not re.search(r"RECOMP_(?:PATCH|FORCE_PATCH)\s*\(", source), source_name
     assert not re.search(r"\bwr(?:8|16|32)\s*\(", source), f"{source_name} must not write RAM"
 assert not re.search(r"RECOMP_HOOK(?:_RETURN)?\s*\(", bankj)
 assert not re.search(r"RECOMP_HOOK(?:_RETURN)?\s*\(", bankc)
+assert not re.search(r"RECOMP_HOOK(?:_RETURN)?\s*\(", join)
 assert "danika_bankj_probe_tick();" in text
 assert "danika_bankc_probe_tick();" in bankj
+assert "danika_join_probe_tick();" in bankj
 
 for token in (
     "0x801BA6D8u", "0x801BA72Du", "0x1Au", "REC_SELECTOR 0x00u",
@@ -50,6 +55,18 @@ for token in (
     "PART_MAX        20u",
 ):
     assert token in text, f"missing live participant contract token: {token}"
+
+for token in (
+    "DESC_BASE_PTR   0x801BA690u", "DESC_COUNT      0x801BA694u",
+    "DESC_STRIDE     0xF8u", "DESC_CLASS      0x4Cu", "DESC_SELECTOR   0x50u",
+    "LIVE_BATTLE_PTR 0x801CE8DCu", "PART_STRIDE     0xF8u", "PART_OFF        0x1C4u",
+    "PART_VALID      0x20Cu", "PART_CHARIDX    0xF6u", "PART_MAX        20u",
+    "CHAR_TABLE      0x80193BE0u", "CHAR_STRIDE     0x38u", "CHAR_CLASS      0x12u",
+    '"DANIKA_JOIN i="', '" classmatch="',
+):
+    assert token in join, f"missing descriptor/participant join token: {token}"
+assert "dclass == rclass" in join
+assert "count > PART_MAX" in join
 
 for token in (
     "LIVE_BATTLE_PTR 0x801CE8DCu", "BANKJ_SYNC_RECORD_TO_PART 0x801D8DC4u",
@@ -97,6 +114,8 @@ assert "if (valid_range(class_addr, 1u))" in text
 assert "if (!valid_range(address, size))" in bankj
 assert "if (!valid_range(address, size))" in bankc
 assert "if (!valid_range(BANKAH_RAM_START, BANKAH_SIZE)" in bankah
+assert "!valid_range(desc_base, count * DESC_STRIDE)" in join
+assert "!valid_range(part_base, PART_OFF + PART_MAX * PART_STRIDE)" in join
 
 assert "BATTLE_RECORD_MAX       24u" in text
 assert "PART_MAX        20u" in text
@@ -104,6 +123,7 @@ assert "if (!s_seen[slot] || s_signature[slot] != signature)" in text
 assert "if (!s_part_seen[index] || s_part_signature[index] != signature)" in text
 assert "DANIKA_SNAPSHOT" in text and "DANIKA_PROBE" in text
 assert "DANIKA_PART_SNAPSHOT" in text and '"DANIKA_PART"' in text
+assert "DANIKA_JOIN" in join
 
 assert 'id = "ogre_danika_battle_probe"' in toml
 assert 'display_name = "Knight of Danika - Battle Probe"' in toml
@@ -120,4 +140,4 @@ assert "must be reproduced before" in plain_doc
 assert "final ownership gate" in plain_doc
 
 print("Danika battle probe safety: PASS")
-print("hooks=frame+exact-DMA-return; writes=none; patch=none; visual+participant+bankAH+bankC+bankJ snapshots=bounded")
+print("hooks=frame+exact-DMA-return; writes=none; patch=none; visual+participant+join+bankAH+bankC+bankJ snapshots=bounded")
