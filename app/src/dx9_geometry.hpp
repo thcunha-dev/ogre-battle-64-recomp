@@ -251,9 +251,12 @@ inline bool triangle_culled(const State& st,
                             const TransformedVertex& a,
                             const TransformedVertex& b,
                             const TransformedVertex& c) {
-    const uint32_t mode = st.geometry_mode & kCullBoth;
+    uint32_t mode = st.geometry_mode & kCullBoth;
     if (mode == 0) return false;
-    if (mode == kCullBoth) return true;
+    // Mature N64 renderers normalize the otherwise contradictory BOTH state to
+    // back-face culling rather than dropping all geometry. This is also safer
+    // for command streams that transiently combine the two bits.
+    if (mode == kCullBoth) mode = kCullBack;
 
     const float dx1 = a.ndc_x - b.ndc_x;
     const float dy1 = a.ndc_y - b.ndc_y;
