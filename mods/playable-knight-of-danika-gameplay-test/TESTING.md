@@ -1,27 +1,51 @@
-# Knight of Danika - Allied Gameplay Test
+# Knight of Danika - Allied Gameplay + Battle Visual Test v2
 
-This is a developer smoke test for gameplay only. It converts the first generic allied Fighter (`0x02`) in the persistent player roster to Knight of Danika (`0x71`).
+This developer build keeps the proven gameplay conversion (first generic allied Fighter `0x02` -> Knight of Danika `0x71`) and adds a tightly gated battle-visual diagnostic.
+
+## What v2 changes
+
+The mod remembers the exact player-roster index it converted. During battle it only considers a visual override when that exact roster character is an active live participant.
+
+It then requires exactly one active render record with class `0x71`. If two `0x71` render records exist (for example allied test Danika plus enemy Danika), it fails closed and changes nothing.
+
+For that unique allied test record, it changes only the visual selector at render-record `+0x00`:
+
+1. prefer a uniquely loaded Dragoon (`0x14`) selector;
+2. if no Dragoon is loaded, use a uniquely loaded Knight (`0x05`) selector as a diagnostic fallback.
+
+The render-record class word at `+0x02` is never changed, so the character remains class `0x71`.
 
 ## Safety
 
 - Use a copy/disposable save.
 - Do **not** save over an important save while the mod is enabled.
-- The mod does not scan or modify live enemy battle participants.
-- Disable the mod and restart the game to stop the runtime conversion.
+- The only persistent-roster write is the same exact Fighter `0x02` -> Danika `0x71` class-byte test.
+- Live battle participant memory is read only; it is never written.
+- Battle visual writes target only the unique `0x71` render record selector (`+0x00`).
+- Enemy Danika present at the same time causes the visual override to refuse to run.
+- No global Dragoon, Knight or Danika class-table record is changed.
+- Disable the mod and restart the game after the test.
 
 ## Test
 
-1. Enable only `Knight of Danika - Allied Gameplay Test` among Danika test mods.
-2. Load a save that has at least one generic Fighter.
-3. Open the organization screen and locate the Fighter that changed class.
-4. Put that character in a deployable unit.
-5. Enter a battle/map and verify:
-   - the game does not crash;
-   - the character remains class `0x71`;
-   - the character can be deployed;
-   - battle starts normally;
-   - attacks/turns resolve;
-   - front/rear presentation, weapon and animation behavior are noted.
-6. Do not save the game after the test.
+1. Replace the previous gameplay-test NRM with this v2 build.
+2. Enable only `Knight of Danika - Allied Gameplay Test` among Danika development mods.
+3. Load a disposable/copy save with at least one generic Fighter.
+4. Locate the character that becomes `Gatekeeper` / class `0x71`.
+5. Put that character into a deployable unit.
+6. For the strongest test, have a Dragoon (`0x14`) in the same battle. If unavailable, a Knight (`0x05`) in the battle can serve as the diagnostic donor.
+7. Enter combat and observe the Gatekeeper specifically.
 
-The goal is not balance yet. The goal is to prove that class `0x71` can survive the full allied gameplay path. Any visual/pose/weapon problems become the next targeted fixes.
+### Success signal
+
+If the Gatekeeper no longer appears as the Soldier fallback and instead takes the loaded Dragoon/Knight battle presentation, the selector path is proven. It is acceptable for this diagnostic to look like the donor class: this build is proving the presentation routing, not final artwork.
+
+### Also record
+
+- whether combat begins normally;
+- whether attacks execute;
+- whether the character remains `Gatekeeper` / class `0x71` in status screens;
+- whether weapon/pose/animation follow the donor;
+- whether the equipment preview is still Soldier (expected for now; that is a separate path).
+
+Do not save the test state over an important save.
