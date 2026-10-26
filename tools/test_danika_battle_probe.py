@@ -44,7 +44,12 @@ assert "if (!valid_range(record, BATTLE_RECORD_STRIDE))" in text
 assert "BATTLE_RECORD_MAX       24u" in text
 assert "s_signature" in text and "s_seen" in text
 assert "if (!s_seen[slot] || s_signature[slot] != signature)" in text
+assert "plausible_record" in text
+assert "selector == 0u || selector == INVALID_SELECTOR" in text
+assert "class_id != 0u && class_id != 0xFFu" in text
+assert "DANIKA_SNAPSHOT" in text
 assert "DANIKA_PROBE" in text
+assert "new_context ? \"DANIKA_SNAPSHOT\" : \"DANIKA_PROBE\"" in text
 
 # Packaging must be visibly diagnostic and disabled by default.
 assert 'id = "ogre_danika_battle_probe"' in toml
@@ -57,6 +62,7 @@ assert "class `0x71`" in doc
 assert "must remain `0x71`" in doc
 assert "enemy Danika" in doc
 assert "read-only" in doc.lower()
+assert "does not infer allied/enemy ownership" in doc
 
 print("Danika battle probe safety: PASS")
-print("hook=func_80072944; writes=none; patch=none; bounded_change_logs=yes")
+print("hook=func_80072944; writes=none; patch=none; bounded_snapshot_change_logs=yes")
