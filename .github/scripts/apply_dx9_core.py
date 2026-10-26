@@ -138,6 +138,63 @@ if "unsigned modifyvtx_count_" not in s:
         "    unsigned unsupported_modifyvtx_count_ = 0;\n",
         "Stage6 counters",
     )
+
+# Reject triangles the N64 RSP would never rasterize. This runs after the three
+# vertices are transformed but before texture upload/RT binding, so it saves the
+# most expensive work on old GPUs without changing RDP colour/blender semantics.
+if "triangle_trivially_rejected(tv[0]" not in s:
+    old = (
+        "        if (!tv[0].valid || !tv[1].valid || !tv[2].valid) {\n"
+        "            ++skipped_triangle_count_; return;\n"
+        "        }\n\n"
+        "        const int tile0 = st.tex.active_tile & 7, tile1 = (tile0 + 1) & 7;\n"
+    )
+    new = (
+        "        if (!tv[0].valid || !tv[1].valid || !tv[2].valid) {\n"
+        "            ++skipped_triangle_count_; return;\n"
+        "        }\n"
+        "        if (dx9geom::triangle_trivially_rejected(tv[0], tv[1], tv[2])) {\n"
+        "            ++clip_rejected_triangle_count_;\n"
+        "            ++skipped_triangle_count_;\n"
+        "            return;\n"
+        "        }\n"
+        "        if (dx9geom::triangle_culled(geom, tv[0], tv[1], tv[2])) {\n"
+        "            ++culled_triangle_count_;\n"
+        "            ++skipped_triangle_count_;\n"
+        "            return;\n"
+        "        }\n\n"
+        "        const int tile0 = st.tex.active_tile & 7, tile1 = (tile0 + 1) & 7;\n"
+    )
+    s = replace1(s, old, new, "Stage6 pre-raster culling")
+
+if "unsigned culled_triangle_count_" not in s:
+    s = replace1(
+        s,
+        "    unsigned skipped_triangle_count_ = 0;\n",
+        "    unsigned skipped_triangle_count_ = 0;\n"
+        "    unsigned culled_triangle_count_ = 0;\n"
+        "    unsigned clip_rejected_triangle_count_ = 0;\n",
+        "Stage6 cull counters",
+    )
+
+# Keep diagnostics useful without turning them into a testing burden.
+if "culled=%u clipReject=%u" not in s:
+    s = replace1(
+        s,
+        '                           "stage6 dl=%u fills=%u copyRects=%u shaderRects=%u tris=%u skippedTris=%u s2d=%u skippedS2d=%u zimg=0x%06X zAttach=%u zClear=%u zFallback=%u texUploads=%u",\n'
+        "                           frame, fill_count_, copy_texrect_count_, shader_texrect_count_,\n"
+        "                           triangle_count_, skipped_triangle_count_, s2dex_rect_count_,\n"
+        "                           skipped_s2dex_rect_count_, last_zimg_address_, depth_attach_count_,\n"
+        "                           depth_clear_count_, depth_fallback_count_, texture_upload_count_);\n",
+        '                           "stage6 dl=%u fills=%u copyRects=%u shaderRects=%u tris=%u skippedTris=%u culled=%u clipReject=%u s2d=%u skippedS2d=%u zimg=0x%06X zAttach=%u zClear=%u zFallback=%u texUploads=%u",\n'
+        "                           frame, fill_count_, copy_texrect_count_, shader_texrect_count_,\n"
+        "                           triangle_count_, skipped_triangle_count_, culled_triangle_count_,\n"
+        "                           clip_rejected_triangle_count_, s2dex_rect_count_,\n"
+        "                           skipped_s2dex_rect_count_, last_zimg_address_, depth_attach_count_,\n"
+        "                           depth_clear_count_, depth_fallback_count_, texture_upload_count_);\n",
+        "Stage6 periodic telemetry",
+    )
+
 p.write_text(s, encoding="utf-8")
 
 cm = Path("app/CMakeLists.txt").read_text(encoding="utf-8")
@@ -148,3 +205,6 @@ assert "set(OGRE_RENDERER_SOURCES src/dx9_renderer.cpp)" in cm
 assert "target_link_libraries(ogrebattle64 PRIVATE d3d9)" in cm
 assert "case gbi::OP_MODIFYVTX:" in sg
 assert "inline bool modify_vertex(" in gh
+assert "triangle_trivially_rejected(tv[0]" in sg
+assert "triangle_culled(geom, tv[0]" in sg
+assert "kCullFront = 0x00001000u" in gh
