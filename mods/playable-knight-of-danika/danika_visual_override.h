@@ -26,12 +26,12 @@ static inline int danika_visual_selector_is_valid(unsigned int selector)
 }
 
 static inline unsigned int danika_select_visual_asset(
-    unsigned int renderer_class_id,
+    uint8_t renderer_class_id,
     DanikaSide side,
     unsigned int original_visual_selector,
     unsigned int dragoon_player_visual_selector)
 {
-    if (!danika_should_use_player_override((uint8_t)renderer_class_id, side)) {
+    if (!danika_should_use_player_override(renderer_class_id, side)) {
         return original_visual_selector;
     }
 
