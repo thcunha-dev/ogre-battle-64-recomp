@@ -16,9 +16,15 @@ The remaining safe requirement is to correlate real battle records with particip
 
 ## What the probe logs
 
-When a battle resource table is active, each changed record is printed once in this form:
+Whenever a new battle table/resource group becomes active, every plausible participant record is emitted once as a snapshot:
+
+`DANIKA_SNAPSHOT g=3E slot=00 sel=0012 class=0071 id=71 f04=.... f06=.... f08=.... f0A=.... flags=.... f0E=.... f10=....`
+
+After that, a record is emitted again only if its tracked contents change:
 
 `DANIKA_PROBE g=3E slot=00 sel=0012 class=0071 id=71 f04=.... f06=.... f08=.... f0A=.... flags=.... f0E=.... f10=....`
+
+Zero/empty selectors and class IDs `00`/`FF` are ignored. Logging is therefore bounded and focused on plausible live combatant records instead of dumping arbitrary table padding every frame.
 
 Important fields:
 
@@ -36,6 +42,21 @@ Relevant class IDs for this project:
 - `71` — Knight of Danika / Gatekeeper;
 - `9C` — hidden Dragoon variant.
 
+## Automatic log analysis
+
+Save the port output to a text file and run:
+
+`python3 tools/analyze_danika_probe_log.py ogrebattle64.log -o danika-analysis.txt`
+
+The analyzer reports:
+
+- all observed selectors for Dragoon, Danika and hidden Dragoon;
+- the group/slot locations where each appeared;
+- field variance for `f04`, `f06`, `f08`, `f0A`, `flags`, `f0E` and `f10`;
+- initial snapshots separately from later record changes.
+
+The analyzer deliberately **does not infer allied/enemy ownership**. A visible, known player-side participant still has to be correlated with one record before an ownership signature can be promoted into the final gate.
+
 ## Minimum capture that will unlock the next patch
 
 1. Enable **Knight of Danika - Battle Probe** and start a normal battle where you can unambiguously identify your own units and the enemy unit.
@@ -44,7 +65,7 @@ Relevant class IDs for this project:
 4. Capture the original enemy Knight of Danika (`id=71`) if available. This establishes the enemy/front signature that the final patch must never replace.
 5. Later, place a test Danika in a player unit and capture the same fields. Comparing the records will identify the independently proven allied-side discriminator.
 
-A short video of the battlefield together with the corresponding `DANIKA_PROBE` lines is enough to map visible participants to records.
+A short video of the battlefield together with the corresponding `DANIKA_SNAPSHOT` / `DANIKA_PROBE` lines is enough to map visible participants to records.
 
 ## Safety design
 
