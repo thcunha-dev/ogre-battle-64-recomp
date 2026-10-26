@@ -1,0 +1,170 @@
+name: Prepare DX9 offline toolchain
+
+on:
+  push:
+    branches: [dx9-lowend-410m]
+    paths:
+      - '.github/workflows/prepare-dx9-offline-toolchain.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout DX9 source
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          fetch-depth: 1
+
+      - name: Install host build tools and MIPS binutils
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build git curl xz-utils tar rsync \
+            binutils-mips-linux-gnu
+          python3 --version
+          mips-linux-gnu-as --version | head -1
+
+      - name: Prepare Python 3.13 splat wheelhouse
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Download splat and Python dependencies for offline install
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p tools/offline-wheelhouse
+          python -m pip install --upgrade pip
+          python -m pip download --dest tools/offline-wheelhouse 'splat64[mips]'
+          test -n "$(find tools/offline-wheelhouse -maxdepth 1 -type f -print -quit)"
+
+      - name: Build patched N64Recomp and RSPRecomp
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf tools/N64Recomp
+          git clone --recurse-submodules https://github.com/N64Recomp/N64Recomp.git tools/N64Recomp
+          git -C tools/N64Recomp apply ../../patches/n64recomp-ob64.patch
+          cmake -S tools/N64Recomp -B tools/N64Recomp/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build tools/N64Recomp/build -j 2
+          test -x tools/N64Recomp/build/N64Recomp
+          test -x tools/N64Recomp/build/RSPRecomp
+          tools/N64Recomp/build/N64Recomp --help >/dev/null 2>&1 || true
+          tools/N64Recomp/build/RSPRecomp --help >/dev/null 2>&1 || true
+
+      - name: Prepare patched N64ModernRuntime source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          RUNTIME_COMMIT=589bbf018a3e6d3646ddf7de1e7919f1b7e99bb1
+          rm -rf tools/N64ModernRuntime
+          git clone https://github.com/N64Recomp/N64ModernRuntime.git --recurse-submodules tools/N64ModernRuntime
+          git -C tools/N64ModernRuntime checkout "$RUNTIME_COMMIT"
+          git -C tools/N64ModernRuntime submodule update --init --recursive
+          ( cd tools/N64ModernRuntime && git apply ../../patches/n64modernruntime-ob64.patch )
+          ( cd tools/N64ModernRuntime/N64Recomp && git apply ../../../patches/n64modernruntime-n64recomp.patch )
+
+      - name: Supply only the stb header tree needed by the DX9 app
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/rt64-stb
+          git clone --depth 1 https://github.com/rt64/rt64.git /tmp/rt64-stb
+          mkdir -p tools/RT64/src/contrib
+          cp -a /tmp/rt64-stb/src/contrib/stb tools/RT64/src/contrib/
+
+      - name: Prepare LLVM-MinGW cross compiler
+        shell: bash
+        run: |
+          set -euxo pipefail
+          LLVM_MINGW_TAG=20261020
+          LLVM_MINGW_FILE=llvm-mingw-${LLVM_MINGW_TAG}-msvcrt-ubuntu-22.04-x86_64.tar.xz
+          curl -fL --retry 3 -o /tmp/llvm-mingw.tar.xz \
+            "https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_TAG}/${LLVM_MINGW_FILE}"
+          rm -rf tools/llvm-mingw
+          mkdir -p tools/llvm-mingw
+          tar -xJf /tmp/llvm-mingw.tar.xz -C tools/llvm-mingw --strip-components=1
+          tools/llvm-mingw/bin/x86_64-w64-mingw32-clang++ --version | head -1
+
+      - name: Cross-build static SDL2 for Windows
+        shell: bash
+        run: |
+          set -euxo pipefail
+          SDL2_VERSION=2.32.10
+          mkdir -p tools/SDL2-static
+          curl -fL --retry 3 -o /tmp/SDL2.tar.gz \
+            "https://github.com/libsdl-org/SDL/releases/download/release-${SDL2_VERSION}/SDL2-${SDL2_VERSION}.tar.gz"
+          rm -rf tools/SDL2-static/SDL2-${SDL2_VERSION} tools/SDL2-static/build tools/SDL2-static/prefix
+          tar xzf /tmp/SDL2.tar.gz -C tools/SDL2-static
+          ROOT="$PWD/tools/llvm-mingw/bin/x86_64-w64-mingw32"
+          cmake -S tools/SDL2-static/SDL2-${SDL2_VERSION} -B tools/SDL2-static/build -G Ninja \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_C_COMPILER="${ROOT}-clang" \
+            -DCMAKE_CXX_COMPILER="${ROOT}-clang++" \
+            -DCMAKE_RC_COMPILER="${ROOT}-windres" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST=OFF -DSDL_TESTS=OFF \
+            -DCMAKE_INSTALL_PREFIX="$PWD/tools/SDL2-static/prefix"
+          cmake --build tools/SDL2-static/build -j 2
+          cmake --install tools/SDL2-static/build
+          test -f tools/SDL2-static/prefix/lib/libSDL2.a
+          test -f tools/SDL2-static/prefix/lib/libSDL2main.a
+          touch tools/SDL2-static/prefix/.ogre-static-crt
+
+      - name: Bundle relocatable MIPS binutils and runtime libraries
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p tools/mips-binutils/bin tools/mips-binutils/lib
+          for name in as ld objcopy objdump nm readelf strip; do
+            cp -L "/usr/bin/mips-linux-gnu-${name}" "tools/mips-binutils/bin/mips-linux-gnu-${name}"
+          done
+          for exe in tools/mips-binutils/bin/*; do
+            ldd "$exe" | awk '/=> \/|^\// { for (i=1;i<=NF;i++) if ($i ~ /^\//) print $i }' || true
+          done | sort -u | while read -r lib; do
+            [ -f "$lib" ] && cp -L "$lib" tools/mips-binutils/lib/ || true
+          done
+
+      - name: Write offline bootstrap helper
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cat > tools/dx9-offline-env.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -e
+          ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+          export PATH="$ROOT/tools/mips-binutils/bin:$ROOT/tools/llvm-mingw/bin:$PATH"
+          export LD_LIBRARY_PATH="$ROOT/tools/mips-binutils/lib:${LD_LIBRARY_PATH:-}"
+          echo "DX9 offline root: $ROOT"
+          echo "Python: $(python3 --version 2>&1)"
+          echo "N64Recomp: $ROOT/tools/N64Recomp/build/N64Recomp"
+          echo "RSPRecomp: $ROOT/tools/N64Recomp/build/RSPRecomp"
+          EOF
+          chmod +x tools/dx9-offline-env.sh
+
+      - name: Remove build-only bulk and pack source plus toolchain
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf tools/N64Recomp/.git tools/N64ModernRuntime/.git
+          find tools/N64ModernRuntime -type d -name .git -prune -exec rm -rf {} + || true
+          find tools/N64Recomp -type d -name .git -prune -exec rm -rf {} + || true
+          rm -rf tools/SDL2-static/build tools/SDL2-static/SDL2-2.32.10
+          rm -rf .git
+          du -sh . tools/* | sort -h | tail -20
+
+      - name: Upload private-ROM-free offline build kit
+        uses: actions/upload-artifact@v4
+        with:
+          name: ogre-dx9-offline-build-kit
+          path: .
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 6
