@@ -15,6 +15,9 @@
 namespace ogre::dx9geom {
 
 constexpr int kMaxVertices = 32;
+constexpr uint32_t kCullFront = 0x00001000u;
+constexpr uint32_t kCullBack  = 0x00002000u;
+constexpr uint32_t kCullBoth  = kCullFront | kCullBack;
 
 struct Vec4 { float x = 0, y = 0, z = 0, w = 1; };
 
@@ -180,8 +183,10 @@ inline void set_texture(State& st, uint32_t w0, uint32_t w1) {
 
 struct TransformedVertex {
     float x = 0, y = 0, z = 0, rhw = 1;
+    float ndc_x = 0, ndc_y = 0;
     float s = 0, t = 0;
     uint8_t r = 255, g = 255, b = 255, a = 255;
+    uint8_t clip_reject = 0;
     bool valid = false;
 };
 
@@ -193,6 +198,16 @@ inline TransformedVertex transform_vertex(const State& st, int index,
     Vec4 pos{static_cast<float>(src.x), static_cast<float>(src.y), static_cast<float>(src.z), 1.0f};
     pos = mul(pos, st.modelview_stack.back());
     pos = mul(pos, st.projection);
+
+    // F3DEX2/RSP clip reject bits. If all three vertices share any bit, the
+    // triangle is fully outside one clip plane and can be rejected before D3D9.
+    if (pos.x < -pos.w) out.clip_reject |= 1u;
+    if (pos.x >  pos.w) out.clip_reject |= 2u;
+    if (pos.y < -pos.w) out.clip_reject |= 4u;
+    if (pos.y >  pos.w) out.clip_reject |= 8u;
+    if (pos.z < -pos.w) out.clip_reject |= 16u;
+    if (pos.z >  pos.w) out.clip_reject |= 32u;
+
     // Match the validated WebGL path: geometry at/behind the camera is rejected.
     if (!std::isfinite(pos.w) || pos.w <= 0.0f) return out;
     const float inv_w = 1.0f / pos.w;
@@ -200,6 +215,8 @@ inline TransformedVertex transform_vertex(const State& st, int index,
     const float ny = pos.y * inv_w;
     const float nz = pos.z * inv_w;
     if (!std::isfinite(nx) || !std::isfinite(ny) || !std::isfinite(nz)) return out;
+    out.ndc_x = nx;
+    out.ndc_y = ny;
 
     // RSP screen Y points down. web_renderer maps scr_y = -NDC.y*scale + trans;
     // D3D9 pretransformed screen coordinates already use Y-down, so retain that
@@ -219,6 +236,35 @@ inline TransformedVertex transform_vertex(const State& st, int index,
     out.r = src.r; out.g = src.g; out.b = src.b; out.a = src.a;
     out.valid = std::isfinite(out.x) && std::isfinite(out.y) && std::isfinite(out.rhw);
     return out;
+}
+
+inline bool triangle_trivially_rejected(const TransformedVertex& a,
+                                        const TransformedVertex& b,
+                                        const TransformedVertex& c) {
+    return (a.clip_reject & b.clip_reject & c.clip_reject) != 0;
+}
+
+// Match the F3DEX2 front/back test before the D3D9 Y-down viewport transform.
+// This is deliberately done on CPU: it preserves N64 geometry semantics and
+// saves fill-rate/texture work on the low-end hardware this backend targets.
+inline bool triangle_culled(const State& st,
+                            const TransformedVertex& a,
+                            const TransformedVertex& b,
+                            const TransformedVertex& c) {
+    const uint32_t mode = st.geometry_mode & kCullBoth;
+    if (mode == 0) return false;
+    if (mode == kCullBoth) return true;
+
+    const float dx1 = a.ndc_x - b.ndc_x;
+    const float dy1 = a.ndc_y - b.ndc_y;
+    const float dx2 = c.ndc_x - b.ndc_x;
+    const float dy2 = c.ndc_y - b.ndc_y;
+    const float cross = dx1 * dy2 - dy1 * dx2;
+    if (!std::isfinite(cross)) return true;
+
+    if (mode == kCullFront) return cross <= 0.0f;
+    if (mode == kCullBack)  return cross >= 0.0f;
+    return false;
 }
 
 inline uint32_t shade_argb(const TransformedVertex& v) {
