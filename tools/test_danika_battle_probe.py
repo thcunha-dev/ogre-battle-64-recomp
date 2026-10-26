@@ -11,6 +11,7 @@ TOML = ROOT / "mods/playable-knight-of-danika/mod.toml"
 text = SRC.read_text(encoding="utf-8")
 doc = DOC.read_text(encoding="utf-8")
 toml = TOML.read_text(encoding="utf-8")
+plain_doc = doc.replace("**", "")
 
 # Stable hook only; no function replacement and no save/asset mutation surface.
 assert 'RECOMP_HOOK("func_80072944")' in text
@@ -57,14 +58,14 @@ assert 'display_name = "Knight of Danika - Battle Probe"' in toml
 assert "enabled_by_default = false" in toml
 assert 'additional_files = [ "BATTLE-PROBE.md" ]' in toml
 
-# Documentation must preserve the hard safety constraints even as wording evolves.
+# Documentation must preserve the hard safety constraints even as Markdown evolves.
 assert "class `0x71`" in doc
 assert "must remain `0x71`" in doc
 assert "enemy Danika" in doc
-assert "read-only" in doc.lower()
-assert "does not infer allied/enemy ownership" in doc or "does not infer allied/enemy" in doc
-assert "must be reproduced before" in doc
-assert "final ownership gate" in doc
+assert "read-only" in plain_doc.lower()
+assert "does not infer allied/enemy ownership" in plain_doc
+assert "must be reproduced before" in plain_doc
+assert "final ownership gate" in plain_doc
 
 print("Danika battle probe safety: PASS")
 print("hook=func_80072944; writes=none; patch=none; bounded_snapshot_change_logs=yes")
