@@ -1,10 +1,16 @@
-// Knight of Danika allied gameplay + battle visual smoke test.
+// Knight of Danika allied gameplay + early battle visual smoke test.
 //
 // TEST ONLY. Converts the first generic allied Fighter (class 0x02) in the
 // proven persistent player roster to Knight of Danika (0x71), remembers that
-// exact roster index, then applies a battle-only visual selector donor to the
-// unique 0x71 render record when that exact converted ally is an active live
-// participant.
+// exact roster index, then applies a visual selector donor at the ENTRY of the
+// native battle visual initializer func_801AE794.
+//
+// Why v3 exists:
+//   v2 changed the selector from a late per-frame hook. User testing proved
+//   that this changed only a formation/icon artifact while the combat model
+//   remained Soldier-like. That is strong evidence that the visual asset had
+//   already been loaded before the v2 write. v3 moves the exact same guarded
+//   selector override earlier, before func_801AE794 consumes the render table.
 //
 // Battle visual donor priority:
 //   1. Dragoon 0x14, when exactly one is loaded in the current render group;
@@ -102,14 +108,14 @@ static void convert_one_allied_fighter(void) {
             wr8(addr, (unsigned char)DANIKA_CLASS_ID);
             s_target_roster = (unsigned char)i;
             s_converted = 1u;
-            recomp_log("DANIKA_GAMEPLAY_V2 Fighter_02_to_Danika_71 target_saved");
+            recomp_log("DANIKA_GAMEPLAY_V3 Fighter_02_to_Danika_71 target_saved");
             return;
         }
     }
 
     if (!s_wait_logged) {
         s_wait_logged = 1u;
-        recomp_log("DANIKA_GAMEPLAY_V2 waiting_for_Fighter_02");
+        recomp_log("DANIKA_GAMEPLAY_V3 waiting_for_Fighter_02");
     }
 }
 
@@ -151,7 +157,7 @@ static int converted_ally_is_active_participant(void) {
     return matches == 1u;
 }
 
-static void try_battle_visual_override(void) {
+static void try_battle_visual_override_early(void) {
     unsigned int table;
     unsigned int group;
     unsigned int offset_addr;
@@ -251,9 +257,9 @@ static void try_battle_visual_override(void) {
     if (!s_visual_logged) {
         s_visual_logged = 1u;
         if (dragoon_count == 1u) {
-            recomp_log("DANIKA_GAMEPLAY_V2 battle_visual_71_using_Dragoon_14");
+            recomp_log("DANIKA_GAMEPLAY_V3 early_visual_71_using_Dragoon_14");
         } else {
-            recomp_log("DANIKA_GAMEPLAY_V2 battle_visual_71_using_Knight_05_fallback");
+            recomp_log("DANIKA_GAMEPLAY_V3 early_visual_71_using_Knight_05_fallback");
         }
     }
 }
@@ -261,5 +267,11 @@ static void try_battle_visual_override(void) {
 RECOMP_HOOK("func_80072944")
 void danika_gameplay_test_tick(void) {
     convert_one_allied_fighter();
-    try_battle_visual_override();
+}
+
+// Runs at native visual-initializer entry, before func_801AE794 consumes
+// battle_record+0x00 through func_801B3D1C / func_801AD13C.
+RECOMP_HOOK("func_801AE794")
+void danika_gameplay_visual_init_pre(void) {
+    try_battle_visual_override_early();
 }
