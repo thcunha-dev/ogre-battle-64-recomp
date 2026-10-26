@@ -1,15 +1,15 @@
 [manifest]
-id = "ogre_danika_gameplay_test"
-version = "0.1.0"
-display_name = "Knight of Danika - Allied Gameplay Test"
+id = "ogre_danika_playable_candidate"
+version = "0.2.0"
+display_name = "Knight of Danika - Playable Candidate"
 description = """
-Developer-only gameplay smoke test. Converts the first generic allied Fighter
-(class 0x02) in the player roster to Knight of Danika (0x71) so map, unit and
-battle behavior can be tested before native Change Class integration. It does
-not touch enemy battle memory. Use only with a disposable/copy save and do not
-save over an important file while enabled.
+Playable Knight of Danika development build. It leaves the original enemy
+Danika class 0x71 untouched and repurposes hidden class 0x9C as a player-only
+carrier whose built-in alias is redirected from Dragoon 0x14 to Danika 0x71.
+The first generic allied Fighter (0x02) is converted to 0x9C for validation.
+Use a copy/disposable save until the class is fully integrated into Change Class.
 """
-short_description = "Dev-only allied Fighter 0x02 -> Knight of Danika 0x71 gameplay test."
+short_description = "Player-only Danika via hidden class 0x9C -> alias 0x71."
 authors = [ "Ogre Battle 64 BR" ]
 game_id = "ogrebattle64"
 minimum_recomp_version = "0.1.0"
@@ -19,7 +19,7 @@ enabled_by_default = false
 
 [inputs]
 elf_path = "build/mod.elf"
-mod_filename = "knight-of-danika-gameplay-test"
+mod_filename = "knight-of-danika-playable-candidate"
 func_reference_syms_file = "../reference/dump.toml"
 data_reference_syms_files = [ ]
 additional_files = [ "TESTING.md" ]
