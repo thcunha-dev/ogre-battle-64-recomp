@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify isolated gameplay and battle-visual write scope
+      - name: Verify isolated gameplay and early battle-visual write scope
         run: |
           set -eux
           src=mods/playable-knight-of-danika-gameplay-test/src/danika_gameplay_test.c
@@ -30,6 +30,7 @@ jobs:
           grep -q 'DANIKA_CLASS_ID  0x71u' "$src"
           grep -q 'REC_SELECTOR            0x00u' "$src"
           grep -q 'REC_CLASS               0x02u' "$src"
+          grep -q 'RECOMP_HOOK("func_801AE794")' "$src"
           grep -q 'wr16(danika_record + REC_SELECTOR' "$src"
           ! grep -q 'wr16(danika_record + REC_CLASS' "$src"
           ! grep -q 'wr8(part +' "$src"
@@ -67,6 +68,7 @@ jobs:
           test -s "$mod/build/mod.elf"
           mips-linux-gnu-readelf -SW "$mod/build/mod.elf" | tee /tmp/danika-gameplay-sections.txt
           grep -q '.recomp_hook.func_80072944' /tmp/danika-gameplay-sections.txt
+          grep -q '.recomp_hook.func_801AE794' /tmp/danika-gameplay-sections.txt
           ! grep -q '.recomp_patch' /tmp/danika-gameplay-sections.txt
 
       - name: Write minimal Rev-A function references
@@ -79,6 +81,15 @@ jobs:
           size = 0x3E150
           functions = [
             { name = "func_80072944", vram = 0x80072944, size = 0x38 },
+          ]
+
+          [[section]]
+          name = ".battle_visual_overlay"
+          rom = 0x001E4C44
+          vram = 0x801AE794
+          size = 0x758
+          functions = [
+            { name = "func_801AE794", vram = 0x801AE794, size = 0x758 },
           ]
           EOF
 
