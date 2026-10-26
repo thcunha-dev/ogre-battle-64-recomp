@@ -3,8 +3,12 @@
 
 Input lines may contain either DANIKA_SNAPSHOT or DANIKA_PROBE records. The
 report groups observations by class and selector, highlights Danika/Dragoon,
-and shows which record fields vary. It deliberately never labels a side as
-allied/enemy: that conclusion must come from a known battle observation.
+and shows which record fields vary.
+
+Optional --ally/--enemy labels accept known G:SLOT locations observed in the
+actual battle (hex by default). Candidate ownership discriminators are reported
+ONLY when the same class is present in both labeled sets. This avoids mistaking
+class-specific data for side/ownership data.
 """
 from __future__ import annotations
 
@@ -25,6 +29,7 @@ REC_RE = re.compile(
 
 NAMES = {0x14: "Dragoon", 0x71: "Knight of Danika", 0x9C: "Hidden Dragoon"}
 FIELDS = ("f04", "f06", "f08", "f0a", "flags", "f0e", "f10")
+Location = tuple[int, int]
 
 
 def parse(text: str) -> list[dict[str, int | str]]:
@@ -40,7 +45,56 @@ def parse(text: str) -> list[dict[str, int | str]]:
     return rows
 
 
-def summarize(rows: list[dict[str, int | str]]) -> str:
+def parse_location(value: str) -> Location:
+    try:
+        g_text, slot_text = value.split(":", 1)
+        return int(g_text, 16), int(slot_text, 16)
+    except (ValueError, TypeError) as exc:
+        raise argparse.ArgumentTypeError(
+            f"invalid location {value!r}; expected hexadecimal G:SLOT, e.g. 03:01"
+        ) from exc
+
+
+def rows_at(rows: list[dict[str, int | str]], locations: set[Location]):
+    return [r for r in rows if (int(r["g"]), int(r["slot"])) in locations]
+
+
+def candidate_discriminators(
+    ally_rows: list[dict[str, int | str]],
+    enemy_rows: list[dict[str, int | str]],
+) -> list[tuple[int, str, set[int], set[int]]]:
+    """Return class-scoped fields with disjoint values in labeled sides.
+
+    This is evidence triage, not semantic proof. Requiring the SAME class on
+    both sides prevents a Dragoon-vs-Danika difference from being misreported as
+    an ownership bit.
+    """
+    ally_classes = {int(r["id"]) for r in ally_rows}
+    enemy_classes = {int(r["id"]) for r in enemy_rows}
+    shared = sorted(ally_classes & enemy_classes)
+    result = []
+    for cid in shared:
+        arows = [r for r in ally_rows if int(r["id"]) == cid]
+        erows = [r for r in enemy_rows if int(r["id"]) == cid]
+        for field in FIELDS:
+            av = {int(r[field]) for r in arows}
+            ev = {int(r[field]) for r in erows}
+            if av and ev and av.isdisjoint(ev):
+                result.append((cid, field, av, ev))
+    return result
+
+
+def fmt_values(values: set[int]) -> str:
+    return ",".join(f"0x{x:04X}" for x in sorted(values))
+
+
+def summarize(
+    rows: list[dict[str, int | str]],
+    ally_locations: set[Location] | None = None,
+    enemy_locations: set[Location] | None = None,
+) -> str:
+    ally_locations = ally_locations or set()
+    enemy_locations = enemy_locations or set()
     out = []
     snapshots = sum(r["kind"] == "DANIKA_SNAPSHOT" for r in rows)
     changes = len(rows) - snapshots
@@ -80,13 +134,51 @@ def summarize(rows: list[dict[str, int | str]]) -> str:
             rendered = ",".join(f"0x{x:04X}" for x in vals)
             out.append(f"  {field}: {rendered}")
 
+    if ally_locations or enemy_locations:
+        allies = rows_at(rows, ally_locations)
+        enemies = rows_at(rows, enemy_locations)
+        out += ["", "Labeled runtime evidence", "------------------------"]
+        out.append(f"ally_locations={len(ally_locations)} matching_records={len(allies)}")
+        out.append(f"enemy_locations={len(enemy_locations)} matching_records={len(enemies)}")
+
+        ally_dragoon = {int(r["sel"]) for r in allies if int(r["id"]) == 0x14}
+        enemy_danika = {int(r["sel"]) for r in enemies if int(r["id"]) == 0x71}
+        out.append(
+            "known_allied_dragoon_selectors="
+            + (fmt_values(ally_dragoon) if ally_dragoon else "<none>")
+        )
+        out.append(
+            "known_enemy_danika_selectors="
+            + (fmt_values(enemy_danika) if enemy_danika else "<none>")
+        )
+
+        candidates = candidate_discriminators(allies, enemies)
+        out += ["", "Same-class ownership candidates", "-------------------------------"]
+        if not candidates:
+            out.append(
+                "No same-class ally/enemy field discriminator was established by these labels."
+            )
+            out.append(
+                "Do not infer ownership from cross-class differences or record position alone."
+            )
+        else:
+            for cid, field, av, ev in candidates:
+                label = NAMES.get(cid, "class")
+                out.append(
+                    f"CANDIDATE class=0x{cid:02X} {label} field={field} "
+                    f"ally={fmt_values(av)} enemy={fmt_values(ev)}"
+                )
+            out.append(
+                "Candidates are correlations from this capture, not yet a global ownership proof."
+            )
+
     out += [
         "",
         "Safety interpretation",
         "---------------------",
-        "This report does NOT infer allied/enemy ownership.",
-        "Correlate a known player-side participant with its g/slot/selector first.",
-        "Only then may that independently proven ownership signature unlock the Danika override.",
+        "Unlabeled records never imply allied/enemy ownership.",
+        "Even labeled candidates must be reproduced before unlocking the Danika override.",
+        "Only independently proven ownership may activate the allied visual-selector substitution.",
     ]
     return "\n".join(out) + "\n"
 
@@ -95,8 +187,19 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("log", type=Path)
     ap.add_argument("-o", "--output", type=Path)
+    ap.add_argument(
+        "--ally", action="append", default=[], type=parse_location, metavar="G:SLOT",
+        help="known player/allied record location from visible gameplay; repeatable",
+    )
+    ap.add_argument(
+        "--enemy", action="append", default=[], type=parse_location, metavar="G:SLOT",
+        help="known enemy record location from visible gameplay; repeatable",
+    )
     args = ap.parse_args()
-    report = summarize(parse(args.log.read_text(encoding="utf-8", errors="replace")))
+    report = summarize(
+        parse(args.log.read_text(encoding="utf-8", errors="replace")),
+        set(args.ally), set(args.enemy),
+    )
     if args.output:
         args.output.write_text(report, encoding="utf-8")
     else:
