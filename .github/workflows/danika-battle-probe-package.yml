@@ -11,6 +11,8 @@ on:
       - 'mods/playable-knight-of-danika/mod.toml'
       - 'mods/playable-knight-of-danika/mod.ld'
       - 'mods/playable-knight-of-danika/BATTLE-PROBE.md'
+      - 'tools/analyze_danika_probe_log.py'
+      - 'tools/test_analyze_danika_probe_log.py'
       - 'tools/test_danika_battle_probe.py'
       - '.github/workflows/danika-battle-probe-package.yml'
 
@@ -22,6 +24,9 @@ jobs:
 
       - name: Verify read-only probe contract
         run: python3 tools/test_danika_battle_probe.py
+
+      - name: Verify probe log analyzer
+        run: python3 tools/test_analyze_danika_probe_log.py
 
       - name: Install build dependencies
         run: |
@@ -97,5 +102,6 @@ jobs:
             build/mods/knight-of-danika-battle-probe.nrm
             build/mods/knight-of-danika-battle-probe.sha256
             mods/playable-knight-of-danika/BATTLE-PROBE.md
+            tools/analyze_danika_probe_log.py
           if-no-files-found: error
           retention-days: 14
