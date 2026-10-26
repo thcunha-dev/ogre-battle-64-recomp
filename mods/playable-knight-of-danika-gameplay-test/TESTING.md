@@ -1,51 +1,29 @@
-# Knight of Danika - Allied Gameplay + Battle Visual Test v2
+# Knight of Danika - Playable Candidate
 
-This developer build keeps the proven gameplay conversion (first generic allied Fighter `0x02` -> Knight of Danika `0x71`) and adds a tightly gated battle-visual diagnostic.
+This build abandons the failed streamed-overlay hook approach. It does not hook battle overlay functions.
 
-## What v2 changes
+## Architecture
 
-The mod remembers the exact player-roster index it converted. During battle it only considers a visual override when that exact roster character is an active live participant.
+- Original enemy Danika remains class `0x71` and is not modified.
+- Hidden Dragoon class `0x9C` is used as a dedicated player-only carrier.
+- Vanilla `0x9C` has class alias `+0x45 = 0x14` (Dragoon).
+- This mod changes only that hidden-class alias to `+0x45 = 0x71` (Danika).
+- The first generic allied Fighter (`0x02`) is converted to class `0x9C`.
+- Normal class accessors can therefore resolve Danika data through the game's existing alias mechanism while the original enemy Danika remains independent.
 
-It then requires exactly one active render record with class `0x71`. If two `0x71` render records exist (for example allied test Danika plus enemy Danika), it fails closed and changes nothing.
+## Why this is safer
 
-For that unique allied test record, it changes only the visual selector at render-record `+0x00`:
+The Ogre Battle 64 recomp uses streamed/swappable banks. Static disassembly functions inside those banks are not necessarily registered as ordinary mod-hook targets at runtime. The previous `func_801AE794` build compiled but the runtime correctly rejected the hook because that function was not present in the mod-hook function registry.
 
-1. prefer a uniquely loaded Dragoon (`0x14`) selector;
-2. if no Dragoon is loaded, use a uniquely loaded Knight (`0x05`) selector as a diagnostic fallback.
+This build uses only the already-proven resident hook `func_80072944` and direct writes to two known data fields:
 
-The render-record class word at `+0x02` is never changed, so the character remains class `0x71`.
+1. hidden class `0x9C` alias byte (`record + 0x45`): exact vanilla `0x14` -> `0x71`;
+2. one allied persistent-roster class byte (`+0x12`): exact Fighter `0x02` -> `0x9C`.
 
-## Safety
+There are no battle-participant writes, no render-record writes and no enemy-class writes.
 
-- Use a copy/disposable save.
-- Do **not** save over an important save while the mod is enabled.
-- The only persistent-roster write is the same exact Fighter `0x02` -> Danika `0x71` class-byte test.
-- Live battle participant memory is read only; it is never written.
-- Battle visual writes target only the unique `0x71` render record selector (`+0x00`).
-- Enemy Danika present at the same time causes the visual override to refuse to run.
-- No global Dragoon, Knight or Danika class-table record is changed.
-- Disable the mod and restart the game after the test.
+## Current validation target
 
-## Test
+The desired result is a normal allied character whose class resolves through `0x9C -> 0x71`, allowing us to validate whether the game's own alias path carries Danika presentation, equipment behavior and battle resources correctly. Native Change Class integration and endgame balancing come after this carrier is stable.
 
-1. Replace the previous gameplay-test NRM with this v2 build.
-2. Enable only `Knight of Danika - Allied Gameplay Test` among Danika development mods.
-3. Load a disposable/copy save with at least one generic Fighter.
-4. Locate the character that becomes `Gatekeeper` / class `0x71`.
-5. Put that character into a deployable unit.
-6. For the strongest test, have a Dragoon (`0x14`) in the same battle. If unavailable, a Knight (`0x05`) in the battle can serve as the diagnostic donor.
-7. Enter combat and observe the Gatekeeper specifically.
-
-### Success signal
-
-If the Gatekeeper no longer appears as the Soldier fallback and instead takes the loaded Dragoon/Knight battle presentation, the selector path is proven. It is acceptable for this diagnostic to look like the donor class: this build is proving the presentation routing, not final artwork.
-
-### Also record
-
-- whether combat begins normally;
-- whether attacks execute;
-- whether the character remains `Gatekeeper` / class `0x71` in status screens;
-- whether weapon/pose/animation follow the donor;
-- whether the equipment preview is still Soldier (expected for now; that is a separate path).
-
-Do not save the test state over an important save.
+Use a copy/disposable save until native integration is complete.
