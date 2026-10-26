@@ -18,6 +18,8 @@ on:
       - 'tools/test_analyze_danika_bankj_dump.py'
       - 'tools/analyze_danika_bankc_dump.py'
       - 'tools/test_analyze_danika_bankc_dump.py'
+      - 'tools/analyze_danika_bankah_dump.py'
+      - 'tools/test_analyze_danika_bankah_dump.py'
       - 'tools/test_danika_battle_probe.py'
       - 'tools/test_danika_visual_override.py'
       - 'tools/test_danika_visual_override.c'
@@ -40,6 +42,9 @@ jobs:
 
       - name: Verify bank C dump analyzer
         run: python3 tools/test_analyze_danika_bankc_dump.py
+
+      - name: Verify bank AH setup analyzer
+        run: python3 tools/test_analyze_danika_bankah_dump.py
 
       - name: Verify dormant visual resolver contract
         run: |
@@ -83,6 +88,9 @@ jobs:
           mips-linux-gnu-gcc $common -nostdinc \
             -I "$mod/include" -c "$mod/src/danika_bankc_probe.c" \
             -o "$mod/build/danika_bankc_probe.o"
+          mips-linux-gnu-gcc $common -nostdinc \
+            -I "$mod/include" -c "$mod/src/danika_bankah_probe.c" \
+            -o "$mod/build/danika_bankah_probe.o"
           mips-linux-gnu-gcc $common \
             -I "$mod" -c "$mod/src/danika_visual_contract.c" \
             -o "$mod/build/danika_visual_contract.o"
@@ -90,6 +98,8 @@ jobs:
           grep -q ' T danika_bankj_probe_tick$' /tmp/danika-bankj-probe-symbols.txt
           mips-linux-gnu-nm "$mod/build/danika_bankc_probe.o" | tee /tmp/danika-bankc-probe-symbols.txt
           grep -q ' T danika_bankc_probe_tick$' /tmp/danika-bankc-probe-symbols.txt
+          mips-linux-gnu-nm "$mod/build/danika_bankah_probe.o" | tee /tmp/danika-bankah-probe-symbols.txt
+          grep -q ' T danika_bankah_after_dma$' /tmp/danika-bankah-probe-symbols.txt
           mips-linux-gnu-nm "$mod/build/danika_visual_contract.o" | tee /tmp/danika-visual-contract-symbols.txt
           grep -q ' T danika_mips_visual_contract$' /tmp/danika-visual-contract-symbols.txt
           mips-linux-gnu-ld -nostdlib -T "$mod/mod.ld" \
@@ -98,14 +108,17 @@ jobs:
             "$mod/build/danika_battle_probe.o" \
             "$mod/build/danika_bankj_probe.o" \
             "$mod/build/danika_bankc_probe.o" \
+            "$mod/build/danika_bankah_probe.o" \
             "$mod/build/danika_visual_contract.o"
           test -s "$mod/build/mod.elf"
           mips-linux-gnu-readelf -SW "$mod/build/mod.elf" | tee /tmp/danika-probe-sections.txt
           mips-linux-gnu-nm "$mod/build/mod.elf" | tee /tmp/danika-probe-symbols.txt
           grep -q '.recomp_hook.func_80072944' /tmp/danika-probe-sections.txt
+          grep -q '.recomp_hook_return.func_8009DA50' /tmp/danika-probe-sections.txt
           ! grep -q '.recomp_patch' /tmp/danika-probe-sections.txt
           grep -q ' T danika_bankj_probe_tick$' /tmp/danika-probe-symbols.txt
           grep -q ' T danika_bankc_probe_tick$' /tmp/danika-probe-symbols.txt
+          grep -q ' T danika_bankah_after_dma$' /tmp/danika-probe-symbols.txt
           grep -q ' T danika_mips_visual_contract$' /tmp/danika-probe-symbols.txt
 
       - name: Write minimal Rev-A function references
@@ -118,6 +131,7 @@ jobs:
           size = 0x3E150
           functions = [
             { name = "func_80072944", vram = 0x80072944, size = 0x38 },
+            { name = "func_8009DA50", vram = 0x8009DA50, size = 0xA4 },
           ]
           EOF
 
@@ -150,5 +164,6 @@ jobs:
             tools/analyze_danika_probe_log.py
             tools/analyze_danika_bankj_dump.py
             tools/analyze_danika_bankc_dump.py
+            tools/analyze_danika_bankah_dump.py
           if-no-files-found: error
           retention-days: 14
