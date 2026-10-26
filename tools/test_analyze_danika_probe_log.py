@@ -52,12 +52,13 @@ assert "identity correlation only" in report
 assert "Unlabeled visual records never imply allied/enemy ownership." in report
 
 # Cross-class labels are useful for donor/enemy selector capture, but must NOT
-# be promoted into an ownership field discriminator.
+# be promoted into an ownership field discriminator.  A BRIDGE_CANDIDATE is a
+# separate identity correlation and is allowed here.
 labeled = summarize(rows, {(0x03, 0x00)}, {(0x03, 0x01)}, parts)
 assert "known_allied_dragoon_selectors=0x0012" in labeled
 assert "known_enemy_danika_selectors=0x0044" in labeled
 assert "No same-class ally/enemy field discriminator" in labeled
-assert "CANDIDATE class=0x" not in labeled
+assert "\nCANDIDATE class=0x" not in labeled
 
 # Same-class observations on both labeled sides may produce candidate fields,
 # but they are still reported only as correlations requiring reproduction.
