@@ -5,6 +5,10 @@
 //   func_801D0AAC reads the setup table at 0x801D16D0;
 //   func_801D1508 allocates/tags a battle unit slot.
 //
+// func_8009DA50's call ABI is independently proven by streamed-loader call sites:
+//   a0 = ROM start, a1 = RAM destination, a2 = ROM end - ROM start (DMA size).
+// Keep this argument order explicit: the exact-DMA filter below depends on it.
+//
 // The fragment is transient: bank J later reuses the same RAM arena, so a
 // once-per-frame sampler can miss it.  Hook the RETURN of the base PI-DMA
 // helper and dump only when the exact ROM/RAM/size triple has just completed.
