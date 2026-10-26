@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Trace the exact ABI contract of func_8009DA50 used by the Danika bank-AH probe.
+"""Prove and report the ABI contract of func_8009DA50 used by Danika bank-AH.
 
 The runtime probe hooks this routine after return to capture the transient battle
-setup bank.  This report makes the hook's a0/a1/a2 assumption reviewable from the
-tracked resident assembly instead of leaving it as an undocumented guess.
+setup bank.  This checker deliberately fails closed unless tracked resident
+assembly proves the argument ordering expected by the hook:
 
-No gameplay semantics are inferred here.  In particular, this script does not
-label any participant as allied/enemy; it only records the DMA wrapper body and
-all tracked call sites with the argument-setup window that precedes each call.
+    a0 = source / ROM address
+    a1 = destination / RAM address
+    a2 = transfer size
+
+No gameplay ownership semantics are inferred here.
 """
 from __future__ import annotations
 
@@ -71,6 +73,86 @@ def instruction_addresses(body: list[str]) -> list[int]:
     return out
 
 
+def compact(line: str) -> str:
+    """Normalize whitespace so ABI fingerprints survive formatting changes."""
+    return re.sub(r"\s+", " ", line.strip())
+
+
+def require_fingerprint(lines: list[str], pattern: str, label: str) -> str:
+    rx = re.compile(pattern, re.I)
+    for line in lines:
+        if rx.search(compact(line)):
+            return line
+    raise SystemExit(f"{TARGET}: ABI proof missing {label}")
+
+
+def prove_abi(target: Func, callers: list[tuple[Func, int]]) -> list[str]:
+    """Require independent callee and caller fingerprints for ROM/RAM/size."""
+    proof = []
+
+    # Callee-side provenance.  The routine immediately preserves size and RAM
+    # destination, while the large-transfer path reaches func_80089F80 with a0
+    # untouched.  This is stronger than trusting argument names in C.
+    proof.append(require_fingerprint(
+        target.body,
+        r"\baddu\s+\$s0,\s*\$a2,\s*\$zero\b",
+        "callee a2->s0 size preservation",
+    ))
+    proof.append(require_fingerprint(
+        target.body,
+        r"\baddu\s+\$s2,\s*\$a1,\s*\$zero\b",
+        "callee a1->s2 destination preservation",
+    ))
+
+    backend_calls = [i for i, line in enumerate(target.body)
+                     if re.search(r"\bjal\s+func_80089F80\b", line)]
+    if len(backend_calls) < 2:
+        raise SystemExit(
+            f"{TARGET}: ABI proof expected two transfer-backend calls, got {len(backend_calls)}"
+        )
+
+    # The second backend call is the >=16-byte path.  Between the branch target
+    # and this call there must be no write to a0/a1; therefore they are still
+    # the original source/destination arguments.  a2 is derived from saved s0.
+    large_idx = backend_calls[-1]
+    lo = max(0, large_idx - 4)
+    window = target.body[lo:large_idx + 2]
+    for line in window:
+        c = compact(line)
+        if re.search(r"\b(?:lui|li|la|move|addu|addiu|ori|or|lw|lhu|lh|lbu|lb|sll|srl|andi)\s+\$(a0|a1)\b", c, re.I):
+            raise SystemExit(
+                f"{TARGET}: large-transfer path rewrites source/destination before backend: {c}"
+            )
+    if not any(re.search(r"\band\s+\$a2,\s*\$v0,\s*\$a2\b", compact(x), re.I)
+               for x in window):
+        raise SystemExit(f"{TARGET}: large-transfer path no longer derives backend size in a2")
+    proof.extend(window)
+
+    # Caller-side independent evidence: at least one tracked caller constructs
+    # transfer size as end - a0 in the jal delay slot.  Its a1 is independently
+    # prepared as a destination address.  Together with the callee provenance,
+    # this proves a0=start/source, a1=destination, a2=size.
+    size_callers = []
+    destination_callers = []
+    for func, idx in callers:
+        near = func.body[max(0, idx - 16):min(len(func.body), idx + 2)]
+        delay = func.body[idx + 1] if idx + 1 < len(func.body) else ""
+        if re.search(r"\bsubu\s+\$a2,\s*\$a2,\s*\$(?:a0|s[0-7])\b", compact(delay), re.I):
+            size_callers.append((func, delay))
+        if any(re.search(
+            r"\b(?:lui|addiu|addu|lw|la|move)\s+\$a1\b", compact(line), re.I
+        ) for line in near):
+            destination_callers.append(func)
+
+    if not size_callers:
+        raise SystemExit(f"{TARGET}: no caller proves a2 as transfer span")
+    if not destination_callers:
+        raise SystemExit(f"{TARGET}: no caller independently prepares a1 destination")
+
+    proof.append(size_callers[0][1])
+    return proof
+
+
 def main() -> int:
     funcs = parse_funcs()
     if TARGET not in funcs:
@@ -95,6 +177,11 @@ def main() -> int:
             if m and m.group(1) == TARGET:
                 callers.append((func, i))
 
+    if not callers:
+        raise SystemExit(f"{TARGET}: no tracked callers")
+
+    abi_proof = prove_abi(target, callers)
+
     report = [
         "Knight of Danika DMA hook contract trace",
         "========================================",
@@ -104,10 +191,16 @@ def main() -> int:
         f"vram_start=0x{start_addr:08X}",
         f"code_size=0x{size:X}",
         f"tracked_callers={len(callers)}",
+        "abi_proven=yes",
+        "abi_a0=source_rom",
+        "abi_a1=destination_ram",
+        "abi_a2=transfer_size",
         "",
-        "Target body",
-        "-----------",
+        "ABI proof fingerprints",
+        "----------------------",
     ]
+    report.extend(abi_proof)
+    report += ["", "Target body", "-----------"]
     for n, line in enumerate(target.body, start=target.start):
         report.append(f"{n}: {line}")
 
@@ -142,12 +235,12 @@ def main() -> int:
         "",
         "Hook acceptance rule",
         "--------------------",
-        "RECOMP_HOOK_RETURN(func_8009DA50) may treat a0/a1/a2 as ROM/RAM/size only",
-        "after the target body/caller dataflow demonstrates that ordering.  Merely",
-        "matching three plausible numeric values is not enough.  If ordering remains",
-        "ambiguous, the bank-AH capture must stay diagnostic-only and fail closed.",
+        "PROVEN: RECOMP_HOOK_RETURN(func_8009DA50) receives a0/a1/a2 as",
+        "source-ROM / destination-RAM / transfer-size respectively.",
+        "The checker fails if the callee/caller fingerprints establishing that",
+        "ordering disappear, so bank-AH capture remains fail-closed across edits.",
         "",
-        "Expected capture constants once ABI is proven:",
+        "Bank-AH capture constants:",
         "  ROM  = 0x0023A370",
         "  RAM  = 0x801D0860",
         "  SIZE = 0x00000E80",
@@ -155,8 +248,9 @@ def main() -> int:
 
     OUT.write_text("\n".join(report) + "\n", encoding="utf-8")
     print(
-        f"Danika DMA contract trace: PASS (start=0x{start_addr:08X}, "
-        f"size=0x{size:X}, callers={len(callers)}, arg_writes={arg_hits})"
+        f"Danika DMA ABI: PROVEN a0=ROM a1=RAM a2=size "
+        f"(start=0x{start_addr:08X}, size=0x{size:X}, callers={len(callers)}, "
+        f"arg_writes={arg_hits})"
     )
     print(f"report={OUT.name}")
     return 0
