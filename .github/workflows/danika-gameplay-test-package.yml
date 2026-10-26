@@ -16,28 +16,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify pre-model visual architecture
+      - name: Verify allied live participant sync architecture
         run: |
           set -eux
           src=mods/playable-knight-of-danika-gameplay-test/src/danika_gameplay_test.c
           grep -q 'CHAR_TABLE              0x80193BE0u' "$src"
+          grep -q 'CHAR_CLASS              0x12u' "$src"
+          grep -q 'CHAR_LEVEL              0x13u' "$src"
+          grep -q 'CHAR_EXP                0x35u' "$src"
           grep -q 'DANIKA_CLASS_ID         0x71u' "$src"
-          grep -q 'BATTLE_TABLE_PTR        0x801BA6D8u' "$src"
-          grep -q 'BATTLE_GROUP            0x801BA72Du' "$src"
-          grep -q 'RECORD_STRIDE           0x1Au' "$src"
-          grep -q 'RECORD_SELECTOR         0x00u' "$src"
-          grep -q 'RECORD_CLASS            0x02u' "$src"
-          grep -q '0x3Eu, 0x25u, 0x04u, 0x35u, 0x34u, 0x39u, 0x0Eu, 0x00u' "$src"
+          grep -q 'BATTLE_STATE_PTR        0x801CE8DCu' "$src"
+          grep -q 'BATTLE_SLOT_STRIDE      0xF8u' "$src"
+          grep -q 'BATTLE_PARTICIPANT_OFF  0x1C4u' "$src"
+          grep -q 'BATTLE_VALID_OFF        0x20Cu' "$src"
+          grep -q 'BATTLE_SLOT_COUNT       20u' "$src"
+          grep -q 'PARTICIPANT_LEVEL       0x31u' "$src"
+          grep -q 'PARTICIPANT_EXP         0x32u' "$src"
+          grep -q 'PARTICIPANT_ROSTER_IDX  0xF6u' "$src"
+          grep -q 'PARTICIPANT_CLASS_HINT  0x30u' "$src"
+          grep -q 'participant_matches_roster' "$src"
+          grep -q 'discover_participant_class_offset' "$src"
+          grep -q 'sync_target_live_participant' "$src"
+          grep -q 'roster_idx == (unsigned int)s_target_roster' "$src"
+          grep -q 'rd8(participant + PARTICIPANT_LEVEL) == rd8(roster + CHAR_LEVEL)' "$src"
+          grep -q 'rd8(participant + PARTICIPANT_EXP) == rd8(roster + CHAR_EXP)' "$src"
+          grep -q 'wr8(target + (unsigned int)s_participant_class_off' "$src"
           grep -q 'RECOMP_HOOK("func_80072944")' "$src"
           grep -q 'RECOMP_HOOK("func_80093380")' "$src"
-          grep -q 'wr8(addr, (unsigned char)DANIKA_CLASS_ID)' "$src"
+          grep -q 'BATTLE_TABLE_PTR        0x801BA6D8u' "$src"
           grep -q 'wr16(record + RECORD_SELECTOR, selector)' "$src"
-          grep -q 'selector_in_set(soldier' "$src"
           ! grep -q 'PLAYABLE_DANIKA_ID' "$src"
           ! grep -q 'DRAGOON_CLASS_ID' "$src"
           ! grep -q 'KNIGHT_CLASS_ID' "$src"
           ! grep -q 'RECOMP_HOOK("func_801' "$src"
-          ! grep -q '0x801CE8DC' "$src"
+          ! grep -q 'wr8(participant + PARTICIPANT_ROSTER_IDX' "$src"
+          ! grep -q 'wr8(participant + PARTICIPANT_LEVEL' "$src"
+          ! grep -q 'wr8(participant + PARTICIPANT_EXP' "$src"
           ! grep -q 'wr16(record + RECORD_CLASS' "$src"
           ! grep -q 'wr32' "$src"
 
@@ -117,7 +131,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: knight-of-danika-playable
+          name: knight-of-danika-playable-live-sync
           path: |
             build/mods/knight-of-danika-playable.nrm
             build/mods/knight-of-danika-playable.sha256
