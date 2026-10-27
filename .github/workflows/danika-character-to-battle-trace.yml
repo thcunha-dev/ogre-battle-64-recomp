@@ -1,0 +1,32 @@
+name: Trace Danika Character To Battle
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - mod/playable-knight-of-danika
+    paths:
+      - 'tools/trace_danika_character_to_battle.py'
+      - 'asm/**'
+      - '.github/workflows/danika-character-to-battle-trace.yml'
+
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trace character class into battle-owned state
+        run: python3 tools/trace_danika_character_to_battle.py
+      - name: Validate report
+        run: |
+          set -eux
+          test -s danika-character-to-battle.txt
+          grep -q 'known_class_offset=+0x12' danika-character-to-battle.txt
+          grep -q 'Three-hop bridge candidates' danika-character-to-battle.txt
+          grep -q 'Acceptance criterion' danika-character-to-battle.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: danika-character-to-battle
+          path: danika-character-to-battle.txt
+          if-no-files-found: error
+          retention-days: 14
