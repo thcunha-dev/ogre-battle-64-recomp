@@ -21,8 +21,12 @@ jobs:
           set -eux
           src=mods/gatekeeper-stable-bridge/src/gatekeeper_stable_bridge.c
           grep -q '#define CHAR_TABLE 0x80193BE0u' "$src"
+          grep -q '#define CHAR_EQUIP0 0x2Au' "$src"
+          grep -q '#define CLASS_EQUIP_TABLE 0x80187C62u' "$src"
+          grep -q '#define CLASS_STRIDE 0x48u' "$src"
           grep -q '#define FIGHTER_CLASS_ID 0x02u' "$src"
           grep -q '#define DRAGOON_CLASS_ID 0x14u' "$src"
+          grep -q 'apply_dragoon_defaults' "$src"
           grep -q 'RECOMP_HOOK("func_80072944")' "$src"
           grep -q 'seen==2u' "$src"
           ! grep -q '0x71' "$src"
