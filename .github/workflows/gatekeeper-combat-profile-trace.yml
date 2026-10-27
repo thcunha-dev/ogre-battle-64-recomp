@@ -1,0 +1,37 @@
+name: Trace Gatekeeper Combat Profile
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - mod/playable-knight-of-danika
+    paths:
+      - 'tools/trace_gatekeeper_combat_profile.py'
+      - 'asm/40E80.s'
+      - 'asm/data/5C230.data.s'
+      - '.github/workflows/gatekeeper-combat-profile-trace.yml'
+
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trace Dragoon donor fields through combat callers
+        run: python3 tools/trace_gatekeeper_combat_profile.py
+
+      - name: Assert report exists and preserves safety exclusions
+        run: |
+          set -eux
+          test -s gatekeeper-combat-profile-report.txt
+          grep -q 'Candidate donor byte offsets' gatekeeper-combat-profile-report.txt
+          grep -q 'Accessor/caller correlation' gatekeeper-combat-profile-report.txt
+          grep -q 'Gatekeeper class ID 0x71' gatekeeper-combat-profile-report.txt
+          ! grep -E '^\+0x4[1-6]:' gatekeeper-combat-profile-report.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gatekeeper-combat-profile-report
+          path: gatekeeper-combat-profile-report.txt
+          if-no-files-found: error
+          retention-days: 14
