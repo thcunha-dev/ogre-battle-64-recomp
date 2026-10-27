@@ -1,0 +1,35 @@
+name: Trace Gatekeeper Visual Loaders
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - mod/playable-knight-of-danika
+    paths:
+      - 'tools/trace_gatekeeper_visual_loaders.py'
+      - 'asm/**'
+      - '.github/workflows/gatekeeper-visual-loader-trace.yml'
+
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract battle visual loaders and helper context
+        run: python3 tools/trace_gatekeeper_visual_loaders.py
+
+      - name: Validate trace artifact
+        run: |
+          set -eux
+          test -s gatekeeper-visual-loader-trace.txt
+          grep -q 'TARGET func_801AD368' gatekeeper-visual-loader-trace.txt
+          grep -q 'TARGET func_801AE794' gatekeeper-visual-loader-trace.txt
+          grep -q 'Safety rule' gatekeeper-visual-loader-trace.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gatekeeper-visual-loader-trace
+          path: gatekeeper-visual-loader-trace.txt
+          if-no-files-found: error
+          retention-days: 14
