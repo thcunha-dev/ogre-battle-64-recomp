@@ -1,0 +1,26 @@
+name: Extract Gatekeeper Combatant Model Path
+on:
+  workflow_dispatch:
+  push:
+    branches: [mod/playable-knight-of-danika]
+    paths:
+      - 'tools/extract_gatekeeper_combatant_path.py'
+      - 'asm/**'
+      - '.github/workflows/gatekeeper-combatant-path.yml'
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/extract_gatekeeper_combatant_path.py
+      - run: |
+          test -s gatekeeper-combatant-path.txt
+          grep -q 'func_801AD6C4' gatekeeper-combatant-path.txt
+          grep -q 'func_8019B198' gatekeeper-combatant-path.txt
+          grep -q 'func_801B28F8' gatekeeper-combatant-path.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gatekeeper-combatant-path
+          path: gatekeeper-combatant-path.txt
+          if-no-files-found: error
+          retention-days: 14
