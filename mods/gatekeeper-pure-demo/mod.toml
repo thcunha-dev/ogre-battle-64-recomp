@@ -1,0 +1,26 @@
+[manifest]
+id = "ogre_gatekeeper_pure_demo"
+version = "0.1.0"
+display_name = "Gatekeeper Pure Demo"
+description = """
+Development demo for the playable Gatekeeper project. Converts the second Fighter
+in the persistent player roster to real Gatekeeper class 0x71 and first applies
+the four default equipment IDs stored in Gatekeeper's own class record. No Dragoon
+battle bridge, live participant mutation, or visual-selector override is used.
+
+Use only with a backup/disposable save. Disable all older Gatekeeper/Danika test mods.
+"""
+short_description = "Second Fighter -> coherent Gatekeeper 0x71 + native defaults."
+authors = [ "Ogre Battle 64 BR" ]
+game_id = "ogrebattle64"
+minimum_recomp_version = "0.1.0"
+dependencies = [ ]
+native_libraries = [ ]
+enabled_by_default = false
+
+[inputs]
+elf_path = "build/mod.elf"
+mod_filename = "gatekeeper-pure-demo"
+func_reference_syms_file = "../reference/dump.toml"
+data_reference_syms_files = [ ]
+additional_files = [ "TESTING.md" ]
