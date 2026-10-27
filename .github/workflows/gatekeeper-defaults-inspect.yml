@@ -1,0 +1,23 @@
+name: Inspect Gatekeeper Class Defaults
+on:
+  workflow_dispatch:
+  push:
+    branches: [mod/playable-knight-of-danika]
+    paths:
+      - 'tools/inspect_gatekeeper_class_defaults.py'
+      - 'asm/data/5C230.data.s'
+      - '.github/workflows/gatekeeper-defaults-inspect.yml'
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/inspect_gatekeeper_class_defaults.py | tee gatekeeper-class-defaults.txt
+      - run: |
+          grep -q 'Gatekeeper' gatekeeper-class-defaults.txt
+          grep -q 'PASS' gatekeeper-class-defaults.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gatekeeper-class-defaults
+          path: gatekeeper-class-defaults.txt
+          retention-days: 14
