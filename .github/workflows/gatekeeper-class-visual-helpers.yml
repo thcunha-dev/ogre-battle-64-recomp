@@ -1,0 +1,30 @@
+name: Trace Gatekeeper Class Visual Helpers
+on:
+  workflow_dispatch:
+  push:
+    branches: [mod/playable-knight-of-danika]
+    paths:
+      - 'tools/trace_gatekeeper_class_visual_helpers.py'
+      - 'asm/**'
+      - '.github/workflows/gatekeeper-class-visual-helpers.yml'
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trace class helper semantics and battle callers
+        run: python3 tools/trace_gatekeeper_class_visual_helpers.py
+      - name: Validate report
+        run: |
+          set -eux
+          test -s gatekeeper-class-visual-helpers.txt
+          grep -q 'func_8016CD30' gatekeeper-class-visual-helpers.txt
+          grep -q 'func_8016CD50' gatekeeper-class-visual-helpers.txt
+          grep -q 'func_8016DE3C' gatekeeper-class-visual-helpers.txt
+          grep -q 'BATTLE CALLER WINDOWS' gatekeeper-class-visual-helpers.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gatekeeper-class-visual-helpers
+          path: gatekeeper-class-visual-helpers.txt
+          if-no-files-found: error
+          retention-days: 14
