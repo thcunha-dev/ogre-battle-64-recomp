@@ -1,0 +1,28 @@
+[manifest]
+id = "ogre_gatekeeper_hybrid_v1"
+version = "0.1.0"
+display_name = "Gatekeeper Hybrid v1"
+description = """
+Development build for the playable Gatekeeper project. The second Fighter in
+player roster is converted to Gatekeeper 0x71. During battle only, its proven
+live participant is bridged to playable Dragoon 0x14, and Gatekeeper render
+records are preloaded with the Dragoon player visual selector. This provides a
+safe rear/2H combat baseline while Gatekeeper-specific rear graphics are being
+reconstructed.
+
+Use only with a copy/disposable save. Disable older Gatekeeper/Danika test mods.
+"""
+short_description = "Gatekeeper UI + Dragoon battle compatibility bridge."
+authors = [ "Ogre Battle 64 BR" ]
+game_id = "ogrebattle64"
+minimum_recomp_version = "0.1.0"
+dependencies = [ ]
+native_libraries = [ ]
+enabled_by_default = false
+
+[inputs]
+elf_path = "build/mod.elf"
+mod_filename = "gatekeeper-hybrid-v1"
+func_reference_syms_file = "../reference/dump.toml"
+data_reference_syms_files = [ ]
+additional_files = [ "TESTING.md" ]
