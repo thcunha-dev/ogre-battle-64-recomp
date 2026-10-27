@@ -1,0 +1,38 @@
+name: Trace Gatekeeper Final Battle Model Path
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - mod/playable-knight-of-danika
+    paths:
+      - 'tools/trace_gatekeeper_final_model_path.py'
+      - 'asm/**'
+      - '.github/workflows/gatekeeper-final-model-path.yml'
+
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trace final battle model/resource path
+        run: python3 tools/trace_gatekeeper_final_model_path.py
+
+      - name: Validate report
+        run: |
+          set -eux
+          test -s gatekeeper-final-model-path.txt
+          grep -q 'TARGET func_801AD13C' gatekeeper-final-model-path.txt
+          grep -q 'TARGET func_801AD368' gatekeeper-final-model-path.txt
+          grep -q 'TARGET func_801AE794' gatekeeper-final-model-path.txt
+          grep -q 'TARGET func_801AD6C4' gatekeeper-final-model-path.txt
+          grep -q 'GLOBAL REFERENCE INDEX' gatekeeper-final-model-path.txt
+          grep -q 'Interpretation rule' gatekeeper-final-model-path.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gatekeeper-final-model-path
+          path: gatekeeper-final-model-path.txt
+          if-no-files-found: error
+          retention-days: 14
