@@ -1,0 +1,25 @@
+name: Trace Gatekeeper Roster Battle Copy
+on:
+  workflow_dispatch:
+  push:
+    branches: [mod/playable-knight-of-danika]
+    paths:
+      - 'tools/trace_gatekeeper_roster_battle_copy.py'
+      - 'asm/**'
+      - '.github/workflows/gatekeeper-roster-battle-copy.yml'
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/trace_gatekeeper_roster_battle_copy.py
+      - run: |
+          test -s gatekeeper-roster-battle-copy.txt
+          grep -q 'func_8019BB9C' gatekeeper-roster-battle-copy.txt
+          grep -q 'D_80193BE0' gatekeeper-roster-battle-copy.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gatekeeper-roster-battle-copy
+          path: gatekeeper-roster-battle-copy.txt
+          if-no-files-found: error
+          retention-days: 14
