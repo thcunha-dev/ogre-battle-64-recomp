@@ -1,0 +1,27 @@
+[manifest]
+id = "ogre_gatekeeper_visual_shell_v1"
+version = "0.1.0"
+display_name = "Gatekeeper Visual Shell v1"
+description = """
+Development build that keeps the second Fighter as a fully coherent playable
+Dragoon 0x14 with Dragoon default equipment, 2H motion, and dynamic weapon
+pipeline, then replaces only Dragoon render selectors with Gatekeeper 0x71
+selectors discovered from the game's loaded visual table. No live participant
+class writes are used.
+
+Use only with a copy/disposable save. Disable older Gatekeeper/Danika test mods.
+"""
+short_description = "Stable Dragoon combat skeleton with Gatekeeper visual selectors."
+authors = [ "Ogre Battle 64 BR" ]
+game_id = "ogrebattle64"
+minimum_recomp_version = "0.1.0"
+dependencies = [ ]
+native_libraries = [ ]
+enabled_by_default = false
+
+[inputs]
+elf_path = "build/mod.elf"
+mod_filename = "gatekeeper-visual-shell-v1"
+func_reference_syms_file = "../reference/dump.toml"
+data_reference_syms_files = [ ]
+additional_files = [ "TESTING.md" ]
