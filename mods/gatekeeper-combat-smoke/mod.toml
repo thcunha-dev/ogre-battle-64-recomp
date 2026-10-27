@@ -1,0 +1,27 @@
+[manifest]
+id = "ogre_gatekeeper_combat_smoke"
+version = "0.1.0"
+display_name = "Gatekeeper - Combat Smoke Test"
+description = """
+Developer-only smoke test for the playable Gatekeeper project. It converts only
+the SECOND Fighter 0x02 found in the proven persistent player roster into
+Gatekeeper / Knight of Danika 0x71. This lets the class be placed in formation
+and observed in real allied combat without touching live enemy participant
+memory. Rear animation, greatsword anchors, equipment legality, balance and
+promotion requirements are intentionally not patched yet. Use a disposable or
+copy save and do not save over an important file while the test is enabled.
+"""
+short_description = "Second player Fighter 0x02 -> Gatekeeper 0x71 combat smoke test."
+authors = [ "Ogre Battle 64 BR" ]
+game_id = "ogrebattle64"
+minimum_recomp_version = "0.1.0"
+dependencies = [ ]
+native_libraries = [ ]
+enabled_by_default = false
+
+[inputs]
+elf_path = "build/mod.elf"
+mod_filename = "gatekeeper-combat-smoke"
+func_reference_syms_file = "../reference/dump.toml"
+data_reference_syms_files = [ ]
+additional_files = [ "TESTING.md" ]
