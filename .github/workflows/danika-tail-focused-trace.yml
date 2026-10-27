@@ -1,0 +1,32 @@
+name: Trace Danika Class Tail Consumers
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - mod/playable-knight-of-danika
+    paths:
+      - 'tools/trace_danika_tail_field_consumers.py'
+      - 'asm/**'
+      - '.github/workflows/danika-tail-focused-trace.yml'
+
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trace class-tail consumers
+        run: python3 tools/trace_danika_tail_field_consumers.py
+      - name: Validate report
+        run: |
+          set -eux
+          test -s danika-tail-field-consumers.txt
+          grep -q 'D_80187C75 / record+0x41' danika-tail-field-consumers.txt
+          grep -q 'D_80187C79 / record+0x45' danika-tail-field-consumers.txt
+          grep -q 'Two-hop loader adjacency' danika-tail-field-consumers.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: danika-tail-field-consumers
+          path: danika-tail-field-consumers.txt
+          if-no-files-found: error
+          retention-days: 14
