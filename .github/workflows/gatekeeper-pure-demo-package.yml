@@ -1,0 +1,106 @@
+name: Package Gatekeeper Pure Demo
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - mod/playable-knight-of-danika
+    paths:
+      - 'mods/gatekeeper-pure-demo/**'
+      - 'mods/playable-knight-of-danika/include/modding.h'
+      - '.github/workflows/gatekeeper-pure-demo-package.yml'
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify pure-demo safety architecture
+        run: |
+          set -eux
+          src=mods/gatekeeper-pure-demo/src/gatekeeper_pure_demo.c
+          grep -q '#define FIGHTER_CLASS_ID 0x02u' "$src"
+          grep -q '#define GATEKEEPER_CLASS_ID 0x71u' "$src"
+          grep -q '#define CLASS_EQUIP_TABLE 0x80187C62u' "$src"
+          grep -q '#define CHAR_EQUIP0 0x2Au' "$src"
+          grep -q 'apply_gatekeeper_defaults' "$src"
+          grep -q 'seen==2u' "$src"
+          grep -q 'RECOMP_HOOK("func_80072944")' "$src"
+          ! grep -q 'DRAGOON_CLASS_ID' "$src"
+          ! grep -q '0x801CE8DC' "$src"
+          ! grep -q '0x801BA6D8' "$src"
+          ! grep -q 'RECOMP_HOOK("func_801' "$src"
+
+      - name: Verify build tools
+        run: |
+          set -eux
+          command -v clang
+          command -v rustc
+          command -v readelf
+          command -v cmake
+          command -v ninja
+          command -v unzip
+          test -x "$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/rust-lld"
+
+      - name: Build pinned RecompModTool
+        run: |
+          set -eux
+          N64RECOMP_COMMIT=81213c1831fab2521a6a5459c67b63437d67e253
+          git clone https://github.com/N64Recomp/N64Recomp.git /tmp/N64Recomp
+          git -C /tmp/N64Recomp checkout "$N64RECOMP_COMMIT"
+          git -C /tmp/N64Recomp submodule update --init --recursive
+          cmake -S /tmp/N64Recomp -B /tmp/N64Recomp/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/N64Recomp/build --target RecompModTool
+
+      - name: Build MIPS demo ELF
+        run: |
+          set -eux
+          mod=mods/gatekeeper-pure-demo
+          mkdir -p "$mod/build" build/mods mods/reference
+          common='--target=mips-linux-gnu -march=mips2 -mabi=32 -O2 -G0 -mno-abicalls -fno-builtin -ffreestanding -fno-pic -fno-pie -Wall -Wextra -Wno-unused-parameter'
+          clang $common -nostdinc -I mods/playable-knight-of-danika/include \
+            -c "$mod/src/gatekeeper_pure_demo.c" -o "$mod/build/gatekeeper_pure_demo.o"
+          RUST_LLD="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/rust-lld"
+          "$RUST_LLD" -flavor gnu -m elf32btsmip -nostdlib -T "$mod/mod.ld" \
+            --unresolved-symbols=ignore-all --emit-relocs -e 0 \
+            -o "$mod/build/mod.elf" "$mod/build/gatekeeper_pure_demo.o"
+          test -s "$mod/build/mod.elf"
+          readelf -SW "$mod/build/mod.elf" | tee /tmp/gatekeeper-pure-demo-sections.txt
+          grep -q '.recomp_hook.func_80072944' /tmp/gatekeeper-pure-demo-sections.txt
+          ! grep -q '.recomp_hook.func_801' /tmp/gatekeeper-pure-demo-sections.txt
+          ! grep -q '.recomp_patch' /tmp/gatekeeper-pure-demo-sections.txt
+
+      - name: Write resident reference
+        run: |
+          cat >mods/reference/dump.toml <<'EOF'
+          [[section]]
+          name = ".main"
+          rom = 0x00001060
+          vram = 0x80070C60
+          size = 0x3E150
+          functions = [
+            { name = "func_80072944", vram = 0x80072944, size = 0x38 },
+          ]
+          EOF
+
+      - name: Package NRM
+        run: |
+          set -eux
+          tool=/tmp/N64Recomp/build/RecompModTool
+          mod=mods/gatekeeper-pure-demo
+          nrm=build/mods/gatekeeper-pure-demo.nrm
+          "$tool" "$mod/mod.toml" build/mods
+          test -s "$nrm"
+          unzip -t "$nrm"
+          sha256sum "$nrm" > build/mods/gatekeeper-pure-demo.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gatekeeper-pure-demo
+          path: |
+            build/mods/gatekeeper-pure-demo.nrm
+            build/mods/gatekeeper-pure-demo.sha256
+            mods/gatekeeper-pure-demo/TESTING.md
+          if-no-files-found: error
+          retention-days: 14
