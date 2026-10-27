@@ -1,0 +1,35 @@
+name: Trace Gatekeeper Asset Selector
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - mod/playable-knight-of-danika
+    paths:
+      - 'tools/trace_gatekeeper_asset_selector.py'
+      - 'asm/**'
+      - '.github/workflows/gatekeeper-asset-selector-trace.yml'
+
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trace suspected battle asset selector and helpers
+        run: python3 tools/trace_gatekeeper_asset_selector.py
+
+      - name: Validate selector trace artifact
+        run: |
+          set -eux
+          test -s gatekeeper-asset-selector-trace.txt
+          grep -q 'selector=D_801BA72D' gatekeeper-asset-selector-trace.txt
+          grep -q 'HELPER func_801B3C78' gatekeeper-asset-selector-trace.txt
+          grep -q 'HELPER func_801B3D1C' gatekeeper-asset-selector-trace.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gatekeeper-asset-selector-trace
+          path: gatekeeper-asset-selector-trace.txt
+          if-no-files-found: error
+          retention-days: 14
